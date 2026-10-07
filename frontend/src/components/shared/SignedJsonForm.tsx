@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { api, ApiError, type MutationReceipt } from "@/lib/api";
+import { api, ApiError, hasPermission, type Me, type MutationReceipt } from "@/lib/api";
 import { useEntityOptions } from "@/lib/hooks";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -51,6 +51,11 @@ export interface SignedJsonOp {
    * the full mutation body (Document 106 row 166 signs the decision itself, not a placeholder row), so
    * the challenge request must carry the exact same JSON the mutation body will. */
   mirrorBodyInChallenge?: boolean;
+  /** The RBAC permission code `evaluate_policy()` checks on this op's own mutation endpoint (not the
+   * signature-challenge endpoint, which every signer-eligible user can call). Same contract as
+   * `FormOp.requiredPermission` -- when set and the `me` passed to `SignedJsonForm` lacks it, this op
+   * is left out of the selector entirely. */
+  requiredPermission?: string;
 }
 
 function pathParamNames(path: string): string[] {
@@ -73,18 +78,23 @@ export function SignedJsonForm({
   subtitle,
   root,
   ops,
+  me,
 }: {
   title: string;
   subtitle?: string;
   root: string;
   ops: SignedJsonOp[];
+  /** Same contract as `FormConsole`'s `me` prop -- when provided, ops carrying a `requiredPermission`
+   * the caller doesn't hold are left out of the selector entirely. */
+  me?: Me | null;
 }) {
+  const ops_ = me === undefined ? ops : ops.filter((o) => !o.requiredPermission || hasPermission(me, o.requiredPermission));
   const [idx, setIdx] = useState(0);
-  const op = ops[idx];
+  const op = ops_[Math.min(idx, ops_.length - 1)];
   const [pathValues, setPathValues] = useState<Record<string, string>>({});
-  const [values, setValues] = useState<Record<string, string>>(() => seedFieldValues(op.fields ?? []));
-  const [complexValues, setComplexValues] = useState<ComplexValues>(() => seedComplexValues(op.fields ?? []));
-  const [body, setBody] = useState(op.template ?? "{\n  \n}");
+  const [values, setValues] = useState<Record<string, string>>(() => seedFieldValues(ops_[0]?.fields ?? []));
+  const [complexValues, setComplexValues] = useState<ComplexValues>(() => seedComplexValues(ops_[0]?.fields ?? []));
+  const [body, setBody] = useState(ops_[0]?.template ?? "{\n  \n}");
   const [open, setOpen] = useState(false);
   const [buildError, setBuildError] = useState<string | null>(null);
   const [result, setResult] = useState<unknown>(undefined);
@@ -96,11 +106,20 @@ export function SignedJsonForm({
   function selectOp(next: number) {
     setIdx(next);
     setPathValues({});
-    setValues(seedFieldValues(ops[next].fields ?? []));
-    setComplexValues(seedComplexValues(ops[next].fields ?? []));
-    setBody(ops[next].template ?? "{\n  \n}");
+    setValues(seedFieldValues(ops_[next]?.fields ?? []));
+    setComplexValues(seedComplexValues(ops_[next]?.fields ?? []));
+    setBody(ops_[next]?.template ?? "{\n  \n}");
     setBuildError(null);
     setResult(undefined);
+  }
+
+  if (ops_.length === 0) {
+    return (
+      <Card pad className="mb-4">
+        <CardHeader title={title} />
+        <p className="fs-2 text-muted">You don&apos;t have permission to perform any action here.</p>
+      </Card>
+    );
   }
 
   /** Structured fields never fail to "parse" (there's no free-text JSON to get wrong) — only the JSON
@@ -134,7 +153,7 @@ export function SignedJsonForm({
       {subtitle && <p className="fs-2 text-muted mb-3">{subtitle}</p>}
       <Field label="Operation">
         <Select value={idx} onChange={(e) => selectOp(Number(e.target.value))}>
-          {ops.map((o, i) => (
+          {ops_.map((o, i) => (
             <option key={o.postPath + o.action} value={i}>
               {o.label}
             </option>

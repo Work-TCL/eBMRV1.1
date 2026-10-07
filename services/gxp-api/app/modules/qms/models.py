@@ -107,10 +107,23 @@ class DeviationRecord(Base):
     source_version: Mapped[int | None] = mapped_column()
     severity: Mapped[str] = mapped_column(String(40), nullable=False)
     state: Mapped[str] = mapped_column(String(50), nullable=False, default="OPEN")
-    owner_subject_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False)
+    # Nullable since the auto-deviation-on-out-of-range-result fix (docs/testing/demo-gujarati/08 §8.8
+    # item 2, project-owner-directed 2026-09-18): a system-opened deviation starts unassigned -- a human
+    # (Supervisor/QA Reviewer) triages and claims it, same as investigator_subject_id already works.
+    owner_subject_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     investigator_subject_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     planned: Mapped[bool] = mapped_column(nullable=False, default=False)
     planned_scope: Mapped[dict | None] = mapped_column(JSONB)
+    # Client Topic 11 (SG-061, project-owner-directed): "a planned deviation should require formal
+    # pre-approval before it can be used... approval, date, reason, scope, and effective time period
+    # recorded... prevent the planned deviation from being used until the required approval has been
+    # completed." No separate DRAFT/PREAPPROVED/ACTIVE state track is added (Document 26's own 9-op API
+    # list still has no operation for one, SG-061's original reasoning for not inventing it still holds)
+    # -- the planned deviation stays in the normal OPEN..CLOSED pipeline; pre-approval is instead a gate
+    # every forward transition checks (see _assert_planned_deviation_preapproved_and_effective).
+    preapproved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
+    preapproved_at: Mapped[datetime | None] = mapped_column()
+    preapproval_signature_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     immediate_correction: Mapped[dict | None] = mapped_column(JSONB)
     containment: Mapped[dict | None] = mapped_column(JSONB)
     investigation_plan: Mapped[dict | None] = mapped_column(JSONB)

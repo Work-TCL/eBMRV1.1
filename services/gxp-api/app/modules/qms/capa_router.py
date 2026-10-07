@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.qms.capa_commands import (
     AddCapaActionCommand,
     CloseCapaCommand,
@@ -35,7 +35,7 @@ from app.mutation.schemas import MutationReceipt
 capa_router = APIRouter(prefix="/qms/v1/capas", tags=["qms-capa"])
 capa_action_router = APIRouter(prefix="/qms/v1/actions", tags=["qms-capa"])
 
-CAPA_SIGNATURE_ACTIONS = ("close",)
+CAPA_SIGNATURE_ACTIONS = ("close", "effectiveness", "plan", "extend")
 
 
 @capa_router.post("", response_model=MutationReceipt)
@@ -55,7 +55,10 @@ async def post_plan_capa(
     if cmd.capa_id != capa_id:
         raise ValidationFailedError("capa_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="capa.plan", site_id=None)
+        capa = await session.get(CapaRecord, capa_id)
+        if capa is None:
+            raise NotFoundError("CAPA not found")
+        await evaluate_policy(session, actor.user_id, action="capa.plan", site_id=capa.site_id)
         return await plan_capa(session, cmd, actor.user_id)
 
 
@@ -67,7 +70,10 @@ async def post_add_action(
     if cmd.capa_id != capa_id:
         raise ValidationFailedError("capa_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="capa.action.add", site_id=None)
+        capa = await session.get(CapaRecord, capa_id)
+        if capa is None:
+            raise NotFoundError("CAPA not found")
+        await evaluate_policy(session, actor.user_id, action="capa.action.add", site_id=capa.site_id)
         return await add_capa_action(session, cmd, actor.user_id)
 
 
@@ -79,7 +85,13 @@ async def post_complete_action(
     if cmd.action_id != action_id:
         raise ValidationFailedError("action_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="capa.action.complete", site_id=None)
+        action = await session.get(CapaAction, action_id)
+        if action is None:
+            raise NotFoundError("CAPA action not found")
+        capa = await session.get(CapaRecord, action.capa_id)
+        if capa is None:
+            raise NotFoundError("CAPA not found")
+        await evaluate_policy(session, actor.user_id, action="capa.action.complete", site_id=capa.site_id)
         return await complete_capa_action(session, cmd, actor.user_id)
 
 
@@ -91,7 +103,10 @@ async def post_effectiveness(
     if cmd.capa_id != capa_id:
         raise ValidationFailedError("capa_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="capa.effectiveness", site_id=None)
+        capa = await session.get(CapaRecord, capa_id)
+        if capa is None:
+            raise NotFoundError("CAPA not found")
+        await evaluate_policy(session, actor.user_id, action="capa.effectiveness", site_id=capa.site_id)
         return await record_effectiveness(session, cmd, actor.user_id)
 
 
@@ -103,7 +118,10 @@ async def post_extend_capa(
     if cmd.capa_id != capa_id:
         raise ValidationFailedError("capa_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="capa.extend", site_id=None)
+        capa = await session.get(CapaRecord, capa_id)
+        if capa is None:
+            raise NotFoundError("CAPA not found")
+        await evaluate_policy(session, actor.user_id, action="capa.extend", site_id=capa.site_id)
         return await extend_capa(session, cmd, actor.user_id)
 
 
@@ -130,7 +148,10 @@ async def post_close_capa(
     if cmd.capa_id != capa_id:
         raise ValidationFailedError("capa_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="capa.close", site_id=None)
+        capa = await session.get(CapaRecord, capa_id)
+        if capa is None:
+            raise NotFoundError("CAPA not found")
+        await evaluate_policy(session, actor.user_id, action="capa.close", site_id=capa.site_id)
         return await close_capa(session, cmd, actor.user_id)
 
 
@@ -142,7 +163,10 @@ async def post_reopen_capa(
     if cmd.capa_id != capa_id:
         raise ValidationFailedError("capa_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="capa.reopen", site_id=None)
+        capa = await session.get(CapaRecord, capa_id)
+        if capa is None:
+            raise NotFoundError("CAPA not found")
+        await evaluate_policy(session, actor.user_id, action="capa.reopen", site_id=capa.site_id)
         return await reopen_capa(session, cmd, actor.user_id)
 
 
@@ -205,8 +229,8 @@ async def list_capas(
     site_id: uuid.UUID | None = None,
     state: str | None = None,
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="capa.view", site_id=site_id)
-    stmt = filtered(CapaRecord, params, search_column=CapaRecord.capa_number, site_id=site_id, state=state)
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="capa.view")
+    stmt = filtered(CapaRecord, params, search_column=CapaRecord.capa_number, site_id=site_scope, state=state)
     rows, envelope = await paginate(
         session, stmt, params, sortable=CAPA_SORTABLE, default_sort=CapaRecord.created_at
     )
@@ -271,10 +295,20 @@ async def list_capa_actions(
     state: str | None = None,
 ) -> dict:
     """Cross-CAPA action worklist (CAPA-FR-019 "my open actions"), or one CAPA's actions via capa_id."""
-    await evaluate_policy(session, actor.user_id, action="capa.view", site_id=None)
-    stmt = select(CapaAction)
     if capa_id is not None:
-        stmt = stmt.where(CapaAction.capa_id == capa_id)
+        parent = await session.get(CapaRecord, capa_id)
+        if parent is None:
+            raise NotFoundError("CAPA not found")
+        await evaluate_policy(session, actor.user_id, action="capa.view", site_id=parent.site_id)
+        stmt = select(CapaAction).where(CapaAction.capa_id == capa_id)
+    else:
+        # No capa_id: a cross-CAPA worklist, so the site scope must come from a join to the owning
+        # CapaRecord rather than CapaAction itself (which carries no site_id) -- same cross-site leak
+        # class as the list endpoints `resolve_site_scope` closes, just one join deeper.
+        site_scope = await resolve_site_scope(session, actor.user_id, None, action="capa.view")
+        stmt = select(CapaAction).join(CapaRecord, CapaRecord.id == CapaAction.capa_id).where(
+            CapaRecord.site_id.in_(site_scope)
+        )
     if state:
         stmt = stmt.where(CapaAction.state == state)
     if params.q:

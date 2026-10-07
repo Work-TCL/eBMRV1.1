@@ -14,8 +14,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.batch_execution import service as batch_execution_service
+from app.modules.batch_execution.models import BatchStep
 from app.modules.policy.service import evaluate_policy
 from app.modules.workflowops import commands
+from app.mutation.errors import NotFoundError
 
 router = APIRouter(prefix="/workflowops/v1", tags=["workflowops"])
 
@@ -33,10 +35,13 @@ async def post_start_step_stuck_detection(
     session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="step_stuck_detection.start", site_id=None)
         # Confirms the step is real and belongs to the named batch before starting an orchestration for
-        # it -- fails closed (NOT_FOUND) rather than launching a workflow for a nonexistent step.
+        # it -- fails closed (NOT_FOUND) rather than launching a workflow for a nonexistent step. Also
+        # sources the site the batch belongs to so the policy check below is scoped to that site, not
+        # "any site the actor holds a role at" (the same cross-site pattern fixed in batch_execution).
+        batch = await batch_execution_service.get_batch(session, body.batch_id)
         await batch_execution_service.get_step(session, body.batch_id, body.step_id)
+        await evaluate_policy(session, actor.user_id, action="step_stuck_detection.start", site_id=batch.site_id)
     workflow_id = await commands.start_step_stuck_detection(
         batch_id=body.batch_id, step_id=body.step_id, threshold_seconds=body.threshold_seconds,
     )
@@ -49,5 +54,11 @@ async def get_step_stuck_detection_status(
     session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="step_stuck_detection.view", site_id=None)
+        # Same cross-site sourcing as the start endpoint above: resolve the step's owning batch first so
+        # the policy check is scoped to that batch's site, not "any site the actor holds a role at".
+        step = await session.get(BatchStep, step_id)
+        if step is None:
+            raise NotFoundError("Batch step not found")
+        batch = await batch_execution_service.get_batch(session, step.batch_id)
+        await evaluate_policy(session, actor.user_id, action="step_stuck_detection.view", site_id=batch.site_id)
     return await commands.get_step_stuck_detection_status(step_id=step_id)

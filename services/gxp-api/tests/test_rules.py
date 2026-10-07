@@ -179,6 +179,84 @@ async def test_release_requires_an_independent_qa_releaser_signature(client, see
     assert resp.json()["signature_id"] is not None
 
 
+async def test_release_uom_requires_an_independent_qa_releaser_signature(client, seeded, db):
+    """SG-211 (2026-09-21, project-owner-directed, mirrors SG-035's rule/release resolution exactly):
+    `uom/release` had no Document 106 policy row anywhere (live seed, test fixture or code), so a
+    drafted UOM could never be released and therefore could never reach `GET /rules/v1/uom` (released
+    only) or appear in any UomSelect dropdown. Also verifies the accompanying fix to
+    `uom_commands.py::_resolve_release_signature()`, which previously never called
+    `enforce_signer_policy()` at all (unlike `release_rule()`), so a bare `rules.release` holder with no
+    QA Releaser role would have been accepted once a policy row existed."""
+    async with db.begin():
+        await _make_admin(db, seeded, "admin.uom1")
+        signer = User(
+            username="qa.uom1", email="qa.uom1@example.com", full_name="QA Releaser",
+            password_hash=hash_password(DEMO_PASSWORD), status="active",
+        )
+        db.add(signer)
+        await db.flush()
+        db.add(UserSiteRole(user_id=signer.id, site_id=seeded["site_id"], role_id=seeded["roles"]["QA Releaser"].id))
+        db.add(SignaturePolicy(
+            record_type="uom", action="release", meaning="Released",
+            required_role_id=seeded["roles"]["QA Releaser"].id, requires_independent_signer=True,
+            signature_required=True, reason_required=True,
+        ))
+    admin_token = await login(client, "admin.uom1")
+    signer_token = await login(client, "qa.uom1")
+
+    resp = await client.post(
+        "/rules/v1/uom/drafts",
+        json={
+            "idempotency_key": idem(), "code": "REL-UNIT", "dimension": "count",
+            "base_unit": "REL-UNIT", "factor": "1", "offset": "0", "precision_dp": 0,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    uom_id = resp.json()["aggregate_id"]
+
+    # Admin holds no "QA Releaser" role -> the signature-policy role check rejects it.
+    resp = await client.post(
+        f"/rules/v1/uom/{uom_id}/release",
+        json={"idempotency_key": idem(), "uom_id": uom_id},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["code"] == "ROLE_MISSING"
+
+    # QA Releaser, no challenge -> MISSING_SIGNATURE.
+    resp = await client.post(
+        f"/rules/v1/uom/{uom_id}/release",
+        json={"idempotency_key": idem(), "uom_id": uom_id},
+        headers=auth_headers(signer_token),
+    )
+    assert resp.status_code == 428, resp.text
+    assert resp.json()["code"] == "MISSING_SIGNATURE"
+
+    # QA Releaser + a valid challenge -> released, and now listed among released UOMs.
+    challenge = (
+        await client.post(
+            f"/rules/v1/uom/{uom_id}/signature-challenges", json={"action": "release"},
+            headers=auth_headers(signer_token),
+        )
+    ).json()
+    assert challenge["meaning"] == "Released"
+    resp = await client.post(
+        f"/rules/v1/uom/{uom_id}/release",
+        json={
+            "idempotency_key": idem(), "uom_id": uom_id,
+            "challenge_id": challenge["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(signer_token),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["signature_id"] is not None
+
+    resp = await client.get("/rules/v1/uom", headers=auth_headers(admin_token))
+    assert resp.status_code == 200, resp.text
+    assert "REL-UNIT" in {u["code"] for u in resp.json()}
+
+
 async def test_validate_rejects_undeclared_variable(client, seeded, db):
     async with db.begin():
         await _make_admin(db, seeded, "admin.rules4")
@@ -423,8 +501,12 @@ async def test_uom_conversion_applied_when_released_conversion_resolves(client, 
     before the expression sees it, using the released factor (never a literal in code, §9)."""
     async with db.begin():
         await _make_admin(db, seeded, "admin.rules9")
-        db.add(UnitOfMeasure(code="mg", dimension="MASS", base_unit="g", factor=Decimal("0.001"), precision_dp=4, status="released"))
-        db.add(UnitOfMeasure(code="g", dimension="MASS", base_unit="g", factor=Decimal("1"), precision_dp=4, status="released"))
+        # Client requirements #2/#3 (2026-09-21): conftest.py's `seeded` fixture now seeds baseline
+        # released "mg"/"g" rows at version=1 (so hardened material/QC/etc. UOM resolution has real data
+        # to resolve against) -- version=2 here avoids the UniqueConstraint(code, version) collision;
+        # `resolve_uom` always picks the highest released version per code, so these still win.
+        db.add(UnitOfMeasure(code="mg", dimension="MASS", base_unit="g", factor=Decimal("0.001"), precision_dp=4, status="released", version=2))
+        db.add(UnitOfMeasure(code="g", dimension="MASS", base_unit="g", factor=Decimal("1"), precision_dp=4, status="released", version=2))
         db.add(
             UomConversion(
                 from_code="mg", to_code="g", factor=Decimal("0.001"), rounding_stage="none",
@@ -507,3 +589,59 @@ async def test_evaluate_persists_raw_result_and_policy_version_for_a_presentatio
     assert evaluation.result == {"value": "2.01"}  # 2.0071 half-up at 2dp
     assert evaluation.raw_result == {"value": "2.0071"}
     assert evaluation.applied_policy_version == "DOCUMENT-110-v1.0"
+
+
+async def test_get_all_rules_lists_every_status_unlike_the_released_only_picker(client, seeded, db):
+    """The Rules page replaced its "type the exact rule_id to look it up" form with an always-visible
+    table backed by `GET /rules/v1/all` -- unlike `GET /rules/v1` (released-only picker data for other
+    modules), a drafted-but-not-yet-validated-or-released rule must still show up here, or an author has
+    no way to ever find their own draft again without already knowing its exact rule_id."""
+    async with db.begin():
+        await _make_admin(db, seeded, "admin.rules11")
+    admin_token = await login(client, "admin.rules11")
+
+    resp = await client.post("/rules/v1/drafts", json=_draft_body("ALL-RULES-DRAFT"), headers=auth_headers(admin_token))
+    assert resp.status_code == 200, resp.text
+
+    resp = await client.get("/rules/v1/all", headers=auth_headers(admin_token))
+    assert resp.status_code == 200, resp.text
+    rows = resp.json()
+    match = [r for r in rows if r["rule_id"] == "ALL-RULES-DRAFT"]
+    assert len(match) == 1
+    assert match[0]["status"] == "draft"
+
+    # The released-only picker must NOT list it -- confirms this is a genuinely different endpoint, not
+    # an accidental behavior change to the existing one.
+    resp = await client.get("/rules/v1", headers=auth_headers(admin_token))
+    assert resp.status_code == 200, resp.text
+    assert "ALL-RULES-DRAFT" not in {r["rule_id"] for r in resp.json()}
+
+
+async def test_get_all_uoms_lists_every_status_unlike_the_released_only_picker(client, seeded, db):
+    """Same rationale as the rules test above, for the "Units of measure" section's `GET
+    /rules/v1/uom/all` -- SG-211's drafted-but-not-released UOM must still be findable here, since
+    `GET /rules/v1/uom` (every UomSelect's data source) only ever lists released codes."""
+    async with db.begin():
+        await _make_admin(db, seeded, "admin.rules12")
+    admin_token = await login(client, "admin.rules12")
+
+    resp = await client.post(
+        "/rules/v1/uom/drafts",
+        json={
+            "idempotency_key": idem(), "code": "ALL-UOM-DRAFT", "dimension": "count",
+            "base_unit": "ALL-UOM-DRAFT", "factor": "1", "offset": "0", "precision_dp": 0,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    resp = await client.get("/rules/v1/uom/all", headers=auth_headers(admin_token))
+    assert resp.status_code == 200, resp.text
+    rows = resp.json()
+    match = [r for r in rows if r["code"] == "ALL-UOM-DRAFT"]
+    assert len(match) == 1
+    assert match[0]["status"] == "draft"
+
+    resp = await client.get("/rules/v1/uom", headers=auth_headers(admin_token))
+    assert resp.status_code == 200, resp.text
+    assert "ALL-UOM-DRAFT" not in {u["code"] for u in resp.json()}

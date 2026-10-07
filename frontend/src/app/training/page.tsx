@@ -3,14 +3,18 @@
 import { useState } from "react";
 import {
   api,
+  canAssessTraining,
   canAssignTraining,
+  canCompleteTraining,
+  canCreateQualification,
   canQualifyTraining,
   formatDate,
   isOverdue,
   newIdempotencyKey,
 } from "@/lib/api";
-import { useApiResource, useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
+import { useApiResource, useEntityOptions, useMe, useRequirePermission, useSiteId } from "@/lib/hooks";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
+import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { KeyValueRows, buildKvObject, type KvRow } from "@/components/shared/RepeatableFields";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -20,7 +24,7 @@ import { KpiRow, KpiTile } from "@/components/ui/KpiTile";
 import { Tabs } from "@/components/ui/Tabs";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
-import { Field } from "@/components/ui/Field";
+import { Field, RowButtonSlot } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
@@ -57,7 +61,7 @@ interface Qualification {
   id: string;
   subject_id: string;
   qualification_code: string;
-  status: string;
+  state: string;
   effective_from: string | null;
   effective_to: string | null;
 }
@@ -76,12 +80,13 @@ const TRAINING_TYPES = [
 const SOURCE_TYPES = ["document", "role", "qualification", "change", "capa", "manager_assignment"];
 
 export default function TrainingPage() {
-  const { me } = useMe();
+  const { me } = useRequirePermission("training.subject.view");
   const { siteId } = useSiteId();
   const [reloadToken, setReloadToken] = useState(0);
   const [requirementOpen, setRequirementOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   const [waiverOpen, setWaiverOpen] = useState(false);
+  const [qualificationOpen, setQualificationOpen] = useState(false);
   const [subjectId, setSubjectId] = useState("");
   const [lookupId, setLookupId] = useState<string | null>(null);
   const entities = useEntityOptions();
@@ -119,6 +124,11 @@ export default function TrainingPage() {
               {canQualifyTraining(me) && (
                 <Button variant="secondary" onClick={() => setWaiverOpen(true)}>
                   <Icon name="shield-check" /> Grant waiver
+                </Button>
+              )}
+              {canCreateQualification(me) && (
+                <Button variant="secondary" onClick={() => setQualificationOpen(true)}>
+                  <Icon name="badge-check" /> New qualification
                 </Button>
               )}
             </div>
@@ -221,12 +231,17 @@ export default function TrainingPage() {
             label: "Person record",
             content: (
               <div>
+                {/* items-start, not items-end: EntityPickerField always adds a trailing link line below
+                 * its control ("Choose from list instead" / "Can't find it? Enter ID manually"), which
+                 * items-end would bottom-align this row to - dragging the buttons down to that link
+                 * instead of the dropdown/input they belong beside. RowButtonSlot gives each button a
+                 * same-height invisible label so it still lines up with the real input. */}
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
                     setLookupId(subjectId.trim() || null);
                   }}
-                  className="flex flex-wrap items-end gap-4 mb-4"
+                  className="flex flex-wrap items-start gap-4 mb-4"
                 >
                   <div style={{ minWidth: 260, maxWidth: 360, width: "100%" }}>
                     <EntityPickerField
@@ -238,20 +253,24 @@ export default function TrainingPage() {
                       kind="user"
                     />
                   </div>
-                  <Button type="submit" variant="secondary" disabled={!subjectId.trim()}>
-                    <Icon name="search" /> Look up
-                  </Button>
-                  {me && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => {
-                        setSubjectId(me.user_id);
-                        setLookupId(me.user_id);
-                      }}
-                    >
-                      My record
+                  <RowButtonSlot>
+                    <Button type="submit" variant="secondary" disabled={!subjectId.trim()}>
+                      <Icon name="search" /> Look up
                     </Button>
+                  </RowButtonSlot>
+                  {me && (
+                    <RowButtonSlot>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => {
+                          setSubjectId(me.user_id);
+                          setLookupId(me.user_id);
+                        }}
+                      >
+                        My record
+                      </Button>
+                    </RowButtonSlot>
                   )}
                 </form>
 
@@ -264,7 +283,8 @@ export default function TrainingPage() {
                 {subject.data && (
                   <SubjectRecord
                     status={subject.data}
-                    canQualify={canQualifyTraining(me)}
+                    canAssess={canAssessTraining(me)}
+                    canComplete={canCompleteTraining(me)}
                     onChanged={() => {
                       subject.reload();
                       setReloadToken((n) => n + 1);
@@ -306,17 +326,29 @@ export default function TrainingPage() {
           }}
         />
       )}
+      {qualificationOpen && (
+        <QualificationModal
+          onClose={() => setQualificationOpen(false)}
+          onDone={() => {
+            setQualificationOpen(false);
+            setReloadToken((n) => n + 1);
+            subject.reload();
+          }}
+        />
+      )}
     </div>
   );
 }
 
 function SubjectRecord({
   status,
-  canQualify,
+  canAssess,
+  canComplete,
   onChanged,
 }: {
   status: SubjectStatus;
-  canQualify: boolean;
+  canAssess: boolean;
+  canComplete: boolean;
   onChanged: () => void;
 }) {
   const [acting, setActing] = useState<{ assignment: Assignment; action: "complete" | "assess" } | null>(null);
@@ -357,12 +389,12 @@ function SubjectRecord({
                     <td className="tabular fs-2">{a.score ?? "—"}</td>
                     <td style={{ textAlign: "right" }}>
                       <div className="flex gap-2 justify-end">
-                        {a.state === "ASSIGNED" && (
+                        {a.state === "ASSIGNED" && canComplete && (
                           <Button size="sm" variant="secondary" onClick={() => setActing({ assignment: a, action: "complete" })}>
                             <Icon name="pen" /> Complete
                           </Button>
                         )}
-                        {a.state === "ASSESSMENT_PENDING" && canQualify && (
+                        {a.state === "ASSESSMENT_PENDING" && canAssess && (
                           <Button size="sm" variant="secondary" onClick={() => setActing({ assignment: a, action: "assess" })}>
                             <Icon name="pen" /> Assess
                           </Button>
@@ -396,7 +428,7 @@ function SubjectRecord({
                 <tr key={q.id}>
                   <td className="font-semibold tabular">{q.qualification_code}</td>
                   <td>
-                    <WorkflowStatePill state={q.status} />
+                    <WorkflowStatePill state={q.state} />
                   </td>
                   <td className="tabular fs-2">{formatDate(q.effective_from)}</td>
                   <td className={isOverdue(q.effective_to) ? "error-text tabular fs-2" : "tabular fs-2"}>
@@ -436,71 +468,87 @@ function AssignmentActionModal({
   onDone: () => void;
 }) {
   const { me } = useMe();
-  const { busy, error, run } = useCommand(onDone);
   const [passed, setPassed] = useState(true);
   const [score, setScore] = useState("");
   const [reason, setReason] = useState("");
+  const path = `/training/v1/assignments/${assignment.id}`;
 
-  return (
-    <Modal open onClose={onClose} title={action === "complete" ? "Complete training" : "Assess training"}>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          const base = {
-            idempotency_key: newIdempotencyKey(),
+  // Document 106 section 9 rows 91-93 (SG-138, resolved): complete/assess are both signed -- "Qualified
+  // performer for the task" / "Qualified independent verifier" (assess enforces performer != trainee in
+  // code). Go through the shared Part 11 ceremony (challenge -> password re-entry -> signed mutation).
+  if (action === "complete") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`${path}/signature-challenges`}
+        action="complete"
+        title="Complete training"
+        summary="Records that this training was completed by the qualified performer for the task."
+        submitLabel="Sign & complete"
+        submitVariant="success"
+        extraFields={
+          <Field label="Reason" hint="Optional. Recorded in the audit trail.">
+            <Input value={reason} onChange={(e) => setReason(e.target.value)} />
+          </Field>
+        }
+        onSign={(p) =>
+          api.post(`${path}/complete`, {
+            idempotency_key: p.idempotency_key,
             assignment_id: assignment.id,
             expected_version: assignment.version,
-          };
-          run(() =>
-            action === "complete"
-              ? api.post(`/training/v1/assignments/${assignment.id}/complete`, {
-                  ...base,
-                  trainer_user_id: me?.user_id ?? null,
-                  reason: reason || null,
-                })
-              : api.post(`/training/v1/assignments/${assignment.id}/assess`, {
-                  ...base,
-                  passed,
-                  score: score ? Number(score) : null,
-                  trainer_user_id: me?.user_id ?? null,
-                  reason: reason || null,
-                })
-          );
-        }}
-      >
-        <Banner tone="warn" title="This transition requires an electronic signature">
-          This action needs a signature policy that hasn&apos;t been configured for this deployment yet, so it will be correctly refused rather than proceeding without one.
-        </Banner>
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+            trainer_user_id: me?.user_id ?? null,
+            reason: reason || null,
+          })
+        }
+      />
+    );
+  }
 
-        {action === "assess" && (
-          <>
-            <Field label="Outcome" required>
-              <Select value={passed ? "pass" : "fail"} onChange={(e) => setPassed(e.target.value === "pass")}>
-                <option value="pass">Passed</option>
-                <option value="fail">Failed - retraining required</option>
-              </Select>
-            </Field>
-            <Field label="Score">
-              <Input type="number" step="any" value={score} onChange={(e) => setScore(e.target.value)} />
-            </Field>
-          </>
-        )}
-
-        <Field label="Reason" hint="Optional. Recorded in the audit trail.">
-          <Input value={reason} onChange={(e) => setReason(e.target.value)} />
-        </Field>
-
-        {error && <p className="error-text mb-2">{error}</p>}
-        <div className="flex justify-between gap-3 mt-3">
-          <Button type="button" variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" disabled={busy}>
-            {busy ? "Saving…" : action === "complete" ? "Complete" : "Record assessment"}
-          </Button>
-        </div>
-      </form>
-    </Modal>
+  return (
+    <SignatureCeremony
+      open
+      onClose={onClose}
+      onDone={onDone}
+      challengePath={`${path}/signature-challenges`}
+      action="assess"
+      title="Assess training"
+      summary="Records the pass/fail assessment outcome. Signer must be a qualified independent verifier, not the trainee."
+      submitLabel="Sign & record assessment"
+      submitVariant="success"
+      extraFields={
+        <>
+          <Field label="Outcome" required>
+            <Select value={passed ? "pass" : "fail"} onChange={(e) => setPassed(e.target.value === "pass")}>
+              <option value="pass">Passed</option>
+              <option value="fail">Failed - retraining required</option>
+            </Select>
+          </Field>
+          <Field label="Score">
+            <Input type="number" step="any" value={score} onChange={(e) => setScore(e.target.value)} />
+          </Field>
+          <Field label="Reason" hint="Optional. Recorded in the audit trail.">
+            <Input value={reason} onChange={(e) => setReason(e.target.value)} />
+          </Field>
+        </>
+      }
+      onSign={(p) =>
+        api.post(`${path}/assess`, {
+          idempotency_key: p.idempotency_key,
+          assignment_id: assignment.id,
+          expected_version: assignment.version,
+          challenge_id: p.challenge_id,
+          reauth_password: p.reauth_password,
+          passed,
+          score: score ? Number(score) : null,
+          trainer_user_id: me?.user_id ?? null,
+          reason: reason || null,
+        })
+      }
+    />
   );
 }
 
@@ -597,64 +645,66 @@ function AssignModal({
   onDone: () => void;
 }) {
   const { me } = useMe();
-  const { busy, error, run } = useCommand(onDone);
   const entities = useEntityOptions();
   const [requirementId, setRequirementId] = useState(requirements[0]?.requirement_id ?? "");
   const [subject, setSubject] = useState(me?.user_id ?? "");
   const [dueAt, setDueAt] = useState("");
 
+  // Document 106 section 9 row 91 (SG-138, resolved): training_assignment.create is "Performed" by a
+  // "Production Supervisor or qualified issuer" -- signed, but the row doesn't exist yet at challenge
+  // time, so this uses the signed-CREATE pattern (POST /training/v1/assignments/signature-challenges
+  // pre-generates the id and hands it back as assignment_id -- see training_router.py's
+  // post_create_assignment_signature_challenge docstring).
   return (
-    <Modal open onClose={onClose} title="Assign training">
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          run(() =>
-            api.post("/training/v1/assignments", {
-              idempotency_key: newIdempotencyKey(),
-              requirement_id: requirementId,
-              subject_id: subject,
-              due_at: dueAt ? new Date(dueAt).toISOString() : null,
-            })
-          );
-        }}
-      >
-        <Banner tone="warn" title="This transition requires an electronic signature">
-          This action needs a signature policy that hasn&apos;t been configured for this deployment yet, so it will be correctly refused rather than proceeding without one.
-        </Banner>
-
-        <Field label="Requirement" required>
-          <Select value={requirementId} onChange={(e) => setRequirementId(e.target.value)} required>
-            <option value="">Select a requirement…</option>
-            {requirements.map((r) => (
-              <option key={r.requirement_id} value={r.requirement_id}>
-                {r.title}
-              </option>
-            ))}
-          </Select>
-        </Field>
-        <EntityPickerField
-          label="Person"
-          required
-          value={subject}
-          onChange={setSubject}
-          options={entities.users}
-          status={entities.usersStatus}
-          kind="user"
-        />
-        <Field label="Due date">
-          <Input type="date" value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
-        </Field>
-        {error && <p className="error-text mb-2">{error}</p>}
-        <div className="flex justify-between gap-3 mt-3">
-          <Button type="button" variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" disabled={busy || !requirementId || !subject.trim()}>
-            {busy ? "Assigning…" : "Assign"}
-          </Button>
-        </div>
-      </form>
-    </Modal>
+    <SignatureCeremony
+      open
+      onClose={onClose}
+      onDone={onDone}
+      challengePath="/training/v1/assignments/signature-challenges"
+      action="create"
+      title="Assign training"
+      summary="Assigns a training requirement to a person."
+      submitLabel="Sign & assign"
+      submitVariant="success"
+      disabled={!requirementId || !subject.trim()}
+      extraFields={
+        <>
+          <Field label="Requirement" required>
+            <Select value={requirementId} onChange={(e) => setRequirementId(e.target.value)} required>
+              <option value="">Select a requirement…</option>
+              {requirements.map((r) => (
+                <option key={r.requirement_id} value={r.requirement_id}>
+                  {r.title}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <EntityPickerField
+            label="Person"
+            required
+            value={subject}
+            onChange={setSubject}
+            options={entities.users}
+            status={entities.usersStatus}
+            kind="user"
+          />
+          <Field label="Due date">
+            <Input type="date" value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
+          </Field>
+        </>
+      }
+      onSign={(p) =>
+        api.post("/training/v1/assignments", {
+          idempotency_key: p.idempotency_key,
+          challenge_id: p.challenge_id,
+          reauth_password: p.reauth_password,
+          assignment_id: p.assignment_id as string,
+          requirement_id: requirementId,
+          subject_id: subject,
+          due_at: dueAt ? new Date(dueAt).toISOString() : null,
+        })
+      }
+    />
   );
 }
 
@@ -743,6 +793,97 @@ function WaiverModal({
           </Button>
           <Button type="submit" variant="primary" disabled={busy || !requirementId || !subject.trim() || !approvedBy.trim() || !reason.trim()}>
             {busy ? "Granting…" : "Grant waiver"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/** POST /training/v1/qualifications (qms/training_commands.py::create_qualification) writes both the
+ * qms.QualificationRecord (this record's declared owner) and, via its own SG-086 write-through, the
+ * iam.qualifications row that batch_execution/material's step-start gates actually check
+ * (QUALIFICATION_MISSING/QUALIFICATION_EXPIRED) -- this was the only path to that gate, and had no
+ * frontend control at all before this. qualification_code stays free-typed with suggestions (not a hard
+ * Select) for the same SG-086 reason recipe-master's own required-qualification-code field does: no
+ * controlled catalogue table exists, so a code that predates this list must stay typeable. */
+function QualificationModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const { siteId } = useSiteId();
+  const { busy, error, run } = useCommand(onDone);
+  const entities = useEntityOptions();
+  const { data: qualificationCodeOptions } = useApiResource<string[]>("/training/v1/qualification-codes");
+  const [subject, setSubject] = useState("");
+  const [qualificationCode, setQualificationCode] = useState("");
+  const [evaluator, setEvaluator] = useState("");
+  const [effectiveFrom, setEffectiveFrom] = useState(new Date().toISOString().slice(0, 10));
+  const [effectiveTo, setEffectiveTo] = useState("");
+
+  return (
+    <Modal open onClose={onClose} title="Grant a qualification">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!siteId) return;
+          run(() =>
+            api.post("/training/v1/qualifications", {
+              idempotency_key: newIdempotencyKey(),
+              site_id: siteId,
+              subject_id: subject,
+              qualification_code: qualificationCode.trim(),
+              effective_from: new Date(effectiveFrom).toISOString(),
+              effective_to: effectiveTo ? new Date(effectiveTo).toISOString() : null,
+              evaluator_user_id: evaluator || null,
+            })
+          );
+        }}
+      >
+        <EntityPickerField
+          label="Person qualified"
+          required
+          value={subject}
+          onChange={setSubject}
+          options={entities.users}
+          status={entities.usersStatus}
+          kind="user"
+        />
+        <Field label="Qualification code" required hint="Matches this exact code against a recipe step's or requirement's required_qualification_code.">
+          <Input
+            list="dl-qualification-codes"
+            value={qualificationCode}
+            onChange={(e) => setQualificationCode(e.target.value)}
+            placeholder="e.g. DISPENSING_OPERATOR"
+            required
+          />
+          <datalist id="dl-qualification-codes">
+            {(qualificationCodeOptions ?? []).map((code) => (
+              <option key={code} value={code} />
+            ))}
+          </datalist>
+        </Field>
+        <EntityPickerField
+          label="Evaluator"
+          hint="Optional - who assessed/granted this."
+          value={evaluator}
+          onChange={setEvaluator}
+          options={entities.users}
+          status={entities.usersStatus}
+          kind="user"
+        />
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Effective from" required>
+            <Input type="date" value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} required />
+          </Field>
+          <Field label="Effective to" hint="Optional - leave blank for no expiry.">
+            <Input type="date" value={effectiveTo} onChange={(e) => setEffectiveTo(e.target.value)} />
+          </Field>
+        </div>
+        {error && <p className="error-text mb-2">{error}</p>}
+        <div className="flex justify-between gap-3 mt-3">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={busy || !subject.trim() || !qualificationCode.trim() || !effectiveFrom}>
+            {busy ? "Granting…" : "Grant qualification"}
           </Button>
         </div>
       </form>

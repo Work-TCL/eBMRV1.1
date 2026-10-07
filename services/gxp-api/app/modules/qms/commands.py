@@ -39,6 +39,8 @@ from app.mutation.errors import (
     MissingSignatureError,
     NotFoundError,
     PlannedDeviationExpiredError,
+    PlannedDeviationNotPreapprovedError,
+    PlannedDeviationNotYetEffectiveError,
     QaClosureRequiredError,
     RoleMissingError,
     SodIndependenceRequiredError,
@@ -139,6 +141,32 @@ def _assert_not_expired_planned(deviation: DeviationRecord) -> None:
         )
 
 
+def _assert_planned_deviation_preapproved_and_effective(deviation: DeviationRecord) -> None:
+    """Client Topic 11 (SG-061, project-owner-directed): a planned deviation cannot be used (any
+    forward-pipeline transition) until a QA Releaser has pre-approved it, and only once its declared
+    effective window has actually started -- `planned_scope.start_date` was captured at creation but
+    never read anywhere until now; `_assert_not_expired_planned` above already enforces the end_date
+    half of the same window."""
+    if not deviation.planned or not deviation.planned_scope:
+        return
+    if deviation.preapproved_at is None:
+        raise PlannedDeviationNotPreapprovedError(
+            "Planned deviation requires QA Releaser pre-approval before it can be used (Client Topic 11)",
+            deviation_id=str(deviation.id),
+        )
+    start_date = deviation.planned_scope.get("start_date")
+    if start_date is None:
+        return
+    parsed = datetime.fromisoformat(start_date)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    if parsed > datetime.now(timezone.utc):
+        raise PlannedDeviationNotYetEffectiveError(
+            "Planned deviation's effective time period has not started yet",
+            deviation_id=str(deviation.id), start_date=start_date,
+        )
+
+
 async def _write_receipt(
     session: AsyncSession, *, cmd: CommandEnvelope, payload_hash: str, deviation: DeviationRecord,
     action: str, actor_user_id: uuid.UUID, reason: str | None, old_state: str, event_type: str,
@@ -179,9 +207,16 @@ class CreateDeviationCommand(CommandEnvelope):
     source_id: uuid.UUID
     source_version: int | None = None
     severity: str
-    owner_subject_id: uuid.UUID
+    # Optional since the auto-deviation fix (docs/testing/demo-gujarati/08 §8.8 item 2): a system-opened
+    # deviation starts with no owner -- a human claims it at triage. Manual creation still normally sets
+    # one (the frontend form keeps requiring it), but the schema/command no longer forces it.
+    owner_subject_id: uuid.UUID | None = None
     planned: bool = False
     planned_scope: dict | None = None
+    # Threaded into the "Created" audit event's `reason` (was always None before) -- lets an
+    # auto-created deviation carry a real narrative ("out-of-range result on step X") instead of a blank
+    # audit trail; optional for manual creation too, unused by the frontend today.
+    reason: str | None = None
 
 
 async def create_deviation(session: AsyncSession, cmd: CreateDeviationCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
@@ -215,9 +250,59 @@ async def create_deviation(session: AsyncSession, cmd: CreateDeviationCommand, a
 
     return await _write_receipt(
         session, cmd=cmd, payload_hash=payload_hash, deviation=deviation, action="Created",
-        actor_user_id=actor_user_id, reason=None, old_state="OPEN",
+        actor_user_id=actor_user_id, reason=cmd.reason, old_state="OPEN",
         event_type="DeviationOpened", event_payload={"id": str(deviation.id), "deviation_number": deviation.deviation_number},
         signature_id=None, expected_version=None, command_type="CreateDeviation",
+    )
+
+
+# ---------------------------------------------------------------------------
+# PreapproveDeviation — Client Topic 11 (SG-061, project-owner-directed). Signed, QA Releaser,
+# independent of the owner/investigator (same `_resolve_signature` shape disposition/close already use;
+# no Document 106 row names this action either, but the client's own answer is the authorization to
+# require one). Only meaningful for planned=True deviations; every forward-pipeline transition is
+# blocked until this completes (see _assert_planned_deviation_preapproved_and_effective).
+# ---------------------------------------------------------------------------
+
+
+class PreapproveDeviationCommand(CommandEnvelope):
+    deviation_id: uuid.UUID
+    expected_version: int
+    reason: str
+    challenge_id: uuid.UUID | None = None
+    reauth_password: str | None = None
+
+
+async def preapprove_deviation(
+    session: AsyncSession, cmd: PreapproveDeviationCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    deviation = await _load_for_update(session, cmd.deviation_id, cmd.expected_version)
+    if not deviation.planned:
+        raise ValidationFailedError("Only a planned deviation can be pre-approved (Client Topic 11)")
+    if deviation.preapproved_at is not None:
+        raise InvalidTransitionError("Deviation is already pre-approved", current_status="preapproved")
+
+    signature_id = await _resolve_signature(
+        session, action="preapprove", actor_user_id=actor_user_id, deviation=deviation,
+        challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,
+    )
+
+    old_state = deviation.state
+    deviation.preapproved_by_user_id = actor_user_id
+    deviation.preapproved_at = datetime.now(timezone.utc)
+    deviation.preapproval_signature_id = signature_id
+    deviation.version += 1
+
+    return await _write_receipt(
+        session, cmd=cmd, payload_hash=payload_hash, deviation=deviation, action="Approved",
+        actor_user_id=actor_user_id, reason=cmd.reason, old_state=old_state,
+        event_type="DeviationPreapproved", event_payload={"id": str(deviation.id)},
+        signature_id=signature_id, expected_version=cmd.expected_version, command_type="PreapproveDeviation",
     )
 
 
@@ -245,6 +330,7 @@ async def triage_deviation(session: AsyncSession, cmd: TriageDeviationCommand, a
     if "TRIAGE" not in ALLOWED_TRANSITIONS.get(deviation.state, set()):
         raise InvalidTransitionError("Illegal deviation transition", current_state=deviation.state, requested="TRIAGE")
     _assert_not_expired_planned(deviation)
+    _assert_planned_deviation_preapproved_and_effective(deviation)
     if not cmd.severity.strip() or not cmd.investigation_priority.strip():
         raise ValidationFailedError("severity and investigation_priority are required")
 
@@ -286,6 +372,7 @@ async def contain_deviation(session: AsyncSession, cmd: ContainDeviationCommand,
     if "CONTAINMENT" not in ALLOWED_TRANSITIONS.get(deviation.state, set()):
         raise InvalidTransitionError("Illegal deviation transition", current_state=deviation.state, requested="CONTAINMENT")
     _assert_not_expired_planned(deviation)
+    _assert_planned_deviation_preapproved_and_effective(deviation)
     if not cmd.immediate_correction and not cmd.containment:
         raise ContainmentRequiredError("At least one of immediate_correction/containment is required")
 
@@ -333,6 +420,7 @@ async def record_investigation(session: AsyncSession, cmd: InvestigationCommand,
     if not entering and deviation.state != "INVESTIGATION":
         raise InvalidTransitionError("Illegal deviation transition", current_state=deviation.state, requested="INVESTIGATION")
     _assert_not_expired_planned(deviation)
+    _assert_planned_deviation_preapproved_and_effective(deviation)
 
     if entering:
         if cmd.investigator_subject_id is None or cmd.due_date is None:
@@ -408,6 +496,7 @@ async def assess_impact(session: AsyncSession, cmd: ImpactCommand, actor_user_id
     if not entering and deviation.state not in ("IMPACT_ASSESSMENT", "REOPENED"):
         raise InvalidTransitionError("Illegal deviation transition", current_state=deviation.state, requested="IMPACT_ASSESSMENT")
     _assert_not_expired_planned(deviation)
+    _assert_planned_deviation_preapproved_and_effective(deviation)
     if entering and (deviation.investigator_subject_id is None or deviation.root_cause is None):
         raise InvestigationIncompleteError("Investigation must have an investigator and a concluded root cause before impact assessment")
     missing = [k for k in IMPACT_CATEGORIES if not str(cmd.impact_assessment.get(k, "")).strip()]
@@ -469,6 +558,7 @@ async def disposition_deviation(session: AsyncSession, cmd: DispositionCommand, 
     if not entering and deviation.state not in ("DISPOSITION", "REOPENED"):
         raise InvalidTransitionError("Illegal deviation transition", current_state=deviation.state, requested="DISPOSITION")
     _assert_not_expired_planned(deviation)
+    _assert_planned_deviation_preapproved_and_effective(deviation)
     if not deviation.immediate_correction and not deviation.containment:
         raise ContainmentRequiredError("Containment must be recorded before disposition")
     if entering and deviation.impact_assessment is None:
@@ -591,6 +681,7 @@ async def close_deviation(session: AsyncSession, cmd: CloseCommand, actor_user_i
     if deviation.state not in ("DISPOSITION", "REOPENED"):
         raise InvalidTransitionError("Illegal deviation transition", current_state=deviation.state, requested="CLOSED")
     _assert_not_expired_planned(deviation)
+    _assert_planned_deviation_preapproved_and_effective(deviation)
 
     # DEV-FR-018: investigation, impact, disposition and mandatory linked actions before QA closure.
     if not deviation.immediate_correction and not deviation.containment:

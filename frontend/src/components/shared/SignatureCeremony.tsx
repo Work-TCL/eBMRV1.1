@@ -45,6 +45,7 @@ export function SignatureCeremony({
   reason = "none",
   extraFields,
   disabled,
+  large,
   onSign,
 }: {
   open: boolean;
@@ -70,6 +71,9 @@ export function SignatureCeremony({
   extraFields?: ReactNode;
   /** Extra caller-side guard (e.g. a required domain field is empty). */
   disabled?: boolean;
+  /** Widens the modal (480px -> 760px) for a summary that needs more room — e.g. a multi-column
+   * criteria/items preview that would otherwise horizontally scroll inside the default width. */
+  large?: boolean;
   onSign: (payload: SignaturePayload) => Promise<unknown>;
 }) {
   const [challengeId, setChallengeId] = useState<string | null>(null);
@@ -146,6 +150,7 @@ export function SignatureCeremony({
       open={open}
       onClose={onClose}
       title={title}
+      large={large}
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={busy}>

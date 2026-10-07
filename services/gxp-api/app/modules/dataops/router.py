@@ -38,6 +38,10 @@ async def get_data_ownership(
     """`resolveDataOwner()` -- DATA-FR-001. Fail-closed: an unregistered entity type is
     `DATA_OWNER_UNKNOWN` (404), never a guessed owner."""
     async with session.begin():
+        # SG-213 reviewed: data_ownership_registry has no site_id column (models.py) -- this registry
+        # is platform/product-wide governance metadata (module docstring: "No tenant_id / site_id"),
+        # confirmed not a per-site record. site_id=None here is "any site holding data_ownership.view",
+        # which is correct for a resource with no site concept at all.
         await evaluate_policy(session, actor.user_id, action="data_ownership.view", site_id=None)
         row = await resolve_data_owner(session, entity_type)
         return {
@@ -65,6 +69,10 @@ async def get_freshness(
     stale/degraded status so a caller can decide whether to re-read the authoritative record before a
     regulated action (DATA-FR-007)."""
     async with session.begin():
+        # SG-213 reviewed: projection_checkpoint has no site_id column (models.py) -- it is the cursor
+        # for one platform-wide rebuildable projection (keyed only by projection_type), not a per-site
+        # record, even though the entity_id being checked for freshness may itself belong to a site.
+        # site_id=None is correct here.
         await evaluate_policy(session, actor.user_id, action="data_ownership.view", site_id=None)
         result = await get_projection_freshness(
             session, projection_type=projection_type, entity_id=entity_id, raise_if_stale=False
@@ -87,6 +95,10 @@ async def post_rebuild_projection(
 
         raise ValidationFailedError("projection_type in path and body must match")
     async with session.begin():
+        # SG-213 reviewed: rebuild_projection() advances a projection_checkpoint row, which has no
+        # site_id column (models.py) and is keyed only by projection_type -- a rebuild re-syncs that
+        # projection from its whole authoritative source_stream, not one site's slice of it. Genuinely
+        # platform-wide; site_id=None is correct.
         await evaluate_policy(session, actor.user_id, action="projection.rebuild", site_id=None)
         return await commands.rebuild_projection(session, cmd, actor.user_id)
 
@@ -98,5 +110,9 @@ async def get_data_dictionary(
     """`DATA-FR-027` -- the machine-readable entity / owner / store / classification / projection
     dictionary, generated from the live registry."""
     async with session.begin():
+        # SG-213 reviewed: data_dictionary.view reads data_ownership_registry, which has no site_id
+        # column at all (confirmed in models.py) -- it is platform-wide governance metadata describing
+        # every entity's owner/store, not a per-site record set. resolve_site_scope would have nothing
+        # to filter by; site_id=None is correct.
         await evaluate_policy(session, actor.user_id, action="data_dictionary.view", site_id=None)
         return await build_data_dictionary(session)

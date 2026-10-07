@@ -3,6 +3,26 @@ transitive (row -> site -> organization) rather than row-level, so what actually
 an actor scoped to one organization's site cannot act on a record belonging to another organization's
 site, and (2) the startup guard that keeps the single-tenant assumption from silently rotting actually
 fires when a second organization appears.
+
+Ported off the retired `app.modules.batch`/`product`/`recipe` legacy trio (SG-044/SG-173 Phase 4/5,
+ADR-0013) onto the authoritative `product_master`/`recipe_master`/`batch_execution` modules -- same
+RBAC-isolation guarantee (UserSiteRole is scoped to a specific site, never inherited across
+organizations), same assertion, different (current) endpoints.
+
+SG-213 (found while porting, 2026-09-23): `batch_execution.router`'s step-start endpoint used to call
+`evaluate_policy(..., site_id=None)` -- "does the actor hold this role at ANY site", not "at this
+batch's site". Fixed in commit ef17d6f (2026-09-29), which rewired step-start and the module's other
+non-create endpoints to fetch the record first and pass `record.site_id`, the same pattern used
+throughout this codebase. `test_cross_organization_access_denied` below now gets the correct 403 and
+is a plain regression test again (the `xfail(strict=True)` that used to document the gap was removed
+2026-10-02 -- it was silently XPASSing, i.e. failing its own `strict` contract, since the ef17d6f fix
+landed).
+
+Client Topic 15 (2026-10-02) asked this same question platform-wide -- not just batch_execution -- and
+confirmed the ef17d6f pattern wasn't applied everywhere: `equipment`/`material` list+read endpoints and
+every QMS list endpoint (`qms.read_support.filtered()`'s optional `site_id` -- see
+`app.modules.policy.service.resolve_site_scope`) had the same class of gap on the *read* side. See
+docs/generated/18_SPEC_GAPS.md SG-213 for the full history.
 """
 
 import uuid
@@ -12,8 +32,9 @@ from sqlalchemy import select
 
 from app.core.db import SessionLocal, assert_single_organization
 from app.core.security import hash_password
-from app.modules.batch.models import Batch
+from app.modules.batch_execution.models import Batch
 from app.modules.iam.models import Organization, Role, Site, User, UserSiteRole
+from app.modules.signature.models import SignaturePolicy
 from tests.conftest import DEMO_PASSWORD, auth_headers, idem, login
 
 
@@ -31,48 +52,91 @@ async def test_cross_organization_access_denied(client, seeded, db):
     across organizations), which is what "isolation by deployment boundary" actually relies on.
     """
     site_a = seeded["site_id"]
-    op_token = await login(client, "operator1")
+    async with db.begin():
+        admin_user = User(
+            username="admin.tenancy", email="admin.tenancy@example.com", full_name="Tenancy Admin",
+            password_hash=hash_password(DEMO_PASSWORD), status="active",
+        )
+        db.add(admin_user)
+        await db.flush()
+        db.add(UserSiteRole(user_id=admin_user.id, site_id=site_a, role_id=seeded["roles"]["Admin"].id))
+        db.add(SignaturePolicy(record_type="product_version", action="release", meaning="Released", signature_required=False))
+        db.add(SignaturePolicy(record_type="recipe_version", action="release", meaning="Released", signature_required=False))
+    admin_token = await login(client, "admin.tenancy")
 
     resp = await client.post(
-        "/products",
-        json={"idempotency_key": idem(), "site_id": str(site_a), "code": "P-TENANCY", "name": "Tenancy Test"},
-        headers=auth_headers(op_token),
-    )
-    product_id = resp.json()["aggregate_id"]
-    resp = await client.post(
-        "/recipes",
+        "/products/v1/drafts",
         json={
-            "idempotency_key": idem(),
-            "product_id": product_id,
-            "version": 1,
-            "steps": [{"step_number": 1, "name": "Step 1", "requires_signature": False}],
+            "idempotency_key": idem(), "product_business_id": "TENPRD-1", "product_code": "TENPRD-1",
+            "name": "Tenancy Test Product", "version_no": 1, "site_id": str(site_a),
+            "manufacturing_profile_code": "pharma",
         },
-        headers=auth_headers(op_token),
-    )
-    recipe_id = resp.json()["aggregate_id"]
-    resp = await client.post(
-        "/batches",
-        json={
-            "idempotency_key": idem(),
-            "site_id": str(site_a),
-            "product_id": product_id,
-            "recipe_id": recipe_id,
-            "recipe_version": 1,
-            "batch_number": "B-TENANCY-A",
-            "target_quantity": "10.000000",
-            "uom": "kg",
-        },
-        headers=auth_headers(op_token),
-    )
-    batch_id = resp.json()["aggregate_id"]
-    resp = await client.post(
-        f"/batches/{batch_id}/issue",
-        json={"idempotency_key": idem(), "batch_id": batch_id, "expected_version": 1},
-        headers=auth_headers(op_token),
+        headers=auth_headers(admin_token),
     )
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/batches/{batch_id}")).json()
-    (step1,) = detail["steps"]
+    product_version_id = resp.json()["aggregate_id"]
+    await client.post(
+        f"/products/v1/drafts/{product_version_id}/submit",
+        json={"idempotency_key": idem(), "product_version_id": product_version_id, "expected_version": 1},
+        headers=auth_headers(admin_token),
+    )
+    resp = await client.post(
+        f"/products/v1/drafts/{product_version_id}/release",
+        json={"idempotency_key": idem(), "product_version_id": product_version_id, "expected_version": 2},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    resp = await client.post(
+        "/recipes/v2/drafts",
+        json={
+            "idempotency_key": idem(), "product_business_id": "TENPRD-1", "recipe_code": "TENRCP-1",
+            "version_no": 1, "product_version_id": product_version_id, "site_id": str(site_a),
+            "manufacturing_profile_code": "pharma",
+            "sections": [{"stable_section_code": "SEC-1", "name": "Dispensing", "sequence": 1}],
+            "steps": [{"stable_step_code": "STEP-A", "section_code": "SEC-1", "step_type": "weigh", "sequence_hint": 1}],
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    recipe_version_id = resp.json()["aggregate_id"]
+    await client.post(
+        f"/recipes/v2/drafts/{recipe_version_id}/submit",
+        json={"idempotency_key": idem(), "recipe_version_id": recipe_version_id, "expected_version": 1},
+        headers=auth_headers(admin_token),
+    )
+    resp = await client.post(
+        f"/recipes/v2/drafts/{recipe_version_id}/release",
+        json={"idempotency_key": idem(), "recipe_version_id": recipe_version_id, "expected_version": 2},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    resp = await client.post(
+        "/batches/v1",
+        json={
+            "idempotency_key": idem(), "site_id": str(site_a), "batch_number": "B-TENANCY-A",
+            "product_version_id": product_version_id, "recipe_version_id": recipe_version_id,
+            "target_qty": "10.0", "target_uom": "kg",
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    batch_id = resp.json()["aggregate_id"]
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/issue",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "expected_version": 1},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "expected_version": 2},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    view = (await client.get(f"/batches/v1/{batch_id}/execution-view", headers=auth_headers(admin_token))).json()
+    ready_step = next(s for s in view["steps"] if s["state"] == "ready")
 
     # A second organization/site/operator, holding no role anywhere near org A's site.
     async with db.begin():
@@ -96,12 +160,12 @@ async def test_cross_organization_access_denied(client, seeded, db):
 
     org_b_token = await login(client, "operator.orgb")
     resp = await client.post(
-        f"/batches/{batch_id}/steps/{step1['batch_step_id']}/start",
+        f"/batches/v1/{batch_id}/steps/{ready_step['step_id']}/start",
         json={
             "idempotency_key": idem(),
             "batch_id": batch_id,
-            "expected_version": 2,
-            "batch_step_id": step1["batch_step_id"],
+            "step_id": ready_step["step_id"],
+            "expected_version": ready_step["version"],
         },
         headers=auth_headers(org_b_token),
     )
@@ -110,4 +174,4 @@ async def test_cross_organization_access_denied(client, seeded, db):
 
     async with SessionLocal() as fresh:
         batch = await fresh.get(Batch, uuid.UUID(batch_id))
-        assert batch.version == 2  # unchanged — org B's actor never touched it
+        assert batch.version == 3  # unchanged — org B's actor never touched it (create + issue + start)

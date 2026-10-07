@@ -15,6 +15,7 @@ from app.core.security import hash_password
 from app.modules.audit.models import AuditEvent
 from app.modules.iam.models import Organization, Site, User, UserSiteRole
 from tests.conftest import DEMO_PASSWORD, auth_headers, idem, login
+from tests.test_batch_execution import _create_body, _released_pair
 
 
 async def _make_admin(db, seeded, username="admin.test"):
@@ -135,51 +136,28 @@ async def test_verify_chain_detects_tampering(client, seeded, db):
     column and hardcode aggregate_version=1 on every event, so their "previous event" lookup order is
     ambiguous once more than one event exists (a pre-existing quirk in the IAM commands built before this
     pass, out of scope to fix here). Batch has a real incrementing version, giving a deterministic chain.
+
+    Ported off the retired `app.modules.batch` legacy trio (SG-044/SG-149/SG-173 Phase 4/5, ADR-0013,
+    2026-09-23) onto `product_master`/`recipe_master`/`batch_execution` -- `create_batch`/`issue_batch`
+    write the identical `aggregate_type="batch"` audit events (`Created` at v1, `Changed` at v2) the
+    legacy module did, so the tamper-detection assertion below is unchanged.
     """
     async with db.begin():
         await _make_admin(db, seeded)
     admin_token = await login(client, "admin.test")
-    op_token = await login(client, "operator1")
+    op_admin_token, product_version_id, recipe_version_id = await _released_pair(db, client, seeded, "aud1")
 
-    product_id = (
-        await client.post(
-            "/products",
-            json={"idempotency_key": idem(), "site_id": str(seeded["site_id"]), "code": "P-AUD", "name": "P"},
-            headers=auth_headers(op_token),
-        )
-    ).json()["aggregate_id"]
-    recipe_id = (
-        await client.post(
-            "/recipes",
-            json={
-                "idempotency_key": idem(),
-                "product_id": product_id,
-                "version": 1,
-                "steps": [{"step_number": 1, "name": "Step 1", "requires_signature": False}],
-            },
-            headers=auth_headers(op_token),
-        )
-    ).json()["aggregate_id"]
-    batch_id = (
-        await client.post(
-            "/batches",
-            json={
-                "idempotency_key": idem(),
-                "site_id": str(seeded["site_id"]),
-                "product_id": product_id,
-                "recipe_id": recipe_id,
-                "recipe_version": 1,
-                "batch_number": "B-AUD",
-                "target_quantity": "10.000000",
-                "uom": "kg",
-            },
-            headers=auth_headers(op_token),
-        )
-    ).json()["aggregate_id"]
     resp = await client.post(
-        f"/batches/{batch_id}/issue",
+        "/batches/v1",
+        json=_create_body(seeded["site_id"], product_version_id, recipe_version_id, "B-AUD"),
+        headers=auth_headers(op_admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    batch_id = resp.json()["aggregate_id"]
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/issue",
         json={"idempotency_key": idem(), "batch_id": batch_id, "expected_version": 1},
-        headers=auth_headers(op_token),
+        headers=auth_headers(op_admin_token),
     )
     assert resp.status_code == 200, resp.text
 

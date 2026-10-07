@@ -3,8 +3,7 @@
 import { use, useState } from "react";
 import {
   api,
-  canApproveQms,
-  canInvestigateQms,
+  hasPermission,
   formatDate,
   formatDateTime,
   isOverdue,
@@ -14,6 +13,7 @@ import {
 } from "@/lib/api";
 import { useApiResource, useEntityOptions, useMe } from "@/lib/hooks";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
+import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { QmsDetailShell, useCommand } from "@/components/qms/QmsDetailShell";
 import { Fact, IdFact } from "@/components/ui/FactGrid";
 import { Card } from "@/components/ui/Card";
@@ -38,8 +38,22 @@ interface AuditDetail extends InternalAudit {
 type AuditAction = "start" | "add_finding" | "close";
 type FindingAction = "respond" | "verify";
 
-// SG-138: no Document 106 policy rows for internal_audit start/close or audit_finding.verify.
-const SIGNATURE_GATED: (AuditAction | FindingAction)[] = ["start", "close", "verify"];
+// SG-138 resolved 2026-09-10 (seed.py SIGNATURE_POLICY_FLOOR rows 98-100): internal_audit start/close and
+// audit_finding.verify are all signed, via the shared Part 11 ceremony (challenge -> password re-entry ->
+// signed mutation) below -- the buttons for these three actions carry a hardcoded pen icon accordingly.
+
+// The exact permission code app/modules/qms/internal_audit_router.py checks for each action. Note
+// internal_audit.start and .finding.add/.finding.response are held by QA Reviewer, NOT QA Releaser
+// (only .close and .finding.verify are QA Releaser) -- the old code gated "start" on the QA-Releaser-
+// class canApproveQms, which would have hidden the Start button from the QA Reviewer who actually holds
+// it (audit finding 2026-09-18).
+const PERMISSION_FOR_ACTION: Record<AuditAction | FindingAction, string> = {
+  start: "internal_audit.start",
+  add_finding: "internal_audit.finding.add",
+  close: "internal_audit.close",
+  respond: "internal_audit.finding.response",
+  verify: "internal_audit.finding.verify",
+};
 
 const FINDING_SEVERITIES = ["critical", "major", "minor", "observation"];
 // app/modules/qms/internal_audit_models.py FINDING_STATES — a finding is closed once VERIFIED.
@@ -54,9 +68,9 @@ export default function AuditDetailPage({ params }: { params: Promise<{ id: stri
 
   const openFindings = data?.findings.filter((f) => !FINDING_CLOSED_STATES.includes(f.state)) ?? [];
 
-  const canStart = data?.state === "SCHEDULED" && canApproveQms(me);
-  const canAddFinding = (data?.state === "IN_PROGRESS" || data?.state === "FINDINGS_OPEN") && canInvestigateQms(me);
-  const canClose = data?.state === "FINDINGS_OPEN" && openFindings.length === 0 && canApproveQms(me);
+  const canStart = data?.state === "SCHEDULED" && hasPermission(me, PERMISSION_FOR_ACTION.start);
+  const canAddFinding = (data?.state === "IN_PROGRESS" || data?.state === "FINDINGS_OPEN") && hasPermission(me, PERMISSION_FOR_ACTION.add_finding);
+  const canClose = data?.state === "FINDINGS_OPEN" && openFindings.length === 0 && hasPermission(me, PERMISSION_FOR_ACTION.close);
 
   return (
     <QmsDetailShell
@@ -168,12 +182,12 @@ export default function AuditDetailPage({ params }: { params: Promise<{ id: stri
                         </td>
                         <td style={{ textAlign: "right" }}>
                           <div className="flex gap-2 justify-end">
-                            {!closed && canInvestigateQms(me) && (
+                            {!closed && hasPermission(me, PERMISSION_FOR_ACTION.respond) && (
                               <Button size="sm" variant="secondary" onClick={() => setFinding({ record: f, action: "respond" })}>
                                 Respond
                               </Button>
                             )}
-                            {!closed && canApproveQms(me) && (
+                            {!closed && hasPermission(me, PERMISSION_FOR_ACTION.verify) && (
                               <Button size="sm" variant="secondary" onClick={() => setFinding({ record: f, action: "verify" })}>
                                 <Icon name="pen" /> Verify
                               </Button>
@@ -240,54 +254,91 @@ function AuditActionModal({
 
   const title =
     action === "start" ? "Start audit" : action === "add_finding" ? "Add finding" : "Close audit";
+  const challengePath = `/qms/v1/audits/${audit.id}/signature-challenges`;
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     run(() => {
-      if (action === "start") {
-        return api.post(`/qms/v1/audits/${audit.id}/start`, {
-          idempotency_key: newIdempotencyKey(),
-          audit_id: audit.id,
-          expected_version: audit.version,
-        });
+      if (action !== "add_finding") {
+        // start/close are signature-gated and never reach this form -- see the early returns below
+        // that render <SignatureCeremony> for them instead.
+        throw new Error(`${action} does not submit through the plain form`);
       }
-      if (action === "add_finding") {
-        return api.post(`/qms/v1/audits/${audit.id}/findings`, {
-          idempotency_key: newIdempotencyKey(),
-          audit_id: audit.id,
-          audit_expected_version: audit.version,
-          finding_number: findingNumber,
-          requirement_ref: requirementRef,
-          observation,
-          severity,
-          owner_subject_id: owner,
-          due_date: dueDate ? new Date(dueDate).toISOString() : null,
-        });
-      }
-      return api.post(`/qms/v1/audits/${audit.id}/close`, {
+      return api.post(`/qms/v1/audits/${audit.id}/findings`, {
         idempotency_key: newIdempotencyKey(),
         audit_id: audit.id,
-        expected_version: audit.version,
-        conclusion,
+        audit_expected_version: audit.version,
+        finding_number: findingNumber,
+        requirement_ref: requirementRef,
+        observation,
+        severity,
+        owner_subject_id: owner,
+        due_date: dueDate ? new Date(dueDate).toISOString() : null,
       });
     });
+  }
+
+  // Document 106 section 9 rows 98-99 (SG-138, resolved): internal_audit start/close are both signed.
+  if (action === "start") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={challengePath}
+        action="start"
+        title={`Start audit - ${audit.audit_number}`}
+        summary="Records the actual start time and moves the audit to IN_PROGRESS."
+        submitLabel="Sign & start"
+        submitVariant="success"
+        onSign={(p) =>
+          api.post(`/qms/v1/audits/${audit.id}/start`, {
+            idempotency_key: p.idempotency_key,
+            audit_id: audit.id,
+            expected_version: audit.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+          })
+        }
+      />
+    );
+  }
+
+  if (action === "close") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={challengePath}
+        action="close"
+        title={`Close audit - ${audit.audit_number}`}
+        summary="Closes the internal audit permanently. This is a released quality decision - signer must be independent of the record's owner."
+        submitLabel="Sign & close"
+        submitVariant="success"
+        disabled={!conclusion.trim()}
+        extraFields={
+          <Field label="Conclusion" required>
+            <textarea className="input" rows={3} value={conclusion} onChange={(e) => setConclusion(e.target.value)} required />
+          </Field>
+        }
+        onSign={(p) =>
+          api.post(`/qms/v1/audits/${audit.id}/close`, {
+            idempotency_key: p.idempotency_key,
+            audit_id: audit.id,
+            expected_version: audit.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+            conclusion,
+          })
+        }
+      />
+    );
   }
 
   return (
     <Modal open onClose={onClose} title={`${title} - ${audit.audit_number}`} large={action === "add_finding"}>
       <form onSubmit={submit}>
-        {SIGNATURE_GATED.includes(action) && (
-          <Banner tone="warn" title="This transition requires an electronic signature">
-            This action needs a signature policy that hasn&apos;t been configured for this deployment yet, so it will be correctly refused rather than proceeding without one.
-          </Banner>
-        )}
-
-        {action === "start" && (
-          <p className="fs-3 mb-3">
-            Starting the audit records the actual start time and moves it to IN_PROGRESS.
-          </p>
-        )}
-
         {action === "add_finding" && (
           <>
             <div className="grid grid-cols-3 gap-4">
@@ -323,12 +374,6 @@ function AuditActionModal({
               kind="user"
             />
           </>
-        )}
-
-        {action === "close" && (
-          <Field label="Conclusion" required>
-            <textarea className="input" rows={3} value={conclusion} onChange={(e) => setConclusion(e.target.value)} required />
-          </Field>
         )}
 
         {error && <p className="error-text mb-2">{error}</p>}
@@ -368,72 +413,44 @@ function FindingActionModal({
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    const base = {
-      idempotency_key: newIdempotencyKey(),
-      finding_id: finding.id,
-      expected_version: finding.version,
-    };
+    if (action !== "respond") {
+      // verify is signature-gated and never reaches this form -- see the early return below that
+      // renders <SignatureCeremony> for it instead.
+      throw new Error("verify does not submit through the plain form");
+    }
     run(() =>
-      action === "respond"
-        ? api.post(`/qms/v1/findings/${finding.id}/response`, {
-            ...base,
-            correction,
-            root_cause: rootCause,
-            action: actionPlan,
-            due_date: dueDate ? new Date(dueDate).toISOString() : null,
-            capa_required: capaRequired,
-            capa_rationale: capaRationale || null,
-          })
-        : api.post(`/qms/v1/findings/${finding.id}/verify`, {
-            ...base,
-            verification_notes: verificationNotes,
-            effective,
-          })
+      api.post(`/qms/v1/findings/${finding.id}/response`, {
+        idempotency_key: newIdempotencyKey(),
+        finding_id: finding.id,
+        expected_version: finding.version,
+        correction,
+        root_cause: rootCause,
+        action: actionPlan,
+        due_date: dueDate ? new Date(dueDate).toISOString() : null,
+        capa_required: capaRequired,
+        capa_rationale: capaRationale || null,
+      })
     );
   }
 
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      title={`${action === "respond" ? "Respond to" : "Verify"} finding ${finding.finding_number}`}
-      large={action === "respond"}
-    >
-      <form onSubmit={submit}>
-        {action === "verify" && (
-          <Banner tone="warn" title="This transition requires an electronic signature">
-            This action needs a signature policy that hasn&apos;t been configured for this deployment yet, so it will be correctly refused rather than proceeding without one.
-          </Banner>
-        )}
-
-        <p className="fs-2 text-muted mb-3">{finding.observation}</p>
-
-        {action === "respond" ? (
+  // Document 106 section 9 row 100 (SG-138, resolved): audit_finding.verify is signed by a qualified
+  // independent verifier, not the performer.
+  if (action === "verify") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`/qms/v1/findings/${finding.id}/signature-challenges`}
+        action="verify"
+        title={`Verify finding ${finding.finding_number}`}
+        summary="Records verification of the finding's response. Signer must be a qualified independent verifier, not the performer."
+        submitLabel="Sign & verify"
+        submitVariant="success"
+        disabled={!verificationNotes.trim()}
+        extraFields={
           <>
-            <Field label="Correction" required hint="What was done about the specific instance found.">
-              <textarea className="input" rows={2} value={correction} onChange={(e) => setCorrection(e.target.value)} required />
-            </Field>
-            <Field label="Root cause" required>
-              <textarea className="input" rows={2} value={rootCause} onChange={(e) => setRootCause(e.target.value)} required />
-            </Field>
-            <Field label="Corrective action" required hint="What stops it recurring.">
-              <textarea className="input" rows={2} value={actionPlan} onChange={(e) => setActionPlan(e.target.value)} required />
-            </Field>
-            <Field label="Action due date">
-              <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-            </Field>
-            <label className="flex items-center gap-2 fs-2 mb-3">
-              <input type="checkbox" checked={capaRequired} onChange={(e) => setCapaRequired(e.target.checked)} />
-              A formal CAPA is required
-            </label>
-            {capaRequired && (
-              <Field label="CAPA rationale" required>
-                <textarea className="input" rows={2} value={capaRationale} onChange={(e) => setCapaRationale(e.target.value)} required />
-              </Field>
-            )}
-          </>
-        ) : (
-          <>
+            <p className="fs-2 text-muted mb-3">{finding.observation}</p>
             <Field label="Verification notes" required hint="Evidence the response actually resolved the finding.">
               <textarea
                 className="input"
@@ -450,6 +467,47 @@ function FindingActionModal({
               </Select>
             </Field>
           </>
+        }
+        onSign={(p) =>
+          api.post(`/qms/v1/findings/${finding.id}/verify`, {
+            idempotency_key: p.idempotency_key,
+            finding_id: finding.id,
+            expected_version: finding.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+            verification_notes: verificationNotes,
+            effective,
+          })
+        }
+      />
+    );
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`Respond to finding ${finding.finding_number}`} large>
+      <form onSubmit={submit}>
+        <p className="fs-2 text-muted mb-3">{finding.observation}</p>
+
+        <Field label="Correction" required hint="What was done about the specific instance found.">
+          <textarea className="input" rows={2} value={correction} onChange={(e) => setCorrection(e.target.value)} required />
+        </Field>
+        <Field label="Root cause" required>
+          <textarea className="input" rows={2} value={rootCause} onChange={(e) => setRootCause(e.target.value)} required />
+        </Field>
+        <Field label="Corrective action" required hint="What stops it recurring.">
+          <textarea className="input" rows={2} value={actionPlan} onChange={(e) => setActionPlan(e.target.value)} required />
+        </Field>
+        <Field label="Action due date">
+          <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+        </Field>
+        <label className="flex items-center gap-2 fs-2 mb-3">
+          <input type="checkbox" checked={capaRequired} onChange={(e) => setCapaRequired(e.target.checked)} />
+          A formal CAPA is required
+        </label>
+        {capaRequired && (
+          <Field label="CAPA rationale" required>
+            <textarea className="input" rows={2} value={capaRationale} onChange={(e) => setCapaRationale(e.target.value)} required />
+          </Field>
         )}
 
         {error && <p className="error-text mb-2">{error}</p>}
@@ -458,7 +516,7 @@ function FindingActionModal({
             Cancel
           </Button>
           <Button type="submit" variant="primary" disabled={busy}>
-            {busy ? "Saving…" : action === "respond" ? "Submit response" : "Verify"}
+            {busy ? "Saving…" : "Submit response"}
           </Button>
         </div>
       </form>

@@ -40,6 +40,16 @@ async def get_search_query(
     index_type: str, sort: str | None = None, limit: int = Query(default=50, le=200),
     session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
+    # SG-213 NOT fixable here, flagged rather than guessed: search.py's own authorize_search_query()
+    # docstring says "tenant/site scoping is applied by the caller... before this", but there is nothing
+    # to scope by -- ProjectionDocumentMetadata (readmodels/models.py) explicitly carries no site_id
+    # ("platform/product-level tracking", ADR-0006) and _ALLOWED_FILTERS above doesn't expose one either.
+    # A rebuild indexes a source_stream's aggregates across every site into one shared index (see
+    # rebuild_search_index in commands.py), so today any actor holding search.query at ANY site can read
+    # indexed_fields for every site's hits -- the same "anywhere" leak SG-213 closes elsewhere, but closing
+    # it here means either adding a site signal to the index row or re-checking every hit against its
+    # authoritative entity's real site (type-dispatched per index_type) -- an authorization-semantics
+    # decision for a human, not a mechanical argument fix.
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="search.query", site_id=None)
         plan = authorize_search_query(
@@ -64,6 +74,9 @@ async def get_search_result_detail(
     index_type: str, entity_id: uuid.UUID,
     session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
+    # SG-213 NOT fixable here -- same gap as get_search_query above: fetch_search_result_detail() checks
+    # the indexed document's freshness against the authoritative version, but never the authoritative
+    # entity's site, and ProjectionDocumentMetadata has no site_id to check locally either.
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="search.query", site_id=None)
         return await fetch_search_result_detail(session, index_type=index_type, entity_id=entity_id)
@@ -78,6 +91,10 @@ async def post_rebuild_index(
         from app.mutation.errors import ValidationFailedError
 
         raise ValidationFailedError("index_type in path and body must match")
+    # SG-213 reviewed: ReadModelCheckpoint (models.py) has no site_id by design (ADR-0006, "platform/
+    # product-level tracking") and rebuild_search_index() (commands.py) deliberately reindexes a
+    # source_stream's aggregates across every site into one shared index -- there is no single site this
+    # mutates, so site_id=None is correct, not a gap.
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="search.rebuild", site_id=None)
         return await commands.rebuild_search_index(session, cmd, actor.user_id)
@@ -88,6 +105,9 @@ async def post_generate_export(
     cmd: commands.GenerateAsyncExportCommand,
     session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
+    # SG-213 reviewed: same as post_rebuild_index above -- generate_async_export() (commands.py) counts
+    # aggregates for a source_stream across every site under one platform-wide ReadModelCheckpoint
+    # (model has no site_id), so site_id=None is correct here too.
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="report.export", site_id=None)
         return await commands.generate_async_export(session, cmd, actor.user_id)
@@ -98,6 +118,9 @@ async def get_read_model_status(
     name: str,
     session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
+    # SG-213 reviewed: ReadModelCheckpoint has no site_id (see post_rebuild_index's comment above) --
+    # a checkpoint's freshness status is a platform-wide fact, not a per-site one, so site_id=None here
+    # is correct.
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="search.query", site_id=None)
         row = (

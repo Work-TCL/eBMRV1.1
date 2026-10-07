@@ -139,6 +139,12 @@ function FieldInputs({
                 onChange={(rows) => setComplexValue?.(f.name, rows)}
                 materialLotOptions={entities.materialLotCodes}
                 materialLotOptionsStatus={entities.materialLotCodesStatus}
+                userOptions={entities.users}
+                userOptionsStatus={entities.usersStatus}
+                equipmentOptions={entities.equipment}
+                equipmentOptionsStatus={entities.equipmentStatus}
+                areaOptions={entities.areas}
+                areaOptionsStatus={entities.areasStatus}
               />
             </div>
           );

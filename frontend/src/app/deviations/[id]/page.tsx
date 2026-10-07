@@ -3,8 +3,7 @@
 import { use, useState } from "react";
 import {
   api,
-  canApproveQms,
-  canInvestigateQms,
+  hasPermission,
   formatDate,
   formatDateTime,
   isOverdue,
@@ -20,7 +19,7 @@ import { Tabs } from "@/components/ui/Tabs";
 import { Card } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
 import { Banner } from "@/components/ui/Banner";
-import { Button } from "@/components/ui/Button";
+import { Button, LinkButton } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
@@ -59,16 +58,21 @@ interface DeviationDetail extends Deviation {
 
 type Transition = "triage" | "contain" | "investigation" | "impact" | "disposition" | "extend" | "close" | "reopen";
 
-// Which transitions the backend's state machine (app/modules/qms/commands.py) will accept from a state.
+// Which transitions the backend's state machine (app/modules/qms/models.py::ALLOWED_TRANSITIONS, plus
+// each command's own guard in commands.py) will actually accept from a state. TRIAGE only ever advances
+// to CONTAINMENT — investigation cannot be opened directly from TRIAGE (record_investigation() only
+// accepts entering from CONTAINMENT or REOPENED). extend_deviation() accepts INVESTIGATION,
+// IMPACT_ASSESSMENT, DISPOSITION and REOPENED. REOPENED itself can advance straight to CONTAINMENT,
+// INVESTIGATION, IMPACT_ASSESSMENT, DISPOSITION or CLOSED per ALLOWED_TRANSITIONS.
 const ALLOWED_FROM: Record<string, Transition[]> = {
   OPEN: ["triage"],
-  TRIAGE: ["contain", "investigation"],
+  TRIAGE: ["contain"],
   CONTAINMENT: ["investigation"],
   INVESTIGATION: ["investigation", "impact", "extend"],
   IMPACT_ASSESSMENT: ["impact", "disposition", "extend"],
-  DISPOSITION: ["close"],
+  DISPOSITION: ["disposition", "close", "extend"],
   CLOSED: ["reopen"],
-  REOPENED: ["impact", "investigation"],
+  REOPENED: ["contain", "investigation", "impact", "disposition", "close", "extend"],
 };
 
 // Document 106 rows 71/73 (2026-09-09, resolved — signature policy seeded: `deviation_record`
@@ -87,6 +91,20 @@ const TRANSITION_LABEL: Record<Transition, string> = {
   extend: "Extend due date",
   close: "Close",
   reopen: "Reopen",
+};
+
+// The exact permission code app/modules/qms/router.py checks for each transition -- each maps 1:1 onto
+// its own qms_deviation.* code, so checking these directly means this page stays correct even if a
+// customer edits which roles hold which of these codes.
+const PERMISSION_FOR_TRANSITION: Record<Transition, string> = {
+  triage: "qms_deviation.triage",
+  contain: "qms_deviation.contain",
+  investigation: "qms_deviation.investigate",
+  impact: "qms_deviation.impact",
+  disposition: "qms_deviation.disposition",
+  extend: "qms_deviation.extend",
+  close: "qms_deviation.close",
+  reopen: "qms_deviation.reopen",
 };
 
 const DISPOSITION_CODES = [
@@ -133,14 +151,18 @@ export default function DeviationDetailPage({ params }: { params: Promise<{ id: 
   const { me } = useMe();
   const entities = useEntityOptions();
   const [pending, setPending] = useState<Transition | null>(null);
+  // Client Topic 11 (SG-061): pre-approval isn't a pipeline Transition (it doesn't change `state`) --
+  // a planned deviation sits wherever it already is and simply unblocks once this completes.
+  const [preapproving, setPreapproving] = useState(false);
   const { data, loading, error, reload } = useApiResource<DeviationDetail>(`/qms/v1/deviations/${id}`);
 
   const allowed = data ? (ALLOWED_FROM[data.state] ?? []) : [];
+  const canPreapprove =
+    !!data && data.planned && !data.preapproved_at && hasPermission(me, "qms_deviation.preapprove");
 
   function canDo(t: Transition): boolean {
-    if (!allowed.includes(t)) return false;
-    if (t === "disposition" || t === "close" || t === "reopen") return canApproveQms(me);
-    return canInvestigateQms(me);
+    if (data?.planned && !data.preapproved_at) return false;
+    return allowed.includes(t) && hasPermission(me, PERMISSION_FOR_TRANSITION[t]);
   }
 
   return (
@@ -152,17 +174,37 @@ export default function DeviationDetailPage({ params }: { params: Promise<{ id: 
       backLabel="Deviations"
       loading={loading}
       error={error}
-      actions={(Object.keys(TRANSITION_LABEL) as Transition[])
-        .filter(canDo)
-        .map((t) => (
-          <Button
-            key={t}
-            variant={t === "close" || t === "disposition" ? "primary" : "secondary"}
-            onClick={() => setPending(t)}
-          >
-            {SIGNATURE_GATED.includes(t) && <Icon name="pen" />} {TRANSITION_LABEL[t]}
-          </Button>
-        ))}
+      actions={[
+        ...(canPreapprove
+          ? [
+              <Button key="preapprove" variant="primary" onClick={() => setPreapproving(true)}>
+                <Icon name="pen" /> Pre-approve
+              </Button>,
+            ]
+          : []),
+        ...(Object.keys(TRANSITION_LABEL) as Transition[])
+          .filter(canDo)
+          .map((t) => (
+            <Button
+              key={t}
+              variant={t === "close" || t === "disposition" ? "primary" : "secondary"}
+              onClick={() => setPending(t)}
+            >
+              {SIGNATURE_GATED.includes(t) && <Icon name="pen" />} {TRANSITION_LABEL[t]}
+            </Button>
+          )),
+        ...(data?.capa_required
+          ? [
+              <LinkButton
+                key="create-linked-capa"
+                variant="secondary"
+                href={`/capa?source_type=deviation&source_id=${id}`}
+              >
+                <Icon name="plus" /> Create linked CAPA
+              </LinkButton>,
+            ]
+          : []),
+      ]}
       facts={
         data && (
           <>
@@ -170,6 +212,11 @@ export default function DeviationDetailPage({ params }: { params: Promise<{ id: 
               <SeverityPill severity={data.severity} />
             </Fact>
             <Fact label="Planned">{data.planned ? "Yes" : "No"}</Fact>
+            {data.planned && (
+              <Fact label="Pre-approval">
+                {data.preapproved_at ? `Approved ${formatDateTime(data.preapproved_at)}` : "Pending"}
+              </Fact>
+            )}
             <Fact label="Due date">
               <span className={isOverdue(data.due_date) && data.state !== "CLOSED" ? "error-text" : undefined}>
                 {formatDate(data.due_date)}
@@ -202,10 +249,16 @@ export default function DeviationDetailPage({ params }: { params: Promise<{ id: 
     >
       {data && (
         <>
+          {data.planned && !data.preapproved_at && (
+            <Banner tone="critical" title="Awaiting pre-approval">
+              This planned deviation cannot be advanced through the pipeline until an authorized
+              Quality/QA person pre-approves it (Client Topic 11).
+            </Banner>
+          )}
           {data.planned && data.planned_scope != null && (
             <Banner tone="warn" title="Planned deviation">
-              This record has a declared end date. Once it passes, the deviation can no longer be advanced
-              through the pipeline.
+              This record has a declared effective time period. It cannot be used before its start date
+              or after its end date passes.
             </Banner>
           )}
 
@@ -319,6 +372,33 @@ export default function DeviationDetailPage({ params }: { params: Promise<{ id: 
               }}
             />
           )}
+
+          {preapproving && (
+            <SignatureCeremony
+              open
+              onClose={() => setPreapproving(false)}
+              onDone={() => {
+                setPreapproving(false);
+                reload();
+              }}
+              challengePath={`/qms/v1/deviations/${data.id}/signature-challenges`}
+              action="preapprove"
+              title={`Pre-approve - ${data.deviation_number}`}
+              summary="Formally approves this planned deviation's declared scope and effective time period before it can be used. This is a quality decision - signer should be independent of the record's investigator and owner."
+              submitLabel="Sign & pre-approve"
+              reason="required"
+              onSign={(p) =>
+                api.post(`/qms/v1/deviations/${data.id}/preapprove`, {
+                  idempotency_key: p.idempotency_key,
+                  deviation_id: data.id,
+                  expected_version: data.version,
+                  challenge_id: p.challenge_id,
+                  reauth_password: p.reauth_password,
+                  reason: p.reason,
+                })
+              }
+            />
+          )}
         </>
       )}
     </QmsDetailShell>
@@ -344,7 +424,7 @@ function TransitionModal({
   const [productImpact, setProductImpact] = useState("");
   const [correction, setCorrection] = useState("");
   const [containment, setContainment] = useState("");
-  const [investigator, setInvestigator] = useState(deviation.investigator_subject_id ?? deviation.owner_subject_id);
+  const [investigator, setInvestigator] = useState(deviation.investigator_subject_id ?? deviation.owner_subject_id ?? "");
   const [dueDate, setDueDate] = useState("");
   const [rootCauseMethod, setRootCauseMethod] = useState("5-why");
   const [rootCauseConclusion, setRootCauseConclusion] = useState("");

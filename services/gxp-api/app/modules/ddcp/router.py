@@ -5,12 +5,14 @@ this module's operations are genuinely public, matching its own §4 function cat
 import uuid
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
+from app.modules.batch_execution.models import Batch
 from app.modules.ddcp import commands as ddcp_commands
 from app.modules.ddcp.models import (
     INJECTABLE_SUBTYPES,
@@ -20,7 +22,10 @@ from app.modules.ddcp.models import (
     FillOperation,
 )
 from app.modules.policy.service import evaluate_policy
+from app.modules.recipe_master.models import RecipeVersion
+from app.modules.signature.service import create_challenge, resolve_signature_requirement
 from app.mutation.errors import NotFoundError, ValidationFailedError
+from app.mutation.hashing import sha256_hex
 from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/ddcp/v1/prefilled-syringe", tags=["ddcp-prefilled-syringe"])
@@ -30,9 +35,18 @@ PROFILE_SORTABLE = {"profile_code": DdcpProfileVersion.profile_code, "created_at
 
 def _profile_summary_dict(profile: DdcpProfileVersion) -> dict:
     return {
-        "id": str(profile.id), "profile_code": profile.profile_code, "subtype": profile.subtype,
-        "version": profile.version, "state": profile.state,
+        "id": str(profile.id), "site_id": str(profile.site_id), "profile_code": profile.profile_code,
+        "subtype": profile.subtype, "version": profile.version, "state": profile.state,
         "product_version_id": str(profile.product_version_id) if profile.product_version_id else None,
+        "dosage_form": profile.dosage_form, "presentation": profile.presentation,
+        "constituent_architecture": profile.constituent_architecture,
+        "required_controls": profile.required_controls,
+        "release_checkpoint_set": profile.release_checkpoint_set,
+        "vault_object_id": str(profile.vault_object_id) if profile.vault_object_id else None,
+        "released_by": str(profile.released_by) if profile.released_by else None,
+        "release_signature_id": str(profile.release_signature_id) if profile.release_signature_id else None,
+        "effective_from": profile.effective_from.isoformat() if profile.effective_from else None,
+        "created_at": profile.created_at.isoformat(),
     }
 
 
@@ -73,6 +87,82 @@ async def get_profile(profile_id: uuid.UUID, session: AsyncSession = Depends(get
         return _profile_summary_dict(profile)
 
 
+# --- Signature challenges (SG-148 Client Topic 12, project-owner-directed) ------------------------------
+# One generic endpoint for the 4 now-signed DDCP actions, mirroring the "obtain a challenge_id" step every
+# other signing module exposes (see e.g. app/modules/qms/signature_support.py) -- `ddcp.commands` itself
+# computes the identical record_version/record_hash values at mutation time, so the challenge created here
+# must match exactly or `consume_challenge()` rejects it as "record changed after the signature challenge
+# was created" (SIG-FR-014). `fill_operation`/`start` is the one case where the signed record does not
+# exist yet (same shape SG-092's `fill_operation/start` already resolved): the challenge binds to
+# `batch_id` at a synthetic version=0, not to a FillOperation row.
+_DDCP_SIGNABLE_ACTIONS = {
+    ("ddcp_profile_version", "release"): "ddcp_profile.release",
+    ("constituent_handoff", "decide"): "ddcp_constituent.decide",
+    ("fill_operation", "start"): "ddcp_fill.start",
+    ("fill_operation", "complete"): "ddcp_fill.complete",
+}
+
+
+class DdcpSignatureChallengeRequest(BaseModel):
+    record_type: str
+    action: str
+    record_id: uuid.UUID | None = None
+    batch_id: uuid.UUID | None = None
+
+
+@router.post("/signature-challenges")
+async def post_signature_challenge(
+    body: DdcpSignatureChallengeRequest, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    required_action = _DDCP_SIGNABLE_ACTIONS.get((body.record_type, body.action))
+    if required_action is None:
+        raise ValidationFailedError("Unknown record_type/action for a DDCP signature challenge", record_type=body.record_type, action=body.action)
+
+    async with session.begin():
+        if body.record_type == "ddcp_profile_version":
+            if body.record_id is None:
+                raise ValidationFailedError("record_id is required")
+            profile = await session.get(DdcpProfileVersion, body.record_id)
+            if profile is None:
+                raise NotFoundError("Injectable profile version not found")
+            site_id, record_version = profile.site_id, profile.version
+            record_hash = sha256_hex({"id": str(profile.id), "version": profile.version, "state": profile.state})
+        elif body.record_type == "constituent_handoff":
+            if body.record_id is None:
+                raise ValidationFailedError("record_id is required")
+            handoff = await session.get(ConstituentHandoff, body.record_id)
+            if handoff is None:
+                raise NotFoundError("Constituent handoff not found")
+            site_id, record_version = handoff.site_id, handoff.version
+            record_hash = sha256_hex({"id": str(handoff.id), "state": handoff.state})
+        elif body.record_type == "fill_operation" and body.action == "start":
+            if body.batch_id is None:
+                raise ValidationFailedError("batch_id is required to start a filling stage")
+            batch = await session.get(Batch, body.batch_id)
+            if batch is None:
+                raise NotFoundError("Batch not found")
+            site_id, record_version = batch.site_id, 0
+            record_hash = sha256_hex({"batch_id": str(body.batch_id)})
+        else:
+            if body.record_id is None:
+                raise ValidationFailedError("record_id is required")
+            fill_op = await session.get(FillOperation, body.record_id)
+            if fill_op is None:
+                raise NotFoundError("Fill operation not found")
+            site_id, record_version = fill_op.site_id, fill_op.version
+            record_hash = sha256_hex({"id": str(fill_op.id), "state": fill_op.state})
+
+        await evaluate_policy(session, actor.user_id, action=required_action, site_id=site_id)
+        policy = await resolve_signature_requirement(session, record_type=body.record_type, action=body.action)
+        challenge = await create_challenge(
+            session, user_id=actor.user_id, record_type=body.record_type,
+            record_id=body.record_id or body.batch_id, record_version=record_version,
+            record_hash=record_hash, meaning=policy.meaning,
+        )
+        return {"challenge_id": str(challenge.id), "meaning": challenge.meaning, "expires_at": challenge.expires_at.isoformat()}
+
+
 # Read-only list — lets the frontend offer a "pick a profile" selector instead of requiring the operator
 # to already have the profile id in hand (the id is otherwise only ever shown once, in the create/release
 # response). `state` defaults to RELEASED (the only state a batch can actually use), matching what a
@@ -101,13 +191,54 @@ async def list_profiles(
 # --- ConstituentHandoff (PFS-FR-003/004, §8) -------------------------------------------------------------
 
 
+def _handoff_dict(h: ConstituentHandoff) -> dict:
+    return {
+        "id": str(h.id), "site_id": str(h.site_id), "batch_id": str(h.batch_id),
+        "from_constituent": h.from_constituent, "to_constituent": h.to_constituent,
+        "source_batch_reference": h.source_batch_reference, "attributes": h.attributes,
+        "accepted_by": str(h.accepted_by) if h.accepted_by else None,
+        "acceptance_signature_id": str(h.acceptance_signature_id) if h.acceptance_signature_id else None,
+        "accepted_at": h.accepted_at.isoformat() if h.accepted_at else None,
+        "state": h.state, "rejection_reason": h.rejection_reason, "version": h.version,
+    }
+
+
+@router.get("/constituent-handoffs/{handoff_id}")
+async def get_handoff(
+    handoff_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    # Matches this router's other batch/record read endpoints (readiness/genealogy/review-summary):
+    # authenticated, not yet RBAC-scoped -- see get_batch_review_summary()'s note.
+    del actor
+    handoff = await session.get(ConstituentHandoff, handoff_id)
+    if handoff is None:
+        raise NotFoundError("Constituent handoff not found")
+    return _handoff_dict(handoff)
+
+
+@router.get("/batches/{batch_id}/constituent-handoffs")
+async def get_batch_handoffs(
+    batch_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
+    del actor
+    handoffs = (
+        (await session.execute(select(ConstituentHandoff).where(ConstituentHandoff.batch_id == batch_id)))
+        .scalars()
+        .all()
+    )
+    return [_handoff_dict(h) for h in handoffs]
+
+
 @router.post("/constituent-handoffs", response_model=MutationReceipt)
 async def post_record_handoff(
     cmd: ddcp_commands.RecordConstituentHandoffCommand, session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_constituent.handoff", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_constituent.handoff", site_id=batch.site_id)
         return await ddcp_commands.record_constituent_handoff(session, cmd, actor.user_id)
 
 
@@ -149,7 +280,10 @@ async def post_start_filling_stage(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_fill.start", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_fill.start", site_id=batch.site_id)
         return await ddcp_commands.start_filling_stage(session, cmd, actor.user_id)
 
 
@@ -174,7 +308,10 @@ async def post_record_count(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_fill.record_count", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_fill.record_count", site_id=batch.site_id)
         return await ddcp_commands.record_syringe_unit_or_count(session, cmd, actor.user_id)
 
 
@@ -217,7 +354,10 @@ async def post_record_device_assembly(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_device.assemble", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_device.assemble", site_id=batch.site_id)
         return await ddcp_commands.record_device_assembly_step(session, cmd, actor.user_id)
 
 
@@ -245,7 +385,10 @@ async def post_record_functional_test(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_device.record_test", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_device.record_test", site_id=batch.site_id)
         return await ddcp_commands.record_pfs_functional_test(session, cmd, actor.user_id)
 
 
@@ -257,7 +400,10 @@ async def post_evaluate_release_readiness(
     batch_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_release.evaluate", site_id=None)
+        batch = await session.get(Batch, batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_release.evaluate", site_id=batch.site_id)
         return await ddcp_commands.evaluate_pfs_release_readiness(session, batch_id, actor.user_id)
 
 
@@ -269,7 +415,10 @@ async def post_create_evidence_package(
     if cmd.batch_id != batch_id:
         raise ValidationFailedError("batch_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_release.export", site_id=None)
+        batch = await session.get(Batch, batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_release.export", site_id=batch.site_id)
         return await ddcp_commands.create_pfs_batch_evidence_package(session, cmd, actor.user_id)
 
 
@@ -308,7 +457,10 @@ async def post_record_stability_retain_reference(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_fill.record_count", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_fill.record_count", site_id=batch.site_id)
         return await ddcp_commands.record_stability_retain_reference(session, cmd, actor.user_id)
 
 
@@ -341,7 +493,10 @@ async def post_create_step_mapping(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_profile.author", site_id=None)
+        recipe_version = await session.get(RecipeVersion, cmd.recipe_version_id)
+        if recipe_version is None:
+            raise NotFoundError("Recipe version not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_profile.author", site_id=recipe_version.site_id)
         return await ddcp_commands.create_step_mapping(session, cmd, actor.user_id)
 
 

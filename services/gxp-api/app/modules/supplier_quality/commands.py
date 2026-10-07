@@ -5,14 +5,18 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.referential import find_all_blocking_references
 from app.core.security import verify_password
+from app.modules.codegen import service as codegen_service
 from app.modules.iam.models import User
+from app.modules.material.models import Material
 from app.modules.policy.service import evaluate_policy
 from app.modules.signature import service as signature_service
 from app.modules.supplier_quality.models import (
     Supplier,
     SupplierQualification,
     SupplierQualificationEvidence,
+    SupplierQualificationScopeItem,
     SupplierSite,
 )
 from app.modules.vault.models import VaultObject
@@ -68,10 +72,16 @@ class SupplierSiteInput(BaseModel):
     certification_refs: dict | None = None
 
 
+# Client gap-analysis Phase 6 (2026-10-05): "service_provider" added so calibration/repair/test-lab
+# vendors -- which are neither a material supplier nor a manufacturer -- have a proper home, reusable as
+# a Supplier picker on EquipmentCalibration.provider_supplier_id and QcTestOrder.external_provider_id.
+SUPPLIER_ROLE_TYPES = ("supplier", "manufacturer", "both", "service_provider")
+
+
 class CreateSupplierCommand(CommandEnvelope):
-    supplier_code: str
+    supplier_code: str | None = None
     legal_name: str
-    role_type: str  # supplier | manufacturer | both
+    role_type: str  # supplier | manufacturer | both | service_provider
     country: str | None = None
     external_mappings: dict | None = None
     sites: list[SupplierSiteInput] = []
@@ -85,8 +95,10 @@ async def create_supplier(
     if existing is not None:
         return _receipt_from_existing(existing)
 
-    if cmd.role_type not in ("supplier", "manufacturer", "both"):
-        raise ValidationFailedError("role_type must be 'supplier', 'manufacturer' or 'both'")
+    if cmd.role_type not in SUPPLIER_ROLE_TYPES:
+        raise ValidationFailedError(
+            "role_type must be one of the controlled list", allowed=list(SUPPLIER_ROLE_TYPES)
+        )
 
     # SUP-FR-029: detect a likely duplicate legal identity before creation. Exact supplier_code
     # collisions are already rejected by the unique constraint; this catches the same legal entity
@@ -102,8 +114,18 @@ async def create_supplier(
             existing_supplier_id=str(duplicate.id),
         )
 
+    if cmd.supplier_code and cmd.supplier_code.strip():
+        code_conflict = (
+            await session.execute(select(Supplier).where(Supplier.supplier_code == cmd.supplier_code))
+        ).scalar_one_or_none()
+        if code_conflict is not None:
+            raise ValidationFailedError("supplier_code is already in use", supplier_code=cmd.supplier_code)
+        supplier_code = cmd.supplier_code
+    else:
+        supplier_code = await codegen_service.next_code(session, entity_type="SUPPLIER", prefix="SUP")
+
     supplier = Supplier(
-        supplier_code=cmd.supplier_code,
+        supplier_code=supplier_code,
         legal_name=cmd.legal_name,
         role_type=cmd.role_type,
         status="draft",
@@ -176,6 +198,320 @@ async def create_supplier(
 
 
 # ---------------------------------------------------------------------------
+# AddSupplierSite -- bug fix: Document 18 §7 only ever declared site creation embedded in
+# CreateSupplier's own command (see the comment above), so there was no way to add a site to a
+# supplier that already existed. Same fields/defaults as the embedded path (SupplierSiteInput),
+# same permission (supplier.create -- adding a site is the same class of master-data-authoring
+# action as creating the supplier itself), just addressed at one existing supplier instead of a
+# list embedded in the create call.
+# ---------------------------------------------------------------------------
+
+
+class AddSupplierSiteCommand(CommandEnvelope):
+    supplier_id: uuid.UUID
+    site: SupplierSiteInput
+
+
+async def add_supplier_site(
+    session: AsyncSession, cmd: AddSupplierSiteCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    supplier = await session.get(Supplier, cmd.supplier_id)
+    if supplier is None:
+        raise NotFoundError("Supplier not found")
+
+    site = SupplierSite(
+        supplier_id=supplier.id,
+        site_name=cmd.site.site_name,
+        address_line1=cmd.site.address_line1,
+        address_line2=cmd.site.address_line2,
+        city=cmd.site.city,
+        state_province=cmd.site.state_province,
+        postal_code=cmd.site.postal_code,
+        country=cmd.site.country,
+        manufacturer_flag=cmd.site.manufacturer_flag,
+        certification_refs=cmd.site.certification_refs,
+        status="active",
+        version=1,
+    )
+    session.add(site)
+    await session.flush()
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session,
+        site_id=None,
+        aggregate_type="supplier_site",
+        aggregate_id=site.id,
+        aggregate_version=1,
+        action="Created",
+        actor_id=actor_user_id,
+        correlation_id=correlation_id,
+        new_value={"supplier_id": str(supplier.id), "site_name": site.site_name},
+    )
+    await write_outbox_event(
+        session,
+        event_type="SupplierSiteAdded",
+        aggregate_type="supplier_site",
+        aggregate_id=site.id,
+        aggregate_version=1,
+        payload={"id": str(site.id), "supplier_id": str(supplier.id), "site_name": site.site_name},
+        correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session,
+        site_id=None,
+        command_type="AddSupplierSite",
+        aggregate_type="supplier_site",
+        aggregate_id=site.id,
+        expected_version=None,
+        resulting_version=1,
+        idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash,
+        actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id,
+        aggregate_id=site.id,
+        resulting_version=1,
+        audit_event_id=audit_event.id,
+        correlation_id=correlation_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# UpdateSupplier / DeleteSupplier -- project-owner-directed (2026-10-06): a supplier record authored with
+# a typo, or registered speculatively and no longer needed, had no way to be corrected or removed before
+# any qualification work started on it. Both gated to `status == "draft"` -- the one state SUP-FR-003's
+# own qualification-request step (`create_supplier_qualification` above, lines ~383-386) never leaves a
+# supplier in once a qualification exists, so "draft" reliably means "nothing regulated has happened to
+# this record yet". Identity fields (`supplier_code`, `sites`) stay out of UpdateSupplier -- supplier_code
+# follows the same locked-after-creation precedent as Product/Recipe/Material's own identity fields, and
+# sites are already managed through `add_supplier_site` above.
+# ---------------------------------------------------------------------------
+
+
+class UpdateSupplierCommand(CommandEnvelope):
+    supplier_id: uuid.UUID
+    expected_version: int
+    legal_name: str
+    role_type: str
+    country: str | None = None
+    external_mappings: dict | None = None
+
+
+async def update_supplier(
+    session: AsyncSession, cmd: UpdateSupplierCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    result = await session.execute(select(Supplier).where(Supplier.id == cmd.supplier_id).with_for_update())
+    supplier = result.scalar_one_or_none()
+    if supplier is None:
+        raise NotFoundError("Supplier not found")
+    if supplier.version != cmd.expected_version:
+        raise StaleVersionError(
+            "Supplier was modified by another actor since it was read",
+            expected_version=cmd.expected_version,
+            current_version=supplier.version,
+        )
+    if supplier.status != "draft":
+        raise InvalidTransitionError(
+            "Only a draft supplier can be edited", current_status=supplier.status
+        )
+    if cmd.role_type not in SUPPLIER_ROLE_TYPES:
+        raise ValidationFailedError(
+            "role_type must be one of the controlled list", allowed=list(SUPPLIER_ROLE_TYPES)
+        )
+
+    # Same SUP-FR-029 duplicate-identity check create_supplier runs, excluding this supplier's own row --
+    # a rename must not collide with a different, already-existing legal entity.
+    normalized_name = " ".join(cmd.legal_name.strip().lower().split())
+    dup_stmt = select(Supplier).where(
+        func.lower(Supplier.legal_name) == normalized_name, Supplier.id != supplier.id
+    )
+    if cmd.country:
+        dup_stmt = dup_stmt.where(Supplier.country == cmd.country)
+    duplicate = (await session.execute(dup_stmt)).scalars().first()
+    if duplicate is not None:
+        raise DuplicateSupplierError(
+            "A supplier with this legal name and country already exists",
+            existing_supplier_id=str(duplicate.id),
+        )
+
+    old_value = {
+        "legal_name": supplier.legal_name, "role_type": supplier.role_type,
+        "country": supplier.country, "external_mappings": supplier.external_mappings,
+    }
+    supplier.legal_name = cmd.legal_name
+    supplier.role_type = cmd.role_type
+    supplier.country = cmd.country
+    supplier.external_mappings = cmd.external_mappings
+    supplier.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session,
+        site_id=None,
+        aggregate_type="supplier",
+        aggregate_id=supplier.id,
+        aggregate_version=supplier.version,
+        action="Changed",
+        actor_id=actor_user_id,
+        correlation_id=correlation_id,
+        old_value=old_value,
+        new_value={
+            "legal_name": supplier.legal_name, "role_type": supplier.role_type,
+            "country": supplier.country, "external_mappings": supplier.external_mappings,
+        },
+    )
+    await write_outbox_event(
+        session,
+        event_type="SupplierUpdated",
+        aggregate_type="supplier",
+        aggregate_id=supplier.id,
+        aggregate_version=supplier.version,
+        payload={"id": str(supplier.id), "legal_name": supplier.legal_name},
+        correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session,
+        site_id=None,
+        command_type="UpdateSupplier",
+        aggregate_type="supplier",
+        aggregate_id=supplier.id,
+        expected_version=cmd.expected_version,
+        resulting_version=supplier.version,
+        idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash,
+        actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id,
+        aggregate_id=supplier.id,
+        resulting_version=supplier.version,
+        audit_event_id=audit_event.id,
+        correlation_id=correlation_id,
+    )
+
+
+class DeleteSupplierCommand(CommandEnvelope):
+    supplier_id: uuid.UUID
+
+
+async def delete_supplier(
+    session: AsyncSession, cmd: DeleteSupplierCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    supplier = await session.get(Supplier, cmd.supplier_id)
+    if supplier is None:
+        raise NotFoundError("Supplier not found")
+    if supplier.status != "draft":
+        raise InvalidTransitionError(
+            "Only a draft supplier can be deleted", current_status=supplier.status
+        )
+
+    # Defense in depth beyond the status gate above: a draft supplier's own sites are expected and are
+    # cascade-deleted below (nothing else should reference them yet, since a qualification -- the only
+    # thing that keys off supplier_site_id -- always moves the parent supplier out of "draft" the moment
+    # one is requested), but this is checked explicitly rather than only trusted.
+    site_ids = (
+        await session.execute(select(SupplierSite.id).where(SupplierSite.supplier_id == supplier.id))
+    ).scalars().all()
+    if site_ids:
+        qualification_count = (
+            await session.execute(
+                select(func.count()).select_from(SupplierQualification).where(
+                    SupplierQualification.supplier_site_id.in_(site_ids)
+                )
+            )
+        ).scalar_one()
+        if qualification_count > 0:
+            raise ValidationFailedError(
+                f"Cannot delete supplier: {qualification_count} qualification(s) reference its site(s)"
+            )
+
+    # Walks the live FK catalog for every other table pointing at this supplier (material receipts,
+    # equipment calibration provider, QC external-lab provider, approved-supplier lists, ...) -- its own
+    # `supplier_site` entry is excluded below since that child is cascade-deleted by this command itself,
+    # not a real blocker.
+    blockers = [
+        b
+        for b in await find_all_blocking_references(session, schema="ebmr", table="supplier", value=supplier.id)
+        if "ebmr.supplier_site" not in b
+    ]
+    if blockers:
+        raise ValidationFailedError(f"Cannot delete supplier: referenced by {', '.join(blockers)}")
+
+    old_value = {"supplier_code": supplier.supplier_code, "legal_name": supplier.legal_name, "status": supplier.status}
+    supplier_id = supplier.id
+
+    for site_id in site_ids:
+        site = await session.get(SupplierSite, site_id)
+        await session.delete(site)
+    # Explicit flush before deleting the parent -- Supplier/SupplierSite carry plain FK columns with no
+    # ORM `relationship()` between them (this codebase's consistent style), so autoflush has no
+    # dependency information to order the two DELETEs correctly on its own.
+    await session.flush()
+    await session.delete(supplier)
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session,
+        site_id=None,
+        aggregate_type="supplier",
+        aggregate_id=supplier_id,
+        aggregate_version=1,
+        action="Deleted",
+        actor_id=actor_user_id,
+        correlation_id=correlation_id,
+        old_value=old_value,
+    )
+    await write_outbox_event(
+        session,
+        event_type="SupplierDeleted",
+        aggregate_type="supplier",
+        aggregate_id=supplier_id,
+        aggregate_version=1,
+        payload={"id": str(supplier_id)},
+        correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session,
+        site_id=None,
+        command_type="DeleteSupplier",
+        aggregate_type="supplier",
+        aggregate_id=supplier_id,
+        expected_version=None,
+        resulting_version=1,
+        idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash,
+        actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id,
+        aggregate_id=supplier_id,
+        resulting_version=1,
+        audit_event_id=audit_event.id,
+        correlation_id=correlation_id,
+    )
+
+
+# ---------------------------------------------------------------------------
 # CreateSupplierQualification -- SUP-FR-003/004/005/009/013: POST /suppliers/{id}/qualifications.
 # ---------------------------------------------------------------------------
 
@@ -189,6 +525,10 @@ class CreateSupplierQualificationCommand(CommandEnvelope):
     supplier_id: uuid.UUID
     supplier_site_id: uuid.UUID
     scope: dict | None = None
+    # Client gap-analysis Phase 3 (2026-10-05): structured scope -- which Material rows this
+    # qualification covers, alongside (not replacing, per project-owner direction) the free-text `scope`
+    # notes above.
+    scope_material_ids: list[uuid.UUID] = []
     risk_class: str | None = None
     effective_from: datetime | None = None
     expires_at: datetime | None = None
@@ -222,6 +562,18 @@ async def create_supplier_qualification(
         if vault_obj is None:
             raise NotFoundError("quality_agreement_vault_id does not reference an existing vault object")
 
+    scope_material_ids = list(dict.fromkeys(cmd.scope_material_ids))  # de-dupe, preserve order
+    if scope_material_ids:
+        found = (
+            await session.execute(select(Material.id).where(Material.id.in_(scope_material_ids)))
+        ).scalars().all()
+        missing = set(scope_material_ids) - set(found)
+        if missing:
+            raise NotFoundError(
+                "scope_material_ids contains unknown material id(s)",
+                material_ids=[str(m) for m in missing],
+            )
+
     qualification = SupplierQualification(
         supplier_site_id=site.id,
         requested_by_user_id=actor_user_id,
@@ -248,6 +600,13 @@ async def create_supplier_qualification(
                 supplier_qualification_id=qualification.id,
                 vault_object_id=evidence_input.vault_object_id,
                 evidence_category=evidence_input.evidence_category,
+            )
+        )
+
+    for material_id in scope_material_ids:
+        session.add(
+            SupplierQualificationScopeItem(
+                supplier_qualification_id=qualification.id, material_id=material_id
             )
         )
 
@@ -464,4 +823,120 @@ async def approve_supplier_qualification(
         audit_event_id=audit_event.id,
         signature_id=signature_id,
         correlation_id=correlation_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# SuspendSupplier / ReinstateSupplier — SG-097 (2026-09-22, project-owner-directed, option A): the owning
+# command for `ebmr.supplier.status` a SCAR closure needs but never had. Called directly by
+# `qms/scar_commands.py::close_scar()` (same cross-module owning-command precedent as
+# `material/commands.py`'s call into `qms_commands.create_deviation()`, AG-06) when the SCAR's
+# `source_status_decision` is "suspend"/"reinstate" -- not itself independently signed (it is a side
+# effect of the already-signed SCAR closure, and Document 106 has no row of its own for it), but RBAC-
+# gated so the calling actor must hold the new `supplier.suspend`/`supplier.reinstate` permission.
+# Once `Supplier.status` actually changes, the existing RCV-FR-005 receipt-examination check
+# (`material/commands.py`, `supplier.status != "approved"` -> `source_not_approved` discrepancy hold)
+# already gates receiving from a suspended source with no changes needed there -- this closes SG-097's
+# "does not gate materials-module receipt" half. The "does not gate materials-module use/issue" half
+# (MAT-013 FEFO/eligibility for already-received lots) is a separate, larger scope the SG-097 entry's own
+# option (A) also names; not attempted this pass, left open.
+# ---------------------------------------------------------------------------
+
+
+class SuspendSupplierCommand(CommandEnvelope):
+    supplier_id: uuid.UUID
+    reason: str
+
+
+async def suspend_supplier(session: AsyncSession, cmd: SuspendSupplierCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    if not cmd.reason.strip():
+        raise ValidationFailedError("reason is required to suspend a supplier")
+
+    supplier = await session.get(Supplier, cmd.supplier_id)
+    if supplier is None:
+        raise NotFoundError("Supplier not found")
+
+    await evaluate_policy(session, actor_user_id, action="supplier.suspend", site_id=None)
+
+    old_status = supplier.status
+    supplier.status = "suspended"
+    supplier.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=None, aggregate_type="supplier", aggregate_id=supplier.id,
+        aggregate_version=supplier.version, action="StatusChanged", actor_id=actor_user_id,
+        correlation_id=correlation_id, reason=cmd.reason,
+        old_value={"status": old_status}, new_value={"status": "suspended"},
+    )
+    await write_outbox_event(
+        session, event_type="SupplierSuspended", aggregate_type="supplier", aggregate_id=supplier.id,
+        aggregate_version=supplier.version, payload={"id": str(supplier.id)}, correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=None, command_type="SuspendSupplier", aggregate_type="supplier",
+        aggregate_id=supplier.id, expected_version=None, resulting_version=supplier.version,
+        idempotency_key=cmd.idempotency_key, command_hash=payload_hash, actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=supplier.id, resulting_version=supplier.version,
+        audit_event_id=audit_event.id, correlation_id=correlation_id,
+    )
+
+
+class ReinstateSupplierCommand(CommandEnvelope):
+    supplier_id: uuid.UUID
+    reason: str
+
+
+async def reinstate_supplier(session: AsyncSession, cmd: ReinstateSupplierCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    if not cmd.reason.strip():
+        raise ValidationFailedError("reason is required to reinstate a supplier")
+
+    supplier = await session.get(Supplier, cmd.supplier_id)
+    if supplier is None:
+        raise NotFoundError("Supplier not found")
+
+    await evaluate_policy(session, actor_user_id, action="supplier.reinstate", site_id=None)
+
+    old_status = supplier.status
+    # Reinstating returns the supplier to "approved" only if it was actually suspended -- a reinstate
+    # decision against a supplier that was never suspended (or already qualified some other way) is a
+    # no-op on status, matching create_supplier_case()'s own "no later reinstate" check reading only
+    # the most recent CLOSED SCAR's decision, not this command's own precondition.
+    if supplier.status == "suspended":
+        supplier.status = "approved"
+    supplier.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=None, aggregate_type="supplier", aggregate_id=supplier.id,
+        aggregate_version=supplier.version, action="StatusChanged", actor_id=actor_user_id,
+        correlation_id=correlation_id, reason=cmd.reason,
+        old_value={"status": old_status}, new_value={"status": supplier.status},
+    )
+    await write_outbox_event(
+        session, event_type="SupplierReinstated", aggregate_type="supplier", aggregate_id=supplier.id,
+        aggregate_version=supplier.version, payload={"id": str(supplier.id)}, correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=None, command_type="ReinstateSupplier", aggregate_type="supplier",
+        aggregate_id=supplier.id, expected_version=None, resulting_version=supplier.version,
+        idempotency_key=cmd.idempotency_key, command_hash=payload_hash, actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=supplier.id, resulting_version=supplier.version,
+        audit_event_id=audit_event.id, correlation_id=correlation_id,
     )

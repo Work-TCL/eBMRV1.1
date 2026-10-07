@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.core.security import AuthenticatedActor, get_current_actor
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.signature.service import chain_signatures_so_far, create_challenge, resolve_signature_requirement
 from app.modules.vault import service as vault_service
 from app.modules.vault.commands import (
@@ -47,6 +47,34 @@ def _object_dict(obj) -> dict:
     }
 
 
+def _evidence_dict(e) -> dict:
+    return {
+        "id": str(e.id),
+        "vault_object_id": str(e.vault_object_id),
+        "evidence_id": str(e.evidence_id),
+        "evidence_version": e.evidence_version,
+        "evidence_sha256": e.evidence_sha256,
+        "media_type": e.media_type,
+        "sequence": e.sequence,
+    }
+
+
+def _correction_dict(c: RecordCorrection) -> dict:
+    return {
+        "correction_id": str(c.correction_id),
+        "record_object_id": str(c.record_object_id),
+        "status": c.status,
+        "reason_code": c.reason_code,
+        "reason_text": c.reason_text,
+        "impact_assessment": c.impact_assessment,
+        "requested_by": str(c.requested_by) if c.requested_by else None,
+        "approved_by_signatures": c.approved_by_signatures,
+        "resulting_object_id": str(c.resulting_object_id) if c.resulting_object_id else None,
+        "created_at": c.created_at.isoformat(),
+        "completed_at": c.completed_at.isoformat() if c.completed_at else None,
+    }
+
+
 @router.post("/masters/{object_type}/{business_id}/release", response_model=MutationReceipt)
 async def post_release_master(
     object_type: str,
@@ -57,6 +85,12 @@ async def post_release_master(
 ) -> MutationReceipt:
     if cmd.object_type != object_type or cmd.business_id != business_id:
         raise ValidationFailedError("object_type/business_id in path and body must match")
+    # SG-213 reviewed: already intentional, not re-flagged here as a fresh gap -- CreateVaultReleaseCommand
+    # has no site_id field and vault_service.release_master is called here with no site either (see the
+    # SG-035 project-owner-directed comment in vault/commands.py::create_vault_release: "this endpoint has
+    # no site and no prior mutable record, so the required role is enforced at any site"). Domain modules
+    # with a real site (release_batch, disposition_material_lot) call vault_service.release_master directly
+    # with their own site_id and never reach this generic endpoint.
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="vault.correct", site_id=None)
         return await create_vault_release(session, cmd, actor.user_id)
@@ -96,9 +130,24 @@ async def get_object(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="vault.review", site_id=None)
     obj = await vault_service.get_object(session, object_id)
-    return _object_dict(obj)
+    await evaluate_policy(session, actor.user_id, action="vault.review", site_id=obj.site_id)
+    body = _object_dict(obj)
+    evidence = await vault_service.list_evidence_for_object(session, object_id)
+    body["evidence"] = [_evidence_dict(e) for e in evidence]
+    return body
+
+
+@router.get("/corrections/{correction_id}")
+async def get_correction(
+    correction_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    correction = await vault_service.get_correction(session, correction_id)
+    record_object = await vault_service.get_object(session, correction.record_object_id)
+    await evaluate_policy(session, actor.user_id, action="vault.review", site_id=record_object.site_id)
+    return _correction_dict(correction)
 
 
 @router.get("/objects/{object_id}/integrity")
@@ -107,7 +156,8 @@ async def get_object_integrity(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="vault.review", site_id=None)
+    obj = await vault_service.get_object(session, object_id)
+    await evaluate_policy(session, actor.user_id, action="vault.review", site_id=obj.site_id)
     return await vault_service.verify_integrity(session, object_id)
 
 
@@ -115,13 +165,19 @@ async def get_object_integrity(
 async def get_versions(
     object_type: str,
     business_id: str,
+    site_id: uuid.UUID | None = None,
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> list[dict]:
-    await evaluate_policy(session, actor.user_id, action="vault.review", site_id=None)
+    # SG-213: resolve_site_scope turns an omitted site_id into only the sites the actor holds
+    # vault.review at, instead of "any site" leaking every other site's version chain. A version with
+    # site_id=None (the generic release path above, by design -- see its own comment) stays visible to
+    # anyone holding the permission, matching get_object's single-record behavior for the same object.
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="vault.review")
     objects = await vault_service.list_versions_for_business_id(
         session, object_type=object_type, business_id=business_id
     )
+    objects = [o for o in objects if o.site_id is None or o.site_id in site_scope]
     return [_object_dict(o) for o in objects]
 
 
@@ -135,7 +191,8 @@ async def post_request_correction(
     if cmd.record_object_id != object_id:
         raise ValidationFailedError("object_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="vault.correct", site_id=None)
+        obj = await vault_service.get_object(session, object_id)
+        await evaluate_policy(session, actor.user_id, action="vault.correct", site_id=obj.site_id)
         return await request_correction(session, cmd, actor.user_id)
 
 
@@ -149,7 +206,9 @@ async def post_complete_correction(
     if cmd.correction_id != correction_id:
         raise ValidationFailedError("correction_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="vault.correct", site_id=None)
+        correction = await vault_service.get_correction(session, correction_id)
+        record_object = await vault_service.get_object(session, correction.record_object_id)
+        await evaluate_policy(session, actor.user_id, action="vault.correct", site_id=record_object.site_id)
         return await complete_correction(session, cmd, actor.user_id)
 
 

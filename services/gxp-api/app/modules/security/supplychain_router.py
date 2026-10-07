@@ -19,6 +19,10 @@ from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/security/v1", tags=["security-supplychain"])
 
+# SG-213 reviewed: all 4 evaluate_policy calls below use site_id=None intentionally.
+# vulnerability_record/release_security_evidence carry no site_id column -- supply-chain artefacts
+# are platform/product-wide, not per-site (see supplychain_models.py module docstring).
+
 
 @router.post("/vulnerabilities", response_model=MutationReceipt)
 async def post_register_vulnerability(

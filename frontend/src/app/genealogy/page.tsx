@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import { useSiteId } from "@/lib/hooks";
+import { useRequirePermission, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
 import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/Button";
-import { Field } from "@/components/ui/Field";
+import { Field, RowButtonSlot } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
@@ -39,6 +39,7 @@ type Mode = "lookup" | "serial" | "material_lot";
 const NODE_TYPES = ["", "batch", "material_lot", "device_unit", "package", "shipment"];
 
 export default function GenealogyPage() {
+  useRequirePermission("genealogy.view");
   const { siteId } = useSiteId();
   const [mode, setMode] = useState<Mode>("lookup");
   const [nodeType, setNodeType] = useState("");
@@ -119,7 +120,11 @@ export default function GenealogyPage() {
         subtitle="Forward and backward traceability across batches, material lots, device units and packages."
       />
 
-      <form onSubmit={run} className="flex items-end gap-4 mb-4 flex-wrap">
+      {/* items-start, not items-end: the Query field's hint (shown when mode === "lookup") sits below
+         its select, which items-end would bottom-align the row to instead of the select/input itself —
+         dragging the button down below where it visually belongs. RowButtonSlot gives the button a
+         same-height invisible label so it lines up with the real inputs regardless of hint presence. */}
+      <form onSubmit={run} className="flex items-start gap-4 mb-4 flex-wrap">
         <Field label="Query">
           <Select value={mode} onChange={(e) => setMode(e.target.value as Mode)}>
             {(Object.keys(MODE_LABEL) as Mode[]).map((m) => (
@@ -146,13 +151,15 @@ export default function GenealogyPage() {
         >
           <Input value={businessRef} onChange={(e) => setBusinessRef(e.target.value)} style={{ minWidth: 300 }} />
         </Field>
-        <Button
-          type="submit"
-          variant="secondary"
-          disabled={loading || !siteId || (mode !== "lookup" && !businessRef.trim())}
-        >
-          <Icon name="search" /> {loading ? "Searching…" : "Search"}
-        </Button>
+        <RowButtonSlot>
+          <Button
+            type="submit"
+            variant="secondary"
+            disabled={loading || !siteId || (mode !== "lookup" && !businessRef.trim())}
+          >
+            <Icon name="search" /> {loading ? "Searching…" : "Search"}
+          </Button>
+        </RowButtonSlot>
       </form>
 
       {error && (

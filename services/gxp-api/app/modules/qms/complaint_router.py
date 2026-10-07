@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.qms.complaint_commands import (
     CloseComplaintCommand,
     CreateComplaintCommand,
@@ -52,7 +52,10 @@ async def post_triage_complaint(
     if cmd.complaint_id != complaint_id:
         raise ValidationFailedError("complaint_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="complaint.triage", site_id=None)
+        complaint = await session.get(ComplaintRecord, complaint_id)
+        if complaint is None:
+            raise NotFoundError("Complaint not found")
+        await evaluate_policy(session, actor.user_id, action="complaint.triage", site_id=complaint.site_id)
         return await triage_complaint(session, cmd, actor.user_id)
 
 
@@ -64,7 +67,10 @@ async def post_investigation_decision(
     if cmd.complaint_id != complaint_id:
         raise ValidationFailedError("complaint_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="complaint.investigation_decision", site_id=None)
+        complaint = await session.get(ComplaintRecord, complaint_id)
+        if complaint is None:
+            raise NotFoundError("Complaint not found")
+        await evaluate_policy(session, actor.user_id, action="complaint.investigation_decision", site_id=complaint.site_id)
         return await investigation_decision(session, cmd, actor.user_id)
 
 
@@ -76,7 +82,10 @@ async def post_investigate_complaint(
     if cmd.complaint_id != complaint_id:
         raise ValidationFailedError("complaint_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="complaint.investigate", site_id=None)
+        complaint = await session.get(ComplaintRecord, complaint_id)
+        if complaint is None:
+            raise NotFoundError("Complaint not found")
+        await evaluate_policy(session, actor.user_id, action="complaint.investigate", site_id=complaint.site_id)
         return await investigate_complaint(session, cmd, actor.user_id)
 
 
@@ -88,7 +97,10 @@ async def post_assess_reportability(
     if cmd.complaint_id != complaint_id:
         raise ValidationFailedError("complaint_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="complaint.reportability", site_id=None)
+        complaint = await session.get(ComplaintRecord, complaint_id)
+        if complaint is None:
+            raise NotFoundError("Complaint not found")
+        await evaluate_policy(session, actor.user_id, action="complaint.reportability", site_id=complaint.site_id)
         return await assess_reportability(session, cmd, actor.user_id)
 
 
@@ -100,7 +112,10 @@ async def post_record_communication(
     if cmd.complaint_id != complaint_id:
         raise ValidationFailedError("complaint_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="complaint.response", site_id=None)
+        complaint = await session.get(ComplaintRecord, complaint_id)
+        if complaint is None:
+            raise NotFoundError("Complaint not found")
+        await evaluate_policy(session, actor.user_id, action="complaint.response", site_id=complaint.site_id)
         return await record_communication(session, cmd, actor.user_id)
 
 
@@ -127,7 +142,10 @@ async def post_close_complaint(
     if cmd.complaint_id != complaint_id:
         raise ValidationFailedError("complaint_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="complaint.close", site_id=None)
+        complaint = await session.get(ComplaintRecord, complaint_id)
+        if complaint is None:
+            raise NotFoundError("Complaint not found")
+        await evaluate_policy(session, actor.user_id, action="complaint.close", site_id=complaint.site_id)
         return await close_complaint(session, cmd, actor.user_id)
 
 
@@ -171,9 +189,9 @@ async def list_complaints(
     site_id: uuid.UUID | None = None,
     state: str | None = None,
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="complaint.view", site_id=site_id)
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="complaint.view")
     stmt = filtered(
-        ComplaintRecord, params, search_column=ComplaintRecord.complaint_number, site_id=site_id, state=state
+        ComplaintRecord, params, search_column=ComplaintRecord.complaint_number, site_id=site_scope, state=state
     )
     rows, envelope = await paginate(
         session, stmt, params, sortable=COMPLAINT_SORTABLE, default_sort=ComplaintRecord.received_at

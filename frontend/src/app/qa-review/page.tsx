@@ -7,7 +7,7 @@ import {
   formatDateTime,
   newIdempotencyKey,
 } from "@/lib/api";
-import { useApiResource, useMe, useSiteId } from "@/lib/hooks";
+import { useApiResource, useMe, useRequirePermission, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
@@ -54,6 +54,11 @@ interface Exceptions {
   corrections: unknown[];
   integrity_check: Record<string, unknown> | null;
   batch_on_hold: boolean;
+  // 2026-09-19: QC/materials/environment (hard blockers) and QC/environment/packaging (non-blocking
+  // warnings) - see app/modules/qa_review/service.py::_extra_signals. Plain strings, not the structured
+  // {code,message_key,...} shape /release/v1 uses - qa_review's blocker list has always been list[str].
+  blockers: string[];
+  warnings: string[];
 }
 
 // qa_review/models.py::QA_REVIEW_STATES — the real state vocabulary. The previous OPEN/IN_REVIEW/COMPLETE
@@ -63,7 +68,7 @@ interface Exceptions {
 const PACKAGE_STATES = ["READY_FOR_REVIEW", "REVIEW_COMPLETE", "REOPENED"];
 
 export default function QaReviewPage() {
-  const { me } = useMe();
+  const { me } = useRequirePermission("qa_review.view");
   const { siteId } = useSiteId();
   const [state, setState] = useState("");
   const [reloadToken, setReloadToken] = useState(0);
@@ -320,6 +325,16 @@ function PackageModal({
       {integrityOk === false && (
         <Banner tone="critical" title="Execution snapshot failed integrity verification">
           The Vault object backing this batch does not match its recorded hash.
+        </Banner>
+      )}
+      {e && e.blockers.length > 0 && (
+        <Banner tone="critical" title={`${e.blockers.length} blocker(s) prevent completing this review`}>
+          {e.blockers.join(" · ")}
+        </Banner>
+      )}
+      {e && e.warnings.length > 0 && (
+        <Banner tone="warn" title={`${e.warnings.length} warning(s) - visible, does not block review`}>
+          {e.warnings.join(" · ")}
         </Banner>
       )}
 

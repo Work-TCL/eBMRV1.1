@@ -14,6 +14,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
 from app.modules.iam.models import User
+from app.modules.qc.models import OosRecord, OotRecord
+from app.modules.qms.complaint_models import ComplaintRecord
+from app.modules.qms.internal_audit_models import InternalAudit
+from app.modules.qms.models import DeviationRecord
+from app.modules.qms.ncr_models import NonconformanceRecord
+from app.modules.qms.risk_models import RiskRecord
+from app.modules.qms.scar_models import SupplierQualityCase
 from app.modules.qms.capa_models import (
     ACTION_TYPES,
     CAPA_ALLOWED_TRANSITIONS,
@@ -138,6 +145,34 @@ async def _write_capa_receipt(
 # Create — CAPA-FR-001/002/003/004/019 (partial)
 # ---------------------------------------------------------------------------
 
+# Known-limitations fix (docs/testing/demo-gujarati/10 §10.6 item 3): source_type -> the one
+# unambiguous backing table in this codebase, for the 8 of 11 CAPA_SOURCE_TYPES that have one.
+# "trend"/"security"/"validation" have no single owning record type to check existence against (same
+# already-open question as SG-063's dependency-link schema gap) -- source_id stays unvalidated for
+# those three rather than guessing a table.
+_CAPA_SOURCE_MODELS: dict[str, type] = {
+    "deviation": DeviationRecord,
+    "oos": OosRecord,
+    "oot": OotRecord,
+    "ncr": NonconformanceRecord,
+    "complaint": ComplaintRecord,
+    "audit": InternalAudit,
+    "supplier": SupplierQualityCase,
+    "risk": RiskRecord,
+}
+
+
+async def _validate_capa_source(session: AsyncSession, *, source_type: str, source_id: uuid.UUID) -> None:
+    model = _CAPA_SOURCE_MODELS.get(source_type)
+    if model is None:
+        return
+    exists = (await session.execute(select(model.id).where(model.id == source_id))).scalar_one_or_none()
+    if exists is None:
+        raise ValidationFailedError(
+            "source_id does not reference an existing record for source_type (CAPA-FR-002)",
+            source_type=source_type, source_id=str(source_id),
+        )
+
 
 class CreateCapaCommand(CommandEnvelope):
     site_id: uuid.UUID
@@ -163,6 +198,7 @@ async def create_capa(session: AsyncSession, cmd: CreateCapaCommand, actor_user_
 
     if cmd.source_type not in CAPA_SOURCE_TYPES:
         raise CapaSourceRequiredError("Unrecognized CAPA source_type", source_type=cmd.source_type, allowed=list(CAPA_SOURCE_TYPES))
+    await _validate_capa_source(session, source_type=cmd.source_type, source_id=cmd.source_id)
     if not cmd.root_cause_ref or not (cmd.root_cause_ref.get("investigation_ref") or cmd.root_cause_ref.get("proactive_rationale")):
         raise CapaRootCauseRequiredError("root_cause_ref requires investigation_ref or proactive_rationale")
     if not cmd.problem_statement.strip():
@@ -204,6 +240,11 @@ class PlanCapaCommand(CommandEnvelope):
     preventive_action: dict | None = None
     effectiveness_plan: dict | None = None
     reason: str | None = None
+    # SG-065 (2026-09-22, project-owner-directed): Document 27's prose (CAPA-FR-021) calls for plan
+    # approval to be signed; the document's own API table previously left it unsigned. Same
+    # "Approved"/QA Releaser/independent-of-owner shape as close()/record_effectiveness().
+    challenge_id: uuid.UUID | None = None
+    reauth_password: str | None = None
 
 
 async def plan_capa(session: AsyncSession, cmd: PlanCapaCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
@@ -218,6 +259,13 @@ async def plan_capa(session: AsyncSession, cmd: PlanCapaCommand, actor_user_id: 
     if not cmd.corrective_action or not str(cmd.corrective_action.get("description", "")).strip():
         raise ValidationFailedError("corrective_action.description is required")
 
+    # SG-065: resolved before any state is mutated so a rejected/missing signature leaves the CAPA
+    # untouched, same precedent as record_effectiveness()'s "recording a result" branch.
+    signature_id = await _resolve_signature(
+        session, action="plan", actor_user_id=actor_user_id, capa=capa,
+        challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,
+    )
+
     old_state = capa.state
     capa.corrective_action = cmd.corrective_action
     capa.preventive_action = cmd.preventive_action
@@ -228,7 +276,7 @@ async def plan_capa(session: AsyncSession, cmd: PlanCapaCommand, actor_user_id: 
     return await _write_capa_receipt(
         session, cmd=cmd, payload_hash=payload_hash, capa=capa, action="Changed", actor_user_id=actor_user_id,
         reason=cmd.reason, old_state=old_state, event_type="CAPAPlanApproved", event_payload={"id": str(capa.id)},
-        signature_id=None, expected_version=cmd.expected_version, command_type="PlanCapa",
+        signature_id=signature_id, expected_version=cmd.expected_version, command_type="PlanCapa",
     )
 
 
@@ -386,6 +434,11 @@ class EffectivenessCommand(CommandEnvelope):
     evidence: dict | None = None
     reviewer_subject_id: uuid.UUID | None = None
     reason: str | None = None
+    # Known-limitations fix (docs/testing/demo-gujarati/10 §10.6 item 2), 2026-09-18,
+    # project-owner-directed: only the "record result" branch below reads these -- "define effectiveness
+    # check" stays unsigned.
+    challenge_id: uuid.UUID | None = None
+    reauth_password: str | None = None
 
 
 async def record_effectiveness(session: AsyncSession, cmd: EffectivenessCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
@@ -433,6 +486,16 @@ async def record_effectiveness(session: AsyncSession, cmd: EffectivenessCommand,
     if not cmd.evidence:
         raise ValidationFailedError("evidence is required to record an effectiveness result")
 
+    # Known-limitations fix (docs/testing/demo-gujarati/10 §10.6 item 2), 2026-09-18,
+    # project-owner-directed: recording the effectiveness result is the pass/fail/inconclusive quality
+    # conclusion (unlike defining the check, which is just plan-time criteria) -- same "Approved"/QA
+    # Releaser/independent-of-owner signature shape as close(), resolved before any state is mutated so a
+    # rejected/missing signature leaves the CAPA untouched.
+    signature_id = await _resolve_signature(
+        session, action="effectiveness", actor_user_id=actor_user_id, capa=capa,
+        challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,
+    )
+
     check.result = cmd.result
     check.evidence = cmd.evidence
     check.reviewer_subject_id = cmd.reviewer_subject_id or actor_user_id
@@ -446,7 +509,7 @@ async def record_effectiveness(session: AsyncSession, cmd: EffectivenessCommand,
     return await _write_capa_receipt(
         session, cmd=cmd, payload_hash=payload_hash, capa=capa, action="Changed", actor_user_id=actor_user_id,
         reason=cmd.reason, old_state=old_state, event_type=event_type,
-        event_payload={"id": str(capa.id), "check_id": str(check.id), "result": cmd.result}, signature_id=None,
+        event_payload={"id": str(capa.id), "check_id": str(check.id), "result": cmd.result}, signature_id=signature_id,
         expected_version=cmd.expected_version, command_type="RecordEffectivenessResult",
     )
 
@@ -462,6 +525,9 @@ class ExtendCapaCommand(CommandEnvelope):
     new_target_date: datetime
     reason: str
     risk_review: str
+    # SG-065 (2026-09-22, project-owner-directed): same fix and shape as PlanCapaCommand above.
+    challenge_id: uuid.UUID | None = None
+    reauth_password: str | None = None
 
 
 async def extend_capa(session: AsyncSession, cmd: ExtendCapaCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
@@ -480,6 +546,12 @@ async def extend_capa(session: AsyncSession, cmd: ExtendCapaCommand, actor_user_
     if new_target <= current_target:
         raise ValidationFailedError("new_target_date must be later than the current target date")
 
+    # SG-065: resolved before any state is mutated, same precedent as plan_capa() above.
+    signature_id = await _resolve_signature(
+        session, action="extend", actor_user_id=actor_user_id, capa=capa,
+        challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,
+    )
+
     old_state = capa.state
     capa.extension_history = [
         *capa.extension_history,
@@ -495,7 +567,7 @@ async def extend_capa(session: AsyncSession, cmd: ExtendCapaCommand, actor_user_
     return await _write_capa_receipt(
         session, cmd=cmd, payload_hash=payload_hash, capa=capa, action="Changed", actor_user_id=actor_user_id,
         reason=cmd.reason, old_state=old_state, event_type="CAPAOpened",
-        event_payload={"id": str(capa.id), "new_target_date": cmd.new_target_date.isoformat()}, signature_id=None,
+        event_payload={"id": str(capa.id), "new_target_date": cmd.new_target_date.isoformat()}, signature_id=signature_id,
         expected_version=cmd.expected_version, command_type="ExtendCapa",
     )
 

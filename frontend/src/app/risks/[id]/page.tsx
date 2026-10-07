@@ -3,8 +3,7 @@
 import { use, useState } from "react";
 import {
   api,
-  canApproveQms,
-  canInvestigateQms,
+  hasPermission,
   formatDate,
   formatDateTime,
   isOverdue,
@@ -12,7 +11,9 @@ import {
   type RiskRecord,
 } from "@/lib/api";
 import { useApiResource, useMe } from "@/lib/hooks";
+import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { QmsDetailShell, useCommand } from "@/components/qms/QmsDetailShell";
+import { RiskMethodologyPickerField } from "@/components/shared/RiskMethodologyPicker";
 import { Fact, IdFact } from "@/components/ui/FactGrid";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/Table";
@@ -61,7 +62,9 @@ const ALLOWED_FROM: Record<string, Transition[]> = {
   NEW_VERSION: ["assessment"],
 };
 
-// SG-138: no Document 106 policy row for risk_record.review.
+// SG-138 resolved 2026-09-10 (seed.py SIGNATURE_POLICY_FLOOR row 97): risk_record.review is QA
+// Reviewer-signed, independent of the record owner. Goes through the shared Part 11 ceremony (challenge
+// -> password re-entry -> signed mutation) below.
 const SIGNATURE_GATED: Transition[] = ["review"];
 
 const LABEL: Record<Transition, string> = {
@@ -71,6 +74,17 @@ const LABEL: Record<Transition, string> = {
   review: "Periodic review",
 };
 
+// The exact permission code app/modules/qms/risk_router.py checks for each transition. Note risk.review
+// is held by QA Reviewer, NOT QA Releaser (risk.accept is the QA Releaser one) -- the old code lumped
+// accept+review into one "approver" check and would have hidden the Periodic review button from the
+// QA Reviewer users who actually hold it (audit finding 2026-09-18).
+const PERMISSION_FOR_TRANSITION: Record<Transition, string> = {
+  assessment: "risk.assessment.add",
+  controls: "risk.controls.add",
+  accept: "risk.accept",
+  review: "risk.review",
+};
+
 export default function RiskDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { me } = useMe();
@@ -78,8 +92,7 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
   const { data, loading, error, reload } = useApiResource<RiskDetail>(`/qms/v1/risks/${id}`);
 
   const allowed = data ? (ALLOWED_FROM[data.state] ?? []) : [];
-  const canDo = (t: Transition) =>
-    allowed.includes(t) && (t === "accept" || t === "review" ? canApproveQms(me) : canInvestigateQms(me));
+  const canDo = (t: Transition) => allowed.includes(t) && hasPermission(me, PERMISSION_FOR_TRANSITION[t]);
 
   const current = data?.assessment_versions.find((v) => v.is_current);
   const reviewOverdue = data ? isOverdue(data.next_review_due_at) && data.state === "ACCEPTED" : false;
@@ -266,36 +279,81 @@ function TransitionModal({
             rationale,
             next_review_due_at: nextReview ? new Date(nextReview).toISOString() : null,
           });
-        case "review":
-          return api.post(`${path}/review`, {
-            ...base,
+        default:
+          // review is signature-gated and never reaches this form -- see the early return below that
+          // renders <SignatureCeremony> for it instead.
+          throw new Error(`${transition} does not submit through the plain form`);
+      }
+    });
+  }
+
+  // Document 106 section 9 row 97 (SG-138, resolved): risk_record.review is QA Reviewer-signed,
+  // independent of the record owner.
+  if (transition === "review") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`${path}/signature-challenges`}
+        action="review"
+        title={`Periodic review - ${risk.risk_number}`}
+        summary="Records the periodic/triggered review outcome for this accepted risk. This is a released quality decision - signer must be independent of the record's owner."
+        submitLabel="Sign & record review"
+        submitVariant="success"
+        disabled={!rationale.trim()}
+        extraFields={
+          <>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Trigger" required>
+                <Select value={triggerType} onChange={(e) => setTriggerType(e.target.value)}>
+                  <option value="periodic">periodic</option>
+                  <option value="triggered">triggered</option>
+                </Select>
+              </Field>
+              <Field label="Outcome" required>
+                <Select value={outcome} onChange={(e) => setOutcome(e.target.value)}>
+                  <option value="still_current">still current</option>
+                  <option value="reassessment_required">reassessment required</option>
+                </Select>
+              </Field>
+            </div>
+            <Field label="Rationale" required>
+              <textarea className="input" rows={3} value={rationale} onChange={(e) => setRationale(e.target.value)} required />
+            </Field>
+            <Field label="Next review due">
+              <Input type="date" value={nextReview} onChange={(e) => setNextReview(e.target.value)} />
+            </Field>
+          </>
+        }
+        onSign={(p) =>
+          api.post(`${path}/review`, {
+            idempotency_key: p.idempotency_key,
+            risk_id: risk.id,
+            expected_version: risk.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
             trigger_type: triggerType,
             outcome,
             rationale,
             next_review_due_at: nextReview ? new Date(nextReview).toISOString() : null,
-          });
-      }
-    });
+          })
+        }
+      />
+    );
   }
 
   return (
     <Modal open onClose={onClose} title={`${LABEL[transition]} - ${risk.risk_number}`}>
       <form onSubmit={submit}>
-        {SIGNATURE_GATED.includes(transition) && (
-          <Banner tone="warn" title="This transition requires an electronic signature">
-            This action needs a signature policy that hasn&apos;t been configured for this deployment yet, so it will be correctly refused rather than proceeding without one.
-          </Banner>
-        )}
-
         {transition === "assessment" && (
           <>
-            <Field
-              label="Methodology ID"
+            <RiskMethodologyPickerField
+              value={methodologyId}
+              onChange={setMethodologyId}
               required
               hint="A released rule of type risk_methodology (see the Rules page) - required for the first assessment of a cycle."
-            >
-              <Input value={methodologyId} onChange={(e) => setMethodologyId(e.target.value)} required />
-            </Field>
+            />
             <div className="grid grid-cols-3 gap-4">
               <Field label="Severity" required>
                 <Input type="number" min={1} max={10} value={severity} onChange={(e) => setSeverity(e.target.value)} required />
@@ -356,31 +414,6 @@ function TransitionModal({
               <textarea className="input" rows={3} value={rationale} onChange={(e) => setRationale(e.target.value)} required />
             </Field>
             <Field label="Next review due" hint="An accepted risk without a review date never comes back for review.">
-              <Input type="date" value={nextReview} onChange={(e) => setNextReview(e.target.value)} />
-            </Field>
-          </>
-        )}
-
-        {transition === "review" && (
-          <>
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Trigger" required>
-                <Select value={triggerType} onChange={(e) => setTriggerType(e.target.value)}>
-                  <option value="periodic">periodic</option>
-                  <option value="triggered">triggered</option>
-                </Select>
-              </Field>
-              <Field label="Outcome" required>
-                <Select value={outcome} onChange={(e) => setOutcome(e.target.value)}>
-                  <option value="still_current">still current</option>
-                  <option value="reassessment_required">reassessment required</option>
-                </Select>
-              </Field>
-            </div>
-            <Field label="Rationale" required>
-              <textarea className="input" rows={3} value={rationale} onChange={(e) => setRationale(e.target.value)} required />
-            </Field>
-            <Field label="Next review due">
               <Input type="date" value={nextReview} onChange={(e) => setNextReview(e.target.value)} />
             </Field>
           </>

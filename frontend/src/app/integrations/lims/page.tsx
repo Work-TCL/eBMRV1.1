@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, ApiError, formatDateTime, holdsAnyRole, listAll, newIdempotencyKey, type MutationReceipt } from "@/lib/api";
+import { api, ApiError, formatDateTime, hasPermission, listAll, newIdempotencyKey, type MutationReceipt } from "@/lib/api";
 import { useMe } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -64,7 +64,10 @@ export default function LimsPage() {
   const [error, setError] = useState<string | null>(null);
   const instances = useLimsInstances();
 
-  const canReconcile = holdsAnyRole(me, ["Admin", "Integration Administrator", "QA Reviewer"]);
+  // POST .../reconcile checks integration_reconciliation.manage (Integration Administrator), not
+  // lims_sample.cancel -- audit finding 2026-09-18: the old role list also wrongly included QA Reviewer,
+  // who holds neither code.
+  const canReconcile = hasPermission(me, "integration_reconciliation.manage");
 
   async function load(id = instanceId) {
     if (!id.trim()) return;

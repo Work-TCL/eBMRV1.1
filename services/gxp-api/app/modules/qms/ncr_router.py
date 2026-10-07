@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.qms.ncr_commands import (
     CloseNcrCommand,
     CreateNcrCommand,
@@ -50,7 +50,10 @@ async def post_segregate_ncr(
     if cmd.ncr_id != ncr_id:
         raise ValidationFailedError("ncr_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ncr.segregate", site_id=None)
+        ncr = await session.get(NonconformanceRecord, ncr_id)
+        if ncr is None:
+            raise NotFoundError("Nonconformance not found")
+        await evaluate_policy(session, actor.user_id, action="ncr.segregate", site_id=ncr.site_id)
         return await segregate_ncr(session, cmd, actor.user_id)
 
 
@@ -62,7 +65,10 @@ async def post_evaluate_ncr(
     if cmd.ncr_id != ncr_id:
         raise ValidationFailedError("ncr_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ncr.evaluate", site_id=None)
+        ncr = await session.get(NonconformanceRecord, ncr_id)
+        if ncr is None:
+            raise NotFoundError("Nonconformance not found")
+        await evaluate_policy(session, actor.user_id, action="ncr.evaluate", site_id=ncr.site_id)
         return await evaluate_ncr(session, cmd, actor.user_id)
 
 
@@ -74,7 +80,10 @@ async def post_disposition_ncr(
     if cmd.ncr_id != ncr_id:
         raise ValidationFailedError("ncr_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ncr.disposition", site_id=None)
+        ncr = await session.get(NonconformanceRecord, ncr_id)
+        if ncr is None:
+            raise NotFoundError("Nonconformance not found")
+        await evaluate_policy(session, actor.user_id, action="ncr.disposition", site_id=ncr.site_id)
         return await disposition_ncr(session, cmd, actor.user_id)
 
 
@@ -86,7 +95,10 @@ async def post_verify_ncr(
     if cmd.ncr_id != ncr_id:
         raise ValidationFailedError("ncr_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ncr.verify", site_id=None)
+        ncr = await session.get(NonconformanceRecord, ncr_id)
+        if ncr is None:
+            raise NotFoundError("Nonconformance not found")
+        await evaluate_policy(session, actor.user_id, action="ncr.verify", site_id=ncr.site_id)
         return await verify_ncr(session, cmd, actor.user_id)
 
 
@@ -113,7 +125,10 @@ async def post_close_ncr(
     if cmd.ncr_id != ncr_id:
         raise ValidationFailedError("ncr_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ncr.close", site_id=None)
+        ncr = await session.get(NonconformanceRecord, ncr_id)
+        if ncr is None:
+            raise NotFoundError("Nonconformance not found")
+        await evaluate_policy(session, actor.user_id, action="ncr.close", site_id=ncr.site_id)
         return await close_ncr(session, cmd, actor.user_id)
 
 
@@ -156,9 +171,9 @@ async def list_ncrs(
     site_id: uuid.UUID | None = None,
     state: str | None = None,
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="ncr.view", site_id=site_id)
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="ncr.view")
     stmt = filtered(
-        NonconformanceRecord, params, search_column=NonconformanceRecord.ncr_number, site_id=site_id, state=state
+        NonconformanceRecord, params, search_column=NonconformanceRecord.ncr_number, site_id=site_scope, state=state
     )
     rows, envelope = await paginate(
         session, stmt, params, sortable=NCR_SORTABLE, default_sort=NonconformanceRecord.created_at

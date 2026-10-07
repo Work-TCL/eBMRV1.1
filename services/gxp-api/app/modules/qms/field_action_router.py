@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.qms.field_action_commands import (
     ApproveFieldActionCommand,
     CloseFieldActionCommand,
@@ -59,7 +59,10 @@ async def post_define_scope(
     if cmd.field_action_id != field_action_id:
         raise ValidationFailedError("field_action_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="field_action.scope", site_id=None)
+        field_action = await session.get(FieldAction, field_action_id)
+        if field_action is None:
+            raise NotFoundError("Field action not found")
+        await evaluate_policy(session, actor.user_id, action="field_action.scope", site_id=field_action.site_id)
         return await define_scope(session, cmd, actor.user_id)
 
 
@@ -71,7 +74,10 @@ async def post_assess_reportability(
     if cmd.field_action_id != field_action_id:
         raise ValidationFailedError("field_action_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="field_action.reportability", site_id=None)
+        field_action = await session.get(FieldAction, field_action_id)
+        if field_action is None:
+            raise NotFoundError("Field action not found")
+        await evaluate_policy(session, actor.user_id, action="field_action.reportability", site_id=field_action.site_id)
         return await assess_field_action_reportability(session, cmd, actor.user_id)
 
 
@@ -83,7 +89,10 @@ async def post_approve_field_action(
     if cmd.field_action_id != field_action_id:
         raise ValidationFailedError("field_action_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="field_action.approve", site_id=None)
+        field_action = await session.get(FieldAction, field_action_id)
+        if field_action is None:
+            raise NotFoundError("Field action not found")
+        await evaluate_policy(session, actor.user_id, action="field_action.approve", site_id=field_action.site_id)
         return await approve_field_action(session, cmd, actor.user_id)
 
 
@@ -95,7 +104,10 @@ async def post_record_communication(
     if cmd.field_action_id != field_action_id:
         raise ValidationFailedError("field_action_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="field_action.communications", site_id=None)
+        field_action = await session.get(FieldAction, field_action_id)
+        if field_action is None:
+            raise NotFoundError("Field action not found")
+        await evaluate_policy(session, actor.user_id, action="field_action.communications", site_id=field_action.site_id)
         return await record_field_action_communication(session, cmd, actor.user_id)
 
 
@@ -107,7 +119,10 @@ async def post_reconcile(
     if cmd.field_action_id != field_action_id:
         raise ValidationFailedError("field_action_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="field_action.reconcile", site_id=None)
+        field_action = await session.get(FieldAction, field_action_id)
+        if field_action is None:
+            raise NotFoundError("Field action not found")
+        await evaluate_policy(session, actor.user_id, action="field_action.reconcile", site_id=field_action.site_id)
         return await reconcile_field_action(session, cmd, actor.user_id)
 
 
@@ -119,7 +134,10 @@ async def post_effectiveness(
     if cmd.field_action_id != field_action_id:
         raise ValidationFailedError("field_action_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="field_action.effectiveness", site_id=None)
+        field_action = await session.get(FieldAction, field_action_id)
+        if field_action is None:
+            raise NotFoundError("Field action not found")
+        await evaluate_policy(session, actor.user_id, action="field_action.effectiveness", site_id=field_action.site_id)
         return await record_field_action_effectiveness(session, cmd, actor.user_id)
 
 
@@ -146,7 +164,10 @@ async def post_close_field_action(
     if cmd.field_action_id != field_action_id:
         raise ValidationFailedError("field_action_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="field_action.close", site_id=None)
+        field_action = await session.get(FieldAction, field_action_id)
+        if field_action is None:
+            raise NotFoundError("Field action not found")
+        await evaluate_policy(session, actor.user_id, action="field_action.close", site_id=field_action.site_id)
         return await close_field_action(session, cmd, actor.user_id)
 
 
@@ -187,9 +208,9 @@ async def list_field_actions(
     site_id: uuid.UUID | None = None,
     state: str | None = None,
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="field_action.view", site_id=site_id)
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="field_action.view")
     stmt = filtered(
-        FieldAction, params, search_column=FieldAction.action_number, site_id=site_id, state=state
+        FieldAction, params, search_column=FieldAction.action_number, site_id=site_scope, state=state
     )
     rows, envelope = await paginate(
         session, stmt, params, sortable=FIELD_ACTION_SORTABLE, default_sort=FieldAction.created_at

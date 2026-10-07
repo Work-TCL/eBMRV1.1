@@ -11,7 +11,7 @@ import {
   type BatchSummary,
   type PackagingRun,
 } from "@/lib/api";
-import { useApiResource, useMe, useSiteId } from "@/lib/hooks";
+import { useApiResource, useMe, useRequirePermission, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
@@ -77,7 +77,7 @@ const ACTION_LABEL: Record<Action, string> = {
 };
 
 export default function PackagingPage() {
-  const { me } = useMe();
+  const { me } = useRequirePermission("packaging.view");
   const { siteId, loading: siteLoading } = useSiteId();
   const [reloadToken, setReloadToken] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);

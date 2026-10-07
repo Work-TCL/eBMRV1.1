@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { CodeField } from "@/components/ui/CodeField";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
@@ -84,6 +85,15 @@ export default function EquipmentPage() {
     siteId ? `/equipment/v1/dashboard?site_id=${siteId}` : null
   );
 
+  // SG-218: equipment-module-native read of the same gxp_equipment_class master recipe-master's own
+  // equipment requirement picker uses (GET /equipment/v1/equipment-classes -- no RBAC gate, matching this
+  // page's other plain read endpoints), so "Equipment Administrator" (this page's own asset-creating role)
+  // doesn't need recipe.view just to see class options here, unlike recipe-master's own
+  // /recipes/v2/equipment-classes route.
+  const { data: equipmentClasses, error: equipmentClassesError } = useApiResource<
+    { id: string; class_code: string; name: string }[]
+  >("/equipment/v1/equipment-classes");
+
   // app/modules/equipment/router.py::list_assets takes `state` alongside the shared page params.
   // DataTable holds fetchPage in a ref rather than an effect dependency, so this inline closure can
   // read current state directly; changing the filter bumps reloadToken to force the refetch.
@@ -138,6 +148,9 @@ export default function EquipmentPage() {
         action={
           canCreateEquipment(me) ? (
             <div className="flex gap-2">
+              <Button variant="secondary" onClick={() => router.push("/import/equipment")}>
+                <Icon name="clipboard" /> Bulk import
+              </Button>
               <Button variant="secondary" onClick={() => setCreateAreaOpen(true)}>
                 <Icon name="plus" /> New area
               </Button>
@@ -266,6 +279,9 @@ export default function EquipmentPage() {
       {createOpen && (
         <CreateAssetModal
           siteId={siteId}
+          areas={areas ?? []}
+          equipmentClasses={equipmentClasses ?? []}
+          equipmentClassesUnavailable={!!equipmentClassesError}
           onClose={() => setCreateOpen(false)}
           onDone={() => {
             setCreateOpen(false);
@@ -283,6 +299,7 @@ export default function EquipmentPage() {
           }}
         />
       )}
+
     </div>
   );
 }
@@ -311,10 +328,16 @@ function DueCell({ date, status }: { date: string | null; status: string | null 
 
 function CreateAssetModal({
   siteId,
+  areas,
+  equipmentClasses,
+  equipmentClassesUnavailable,
   onClose,
   onDone,
 }: {
   siteId: string | null;
+  areas: EquipmentArea[];
+  equipmentClasses: { id: string; class_code: string; name: string }[];
+  equipmentClassesUnavailable: boolean;
   onClose: () => void;
   onDone: () => void;
 }) {
@@ -323,25 +346,32 @@ function CreateAssetModal({
   const [model, setModel] = useState("");
   const [serialNo, setSerialNo] = useState("");
   const [firmwareVersion, setFirmwareVersion] = useState("");
+  const [locationId, setLocationId] = useState("");
+  const [equipmentClassId, setEquipmentClassId] = useState("");
   const [dedicated, setDedicated] = useState(false);
+  const [isComputerOperated, setIsComputerOperated] = useState("");
+  const [firmwareNA, setFirmwareNA] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!siteId) return;
+    if (!siteId || isComputerOperated === "") return;
     setBusy(true);
     setError(null);
     try {
       await api.post<MutationReceipt>("/equipment/v1/assets", {
         idempotency_key: newIdempotencyKey(),
         site_id: siteId,
-        equipment_code: equipmentCode,
+        equipment_code: equipmentCode || undefined,
         manufacturer: manufacturer || null,
         model: model || null,
         serial_no: serialNo || null,
-        firmware_version: firmwareVersion || null,
+        firmware_version: firmwareNA ? null : firmwareVersion || null,
+        location_id: locationId || null,
+        equipment_class_id: equipmentClassId,
         dedicated,
+        is_computer_operated: isComputerOperated === "true",
       });
       onDone();
     } catch (err) {
@@ -354,9 +384,7 @@ function CreateAssetModal({
   return (
     <Modal open onClose={onClose} title="New equipment asset" large>
       <form onSubmit={onSubmit}>
-        <Field label="Equipment code" required>
-          <Input value={equipmentCode} onChange={(e) => setEquipmentCode(e.target.value)} required autoFocus />
-        </Field>
+        <CodeField label="Equipment code" value={equipmentCode} onChange={setEquipmentCode} required />
         <div className="grid grid-cols-3 gap-4">
           <Field label="Manufacturer">
             <Input value={manufacturer} onChange={(e) => setManufacturer(e.target.value)} />
@@ -368,8 +396,67 @@ function CreateAssetModal({
             <Input value={serialNo} onChange={(e) => setSerialNo(e.target.value)} />
           </Field>
         </div>
-        <Field label="Firmware version" hint="Recorded so a firmware change can be tied to change control.">
-          <Input value={firmwareVersion} onChange={(e) => setFirmwareVersion(e.target.value)} />
+        <Field label="Firmware version (Optional)" hint="Recorded so a firmware change can be tied to change control.">
+          <Input
+            value={firmwareNA ? "" : firmwareVersion}
+            onChange={(e) => setFirmwareVersion(e.target.value)}
+            disabled={firmwareNA}
+            placeholder={firmwareNA ? "Not applicable" : undefined}
+          />
+          <label className="flex items-center gap-2 fs-2 text-muted mt-1">
+            <input
+              type="checkbox"
+              checked={firmwareNA}
+              onChange={(e) => {
+                setFirmwareNA(e.target.checked);
+                if (e.target.checked) setFirmwareVersion("");
+              }}
+            />
+            Not applicable
+          </label>
+        </Field>
+        <Field label="Computer-operated or manual?" required hint="Mandatory at creation. The detailed Computer System Validation questionnaire for computer-operated equipment is not yet built.">
+          <Select value={isComputerOperated} onChange={(e) => setIsComputerOperated(e.target.value)} required>
+            <option value="">— Select —</option>
+            <option value="true">Computer-operated</option>
+            <option value="false">Manual</option>
+          </Select>
+        </Field>
+        <Field
+          label="Equipment class"
+          required
+          hint={
+            equipmentClassesUnavailable
+              ? "Couldn't load the equipment class list for your role — enter the class id directly if you know it."
+              : "Required — a recipe step's equipment requirement (e.g. \"BALANCE\") can only ever match this asset if it has one; without it, batch step start always fails with EQUIPMENT_CLASS_MISMATCH."
+          }
+        >
+          {equipmentClassesUnavailable ? (
+            <Input value={equipmentClassId} onChange={(e) => setEquipmentClassId(e.target.value)} placeholder="Equipment class id" required />
+          ) : (
+            <Select value={equipmentClassId} onChange={(e) => setEquipmentClassId(e.target.value)} required>
+              <option value="">—</option>
+              {equipmentClasses.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.class_code} ({c.name})
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+        <Field
+          label="Area / location"
+          hint="Optional, unvalidated by the backend (SG-215) — recorded for reference only, not enforced against cleaning/EM/aseptic area state."
+        >
+          <Select value={locationId} onChange={(e) => setLocationId(e.target.value)}>
+            <option value="">—</option>
+            {areas.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.area_code}
+                {a.area_type ? ` (${a.area_type})` : ""}
+              </option>
+            ))}
+          </Select>
         </Field>
         <label className="flex items-center gap-2 fs-2 mb-3">
           <input type="checkbox" checked={dedicated} onChange={(e) => setDedicated(e.target.checked)} />
@@ -380,7 +467,7 @@ function CreateAssetModal({
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={busy || !equipmentCode.trim() || !siteId}>
+          <Button type="submit" variant="primary" disabled={busy || !siteId || !equipmentClassId || isComputerOperated === ""}>
             {busy ? "Creating…" : "Create asset"}
           </Button>
         </div>
@@ -421,7 +508,7 @@ function CreateAreaModal({
       await api.post<MutationReceipt>("/equipment/v1/areas", {
         idempotency_key: newIdempotencyKey(),
         site_id: siteId,
-        area_code: areaCode,
+        area_code: areaCode || undefined,
         area_type: areaType || null,
         classification: classification || null,
         criticality: criticality || null,
@@ -444,9 +531,7 @@ function CreateAreaModal({
           readiness as area_id/line_id.
         </p>
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Area code" required hint="Unique across all sites.">
-            <Input value={areaCode} onChange={(e) => setAreaCode(e.target.value)} required autoFocus placeholder="AREA-GRADE-C" />
-          </Field>
+          <CodeField label="Area code" value={areaCode} onChange={setAreaCode} required hint="Unique across all sites." />
           <Field label="Area type" hint="Free text, e.g. fill_suite, gowning_room, warehouse.">
             <Input value={areaType} onChange={(e) => setAreaType(e.target.value)} />
           </Field>
@@ -475,7 +560,7 @@ function CreateAreaModal({
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={busy || !areaCode.trim() || !siteId}>
+          <Button type="submit" variant="primary" disabled={busy || !siteId}>
             {busy ? "Creating…" : "Create area"}
           </Button>
         </div>

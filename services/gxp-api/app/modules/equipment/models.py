@@ -36,7 +36,11 @@ EQUIPMENT_STATES = (
 
 CALIBRATION_RESULTS = ("pass", "fail", "oot")
 CALIBRATION_STATES = ("due", "in_progress", "completed")
-MAINTENANCE_TYPES = ("planned", "corrective")
+# Client requirement #7.
+CALIBRATION_TYPES = ("internal", "external")
+# Client requirement #9: "breakdown" added alongside the existing planned/corrective pair -- routed
+# through the same hold/OUT_OF_SERVICE side effect corrective already triggers.
+MAINTENANCE_TYPES = ("planned", "corrective", "breakdown")
 MAINTENANCE_STATES = ("open", "in_progress", "completed", "verified")
 # EQP-FR-013 (use) / EQP-FR-016 (reservation, no dedicated reservation entity in the frozen 4-entity
 # model) / and a trace row from every other mutating command, so the use log stays this module's one
@@ -88,6 +92,11 @@ class EquipmentAsset(Base):
 
     dedicated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     firmware_version: Mapped[str | None] = mapped_column(String(80))
+    # Client gap-analysis Phase 7 (2026-10-05, migration 0137): mandatory-at-creation question
+    # distinguishing a computer-operated asset from a manual one. The detailed Computer System Validation
+    # (21 CFR Part 11) questionnaire this would branch into stays explicitly deferred by the client -- this
+    # flag is captured now, the sub-workflow is not built.
+    is_computer_operated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # EQP-FR-017: manual entry only -- no Edge/device source exists in this codebase (SPEC_GAP).
     runtime_hours: Mapped[Decimal | None] = mapped_column(Numeric(18, 2))
     runtime_cycles: Mapped[int | None] = mapped_column(Integer())
@@ -99,6 +108,11 @@ class EquipmentAsset(Base):
     # stays blocking until a human return_to_service call clears it (see commands.py
     # `_ineligibility_reasons`).
     hold_source: Mapped[str | None] = mapped_column(String(20))
+    # Client gap-analysis Phase 7: set when a breakdown maintenance event is recorded and not flagged
+    # non-critical; cleared only once a NEW calibration is recorded AND approved (same two-step bar
+    # `calibration_status`'s CALIBRATION_APPROVAL_PENDING gate already uses) -- a verified maintenance
+    # work order alone does not clear it. See `_ineligibility_reasons()`'s RECALIBRATION_REQUIRED check.
+    recalibration_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     change_control_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("qms.change_control.id")
@@ -147,11 +161,30 @@ class EquipmentCalibration(Base):
     standard_calibration_status: Mapped[str | None] = mapped_column(String(40))
     standard_expiry_date: Mapped[date | None] = mapped_column()
 
+    # Client requirement #7: internal vs external calibration. provider_name/certificate_reference are
+    # meaningful only when calibration_type="external" (enforced in commands.py, not a DB constraint).
+    calibration_type: Mapped[str] = mapped_column(String(20), nullable=False, default="internal")
+    provider_name: Mapped[str | None] = mapped_column(String(255))
+    # Client gap-analysis Phase 6 (2026-10-05, migration 0136): optional reference to a Supplier with
+    # role_type "service_provider"/"both" for a known calibration vendor. `provider_name` stays for a
+    # provider not yet onboarded as a Supplier record -- not every external calibration vendor needs full
+    # supplier qualification.
+    provider_supplier_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.supplier.id"))
+    certificate_reference: Mapped[str | None] = mapped_column(String(160))
+
     performer_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     reviewer_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     result: Mapped[str | None] = mapped_column(String(20))
     impact_assessment_required: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     deviation_reference_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    # Client gap-analysis Phase 4 (2026-10-05): a separate QA/QC disposition step on top of `result`
+    # (objective pass/fail/oot) -- the client's own stated distinction ("Pass/Fail" vs "Approved/
+    # Not-Approved" are two different things, never conflate them). `approved=None` means not yet
+    # reviewed; SoD-enforced in commands.py (approved_by_user_id != performer_user_id), same pattern as
+    # `supplier_quality.SupplierQualification`'s requester/approver independence.
+    approved: Mapped[bool | None] = mapped_column(Boolean)
+    approved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
+    approved_at: Mapped[datetime | None] = mapped_column()
 
     state: Mapped[str] = mapped_column(String(20), nullable=False, default="due")
     version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
@@ -192,6 +225,20 @@ class MaintenanceWorkOrder(Base):
     frequency_days: Mapped[int | None] = mapped_column(Integer())
     next_due_date: Mapped[date | None] = mapped_column()
     expected_downtime_hours: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    # Client requirement #9: caller-entered actual downtime, typically supplied at verification/
+    # completion time once the real elapsed impact is known.
+    actual_downtime_hours: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
+    # Client gap-analysis Phase 7 (2026-10-05, migration 0137): breakdown-only override that skips the
+    # EquipmentAsset.recalibration_required gate below -- the client's own example is a mere power-supply
+    # failure. Detailed critical/non-critical rules stay deferred; this is the binary flag only.
+    non_critical: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Client gap-analysis Phase 7: repeatable Activity/Result checklist for `type="planned"` maintenance
+    # (car-service-style table), e.g. [{"activity": "Check belt tension", "result": "OK"}, ...]. Captured
+    # JSONB, same unenforced-structure precedent as `parts_used` above -- this module's own docstring
+    # declares exactly 4 authoritative entities ("no 5th table is added"); `EquipmentClass` was already
+    # routed to a different module specifically to preserve that freeze, so a new child table here would
+    # break a boundary this codebase has deliberately protected before.
+    activities: Mapped[list | None] = mapped_column(JSONB)
 
     technician_user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False

@@ -1,56 +1,46 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   api,
   ApiError,
   newIdempotencyKey,
   pagedFetcher,
   type MutationReceipt,
-  type Permission,
   type Role,
 } from "@/lib/api";
 import { useRequireAdmin } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
-import { Button } from "@/components/ui/Button";
+import { Button, LinkButton } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Icon } from "@/components/ui/Icon";
+import { RoleTemplateGallery } from "@/components/admin/RoleTemplateGallery";
+import { OnboardingReturnLink } from "@/components/admin/OnboardingReturnLink";
 
 const fetchRoles = pagedFetcher<Role>("/roles");
 
 export default function RolesAdminPage() {
   const { isAdmin } = useRequireAdmin();
+  const router = useRouter();
 
   const [reloadToken, setReloadToken] = useState(0);
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [createMode, setCreateMode] = useState<"template" | "blank">("template");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const [editing, setEditing] = useState<Role | null>(null);
-  const [editName, setEditName] = useState("");
-  const [editDescription, setEditDescription] = useState("");
-  const [editPermissionIds, setEditPermissionIds] = useState<Set<string>>(new Set());
-  const [editError, setEditError] = useState<string | null>(null);
-  const [editBusy, setEditBusy] = useState(false);
-
   const [deleting, setDeleting] = useState<Role | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
-
-  const [allPermissions, setAllPermissions] = useState<Permission[]>([]);
-  useEffect(() => {
-    // /permissions returns a bare array (like /sites), not the {items, total, ...} paged envelope
-    // listAll() expects — use api.get directly, matching useSites()'s pattern.
-    api.get<Permission[]>("/permissions").then(setAllPermissions);
-  }, []);
 
   if (!isAdmin) return null;
 
@@ -72,50 +62,6 @@ export default function RolesAdminPage() {
       setError(err instanceof ApiError ? err.message : "Failed to create role");
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function openEdit(r: Role) {
-    setEditing(r);
-    setEditName(r.name);
-    setEditDescription(r.description ?? "");
-    setEditError(null);
-    const current = await api.get<Permission[]>(`/roles/${r.id}/permissions`);
-    setEditPermissionIds(new Set(current.map((p) => p.id)));
-  }
-
-  function togglePermission(id: string) {
-    setEditPermissionIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  async function onSaveEdit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!editing) return;
-    setEditBusy(true);
-    setEditError(null);
-    try {
-      await api.patch<MutationReceipt>(`/roles/${editing.id}`, {
-        idempotency_key: newIdempotencyKey(),
-        role_id: editing.id,
-        name: editName,
-        description: editDescription || null,
-      });
-      await api.post<MutationReceipt>(`/roles/${editing.id}/permissions`, {
-        idempotency_key: newIdempotencyKey(),
-        role_id: editing.id,
-        permission_ids: Array.from(editPermissionIds),
-      });
-      setEditing(null);
-      setReloadToken((n) => n + 1);
-    } catch (err) {
-      setEditError(err instanceof ApiError ? err.message : "Failed to update role");
-    } finally {
-      setEditBusy(false);
     }
   }
 
@@ -145,9 +91,9 @@ export default function RolesAdminPage() {
       header: "",
       render: (r) => (
         <div className="flex gap-2 justify-end">
-          <Button size="sm" variant="secondary" onClick={() => openEdit(r)}>
+          <LinkButton href={`/admin/roles/${r.id}`} size="sm" variant="secondary">
             Edit
-          </Button>
+          </LinkButton>
           <Button size="sm" variant="danger" onClick={() => setDeleting(r)}>
             Delete
           </Button>
@@ -162,9 +108,18 @@ export default function RolesAdminPage() {
         title="Roles"
         subtitle="Roles assignable to users per site. Assign a role to a user from the Users page."
         action={
-          <Button variant="primary" onClick={() => setModalOpen(true)}>
-            <Icon name="plus" /> New role
-          </Button>
+          <div className="flex gap-2">
+            <OnboardingReturnLink />
+            <Button
+              variant="primary"
+              onClick={() => {
+                setCreateMode("template");
+                setModalOpen(true);
+              }}
+            >
+              <Icon name="plus" /> New role
+            </Button>
+          </div>
         }
       />
 
@@ -182,58 +137,40 @@ export default function RolesAdminPage() {
       </Card>
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="New role">
-        <form onSubmit={onCreate}>
-          <Field label="Name" required error={error}>
-            <Input value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
-          </Field>
-          <Field label="Description">
-            <Input value={description} onChange={(e) => setDescription(e.target.value)} />
-          </Field>
-          <div className="flex justify-between gap-3 mt-4">
-            <Button type="button" variant="secondary" onClick={() => setModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="primary" disabled={busy}>
-              {busy ? "Creating…" : "Create role"}
-            </Button>
-          </div>
-        </form>
-      </Modal>
-
-      <Modal open={editing !== null} onClose={() => setEditing(null)} title="Edit role">
-        <form onSubmit={onSaveEdit}>
-          <Field label="Name" required>
-            <Input value={editName} onChange={(e) => setEditName(e.target.value)} required />
-          </Field>
-          <Field label="Description">
-            <Input value={editDescription} onChange={(e) => setEditDescription(e.target.value)} />
-          </Field>
-          <Field label="Permissions" hint="What this role's users are allowed to do." error={editError}>
-            <div className="flex flex-col gap-2">
-              {allPermissions.map((p) => (
-                <label key={p.id} className="checkbox-row fs-3">
-                  <input
-                    type="checkbox"
-                    checked={editPermissionIds.has(p.id)}
-                    onChange={() => togglePermission(p.id)}
-                  />
-                  <span>
-                    <span className="font-semibold">{p.code}</span>
-                    {p.description && <span className="text-muted"> - {p.description}</span>}
-                  </span>
-                </label>
-              ))}
+        {createMode === "template" ? (
+          <>
+            <RoleTemplateGallery
+              onCreated={(roleId, sourceName) => {
+                setModalOpen(false);
+                router.push(`/admin/roles/${roleId}?cloned_from=${encodeURIComponent(sourceName)}`);
+              }}
+              onCancel={() => setModalOpen(false)}
+            />
+            <p className="fs-2 text-muted mt-3">
+              Need a role with no permissions at all?{" "}
+              <button type="button" className="link-button" style={{ background: "none", border: "none", padding: 0, color: "var(--brand-600)", textDecoration: "underline", cursor: "pointer" }} onClick={() => setCreateMode("blank")}>
+                Start blank instead
+              </button>
+            </p>
+          </>
+        ) : (
+          <form onSubmit={onCreate}>
+            <Field label="Name" required error={error}>
+              <Input value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+            </Field>
+            <Field label="Description">
+              <Input value={description} onChange={(e) => setDescription(e.target.value)} />
+            </Field>
+            <div className="flex justify-between gap-3 mt-4">
+              <Button type="button" variant="secondary" onClick={() => setCreateMode("template")}>
+                ← Start from a template instead
+              </Button>
+              <Button type="submit" variant="primary" disabled={busy}>
+                {busy ? "Creating…" : "Create blank role"}
+              </Button>
             </div>
-          </Field>
-          <div className="flex justify-between gap-3 mt-4">
-            <Button type="button" variant="secondary" onClick={() => setEditing(null)}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="primary" disabled={editBusy}>
-              {editBusy ? "Saving…" : "Save changes"}
-            </Button>
-          </div>
-        </form>
+          </form>
+        )}
       </Modal>
 
       <ConfirmDialog

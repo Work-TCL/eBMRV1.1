@@ -2,15 +2,17 @@ import uuid
 from datetime import datetime, timezone
 
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
 from app.modules.batch_execution.models import Batch, BatchStep
 from app.modules.device.models import DeviceUnit
 from app.modules.equipment.cleaning_models import CleaningExecution
-from app.modules.iam.models import User
+from app.modules.iam.models import Qualification, User
 from app.modules.material.models import MaterialLot
+from app.modules.material_specification.models import MaterialSpecificationVersion
+from app.modules.supplier_quality.models import Supplier
 from app.modules.policy.service import evaluate_policy
 from app.modules.product_master.models import ProductVersion
 from app.modules.qc.models import (
@@ -29,6 +31,7 @@ from app.modules.qc.models import (
     QcTestRun,
     QcTestSpecification,
 )
+from app.modules.qms.change_models import ChangeControl
 from app.modules.recipe_master.models import RecipeVersion
 from app.modules.rules import commands as rules_commands
 from app.modules.rules import service as rules_service
@@ -45,6 +48,8 @@ from app.mutation.errors import (
     OotRuleNotReleasedError,
     OriginalResultRequiredError,
     QaApprovalRequiredError,
+    QualificationExpiredError,
+    QualificationMissingError,
     RawDataRequiredError,
     ResampleNotAuthorizedError,
     RetestNotAuthorizedError,
@@ -74,6 +79,7 @@ SCOPE_TABLE_BY_TYPE = {
     "product": ProductVersion,
     "device": ProductVersion,
     "in_process": RecipeVersion,
+    "material": MaterialSpecificationVersion,
 }
 
 
@@ -92,6 +98,18 @@ async def _resolve_uom_id(session: AsyncSession, uom: str | None) -> uuid.UUID |
     return row.uom_id
 
 
+async def _resolve_uom_id_strict(session: AsyncSession, uom: str | None) -> uuid.UUID | None:
+    """Client requirements #2/#3: the QC UI's UomSelect only ever submits a code drawn from the released
+    UOM list, so an unresolvable non-empty code here means a caller sent something outside it -- reject
+    instead of silently leaving uom_id NULL."""
+    if not uom:
+        return None
+    uom_id = await _resolve_uom_id(session, uom)
+    if uom_id is None:
+        raise ValidationFailedError("Unrecognized or unreleased UOM code", uom=uom)
+    return uom_id
+
+
 def _record_hash(obj, *fields: str, version_field: str = "version") -> str:
     return sha256_hex({f: str(getattr(obj, f)) for f in ("id", version_field, *fields)})
 
@@ -108,7 +126,7 @@ def _receipt_from_existing(existing) -> MutationReceipt:
 
 # ---------------------------------------------------------------------------
 # CreateTestSpecificationDraft -- QC-FR-001/002: POST /qc/v1/specifications/drafts. scope_type=="material"
-# is rejected -- SG-057/SG-063, no material-specification-version entity exists anywhere in this codebase.
+# unblocked by SG-076 (MaterialSpecificationVersion now exists, built for SG-057).
 # ---------------------------------------------------------------------------
 
 
@@ -124,6 +142,7 @@ class TestDefinitionInput(BaseModel):
     required: bool = True
     release_blocking: bool = True
     review_policy: str | None = None
+    max_retests: int | None = None
 
 
 class CreateTestSpecificationDraftCommand(CommandEnvelope):
@@ -142,12 +161,6 @@ async def create_test_specification_draft(
     if existing is not None:
         return _receipt_from_existing(existing)
 
-    if cmd.scope_type == "material":
-        raise ValidationFailedError(
-            "scope_type='material' is not supported: no material-specification-version entity exists "
-            "yet in this codebase (SG-057/SG-063)",
-            scope_type=cmd.scope_type,
-        )
     if cmd.scope_type not in BUILDABLE_SCOPE_TYPES:
         raise ValidationFailedError("Unknown scope_type", scope_type=cmd.scope_type)
 
@@ -188,12 +201,13 @@ async def create_test_specification_draft(
                 method_version_id=td.method_version_id,
                 result_data_type=td.result_data_type,
                 uom=td.uom,
-                uom_id=await _resolve_uom_id(session, td.uom),
+                uom_id=await _resolve_uom_id_strict(session, td.uom),
                 acceptance_rule_business_id=td.acceptance_rule_business_id,
                 trend_rule_business_id=td.trend_rule_business_id,
                 required=td.required,
                 release_blocking=td.release_blocking,
                 review_policy=td.review_policy,
+                max_retests=td.max_retests,
             )
         )
 
@@ -445,10 +459,11 @@ async def release_qc_method_version(
     if method.lifecycle_state != "draft":
         raise InvalidTransitionError("Only a draft QC method version can be released", current_state=method.lifecycle_state)
 
-    # SG-186 (2026-09-12): no Document 106 policy row exists yet for this brand-new record type --
-    # resolve_signature_requirement() fails closed with SIGNATURE_POLICY_UNRESOLVED (SIGP-FR-004) until a
-    # project-owner decision seeds one, matching how material_specification_version/release (SG-185) and
-    # every prior brand-new record type in this codebase were correctly left before their own resolutions.
+    # SG-186 RESOLVED (2026-09-18, project-owner-directed): "Released" by an independent QA Releaser,
+    # mirroring qc_test_specification/release (Document 106 row 58) -- the nearest in-module precedent,
+    # which itself enforces no bespoke independence check (no single stored "performer" identity to check
+    # against; RBAC (qc_method.release: Admin/QA Releaser only) + the signature ceremony are the whole
+    # enforcement surface, same as its precedent).
     policy = await signature_service.resolve_signature_requirement(
         session, record_type="qc_method_version", action="release"
     )
@@ -534,6 +549,10 @@ async def create_sample(session: AsyncSession, cmd: CreateSampleCommand, actor_u
     if existing is not None:
         return _receipt_from_existing(existing)
 
+    # 2026-09-18: qc_sample.create is enforced at the router (post_create_sample), not here -- this
+    # function is also called internally by material/commands.py::collect_sample() and
+    # equipment/cleaning_commands.py/lims_integration/commands.py's own already-authorized flows, which
+    # must not be blocked by a permission check meant for the direct "log a new QC sample" action.
     if cmd.source_id is not None and cmd.source_type in SOURCE_TABLE_BY_TYPE:
         table = SOURCE_TABLE_BY_TYPE[cmd.source_type]
         if await session.get(table, cmd.source_id) is None:
@@ -548,7 +567,7 @@ async def create_sample(session: AsyncSession, cmd: CreateSampleCommand, actor_u
         lot_batch_serial_ref=cmd.lot_batch_serial_ref,
         sample_quantity=cmd.sample_quantity,
         sample_uom=cmd.sample_uom,
-        sample_uom_id=await _resolve_uom_id(session, cmd.sample_uom),
+        sample_uom_id=await _resolve_uom_id_strict(session, cmd.sample_uom),
         sampled_at=cmd.sampled_at,
         sampler_subject_id=actor_user_id,
         state="collected" if cmd.sampled_at else "planned",
@@ -602,6 +621,8 @@ async def receive_sample(session: AsyncSession, cmd: ReceiveSampleCommand, actor
     if sample.state not in ("planned", "collected"):
         raise InvalidTransitionError("Only a planned or collected sample can be received", current_status=sample.state)
 
+    # 2026-09-18: qc_sample.receive is enforced at the router (post_receive_sample), not here -- also
+    # called internally by lims_integration/commands.py's already-authorized LIMS ingestion flow.
     old_state = sample.state
     sample.state = "received"
     sample.received_at = datetime.now(timezone.utc)
@@ -706,6 +727,12 @@ class CreateTestOrderCommand(CommandEnvelope):
     sample_id: uuid.UUID
     test_definition_id: uuid.UUID
     assigned_analyst_id: uuid.UUID | None = None
+    # Client gap-analysis Phase 6 (2026-10-05): set when this test was sent to an external lab
+    # (MaterialSpecificationCriterion.fulfillment_path == "external_lab") rather than run in-house --
+    # records which Supplier (role_type "service_provider"/"both") performed it and a hash of the report
+    # relied upon. Both None for an in-house test order.
+    external_provider_id: uuid.UUID | None = None
+    external_report_hash: str | None = None
 
 
 async def create_test_order(session: AsyncSession, cmd: CreateTestOrderCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
@@ -720,6 +747,8 @@ async def create_test_order(session: AsyncSession, cmd: CreateTestOrderCommand, 
     if sample.state != "received":
         raise InvalidTransitionError("Only a received sample is eligible for a test order", current_status=sample.state)
 
+    await evaluate_policy(session, actor_user_id, action="qc_test_order.create", site_id=None)
+
     definition = await session.get(QcTestDefinition, cmd.test_definition_id)
     if definition is None:
         raise NotFoundError("Test definition not found")
@@ -727,12 +756,21 @@ async def create_test_order(session: AsyncSession, cmd: CreateTestOrderCommand, 
     if spec is None or spec.status != "released":
         raise TestSpecNotEffectiveError("Test definition's specification is not released")
 
+    if cmd.external_provider_id is not None:
+        provider = await session.get(Supplier, cmd.external_provider_id)
+        if provider is None or provider.role_type not in ("service_provider", "both"):
+            raise ValidationFailedError(
+                "external_provider_id must reference a Supplier with role_type 'service_provider' or 'both'"
+            )
+
     order = QcTestOrder(
         sample_id=sample.id,
         test_definition_id=definition.id,
         assigned_analyst_id=cmd.assigned_analyst_id,
         state="assigned" if cmd.assigned_analyst_id else "created",
         blocking=definition.release_blocking,
+        external_provider_id=cmd.external_provider_id,
+        external_report_hash=cmd.external_report_hash,
         version=1,
     )
     session.add(order)
@@ -764,6 +802,36 @@ class StartTestOrderCommand(CommandEnvelope):
     analyst_id: uuid.UUID | None = None
 
 
+async def _check_qc_analyst_qualification(session: AsyncSession, user_id: uuid.UUID) -> None:
+    """QC-FR-011 (Task 4, 2026-09-23, SG-066): "Assign qualified analyst/team; qualification/training...
+    checked at execution." Neither `qc_test_definition` nor `qc_method_version` declares a per-test/per-
+    method `required_qualification_code` field (unlike a recipe step's own explicit field) -- Document 23
+    describes a role-level qualification to perform QC testing at all, not a per-test-configurable one, so
+    this reuses `material/commands.py::_check_dispensing_qualification`'s exact shape: a single fixed
+    `iam.Qualification.qualification_code` gate, not a field-driven one like batch_execution's step-level
+    check. Deliberately called only from the router (`post_start_test_order`), not from this function body
+    -- `start_test_order` is also called internally by `lims_integration/commands.py`'s already-authorized
+    LIMS ingestion flow using a non-human service identity (MUT-FR-023), which cannot hold a human
+    `iam.Qualification` record; the router already draws exactly this same line for the RBAC permission
+    check (`qc_test_order.start`, router-only, per its own 2026-09-18 comment)."""
+    now = datetime.now(timezone.utc)
+    result = await session.execute(
+        select(Qualification)
+        .where(Qualification.user_id == user_id, Qualification.qualification_code == "qc_analyst")
+        .order_by(Qualification.granted_at.desc())
+        .limit(1)
+    )
+    qualification = result.scalar_one_or_none()
+    if qualification is None:
+        raise QualificationMissingError(
+            "Actor has no qc_analyst qualification record", qualification_code="qc_analyst"
+        )
+    if qualification.expires_at is not None and qualification.expires_at.replace(tzinfo=timezone.utc) < now:
+        raise QualificationExpiredError(
+            "Actor's qc_analyst qualification has expired", qualification_code="qc_analyst"
+        )
+
+
 async def start_test_order(session: AsyncSession, cmd: StartTestOrderCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
     payload_hash = sha256_hex(cmd.model_dump(mode="json"))
     existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
@@ -781,6 +849,8 @@ async def start_test_order(session: AsyncSession, cmd: StartTestOrderCommand, ac
     if order.state not in ("created", "assigned"):
         raise InvalidTransitionError("Only a created or assigned test order can be started", current_status=order.state)
 
+    # 2026-09-18: qc_test_order.start is enforced at the router (post_start_test_order), not here --
+    # also called internally by lims_integration/commands.py's already-authorized LIMS ingestion flow.
     old_state = order.state
     if cmd.analyst_id is not None:
         order.assigned_analyst_id = cmd.analyst_id
@@ -836,6 +906,8 @@ async def record_raw_data(session: AsyncSession, cmd: RecordRawDataCommand, acto
     if order.state not in ("in_progress",):
         raise InvalidTransitionError("Test order must be in_progress to record raw data", current_status=order.state)
 
+    # 2026-09-18: qc_test_order.record_raw_data is enforced at the router (post_record_raw_data), not
+    # here -- also called internally by lims_integration/commands.py's already-authorized flow.
     run = QcTestRun(
         test_order_id=order.id,
         method_version=cmd.method_version,
@@ -923,6 +995,9 @@ async def record_result(session: AsyncSession, cmd: RecordResultCommand, actor_u
     run = await session.get(QcTestRun, cmd.test_run_id)
     if run is None or run.test_order_id != order.id:
         raise NotFoundError("Test run not found for this test order")
+
+    # 2026-09-18: qc_result.record is enforced at the router (post_record_result), not here -- also
+    # called internally by lims_integration/commands.py's already-authorized flow.
     definition = await session.get(QcTestDefinition, order.test_definition_id)
 
     # qc_result is append-only (no UPDATE grant, AG-08) -- every field, including the classification
@@ -954,7 +1029,7 @@ async def record_result(session: AsyncSession, cmd: RecordResultCommand, actor_u
         value_text=cmd.value_text,
         value_json=cmd.value_json,
         uom=cmd.uom,
-        uom_id=await _resolve_uom_id(session, cmd.uom),
+        uom_id=await _resolve_uom_id_strict(session, cmd.uom),
         acceptance_rule_id=acceptance_rule_id,
         outcome=outcome,
         recorded_by_user_id=actor_user_id,
@@ -1029,6 +1104,8 @@ async def complete_test_order(session: AsyncSession, cmd: CompleteTestOrderComma
         )
     if order.state not in ("in_progress", "oos_pending", "oot_pending"):
         raise InvalidTransitionError("Test order is not in a completable state", current_status=order.state)
+
+    await evaluate_policy(session, actor_user_id, action="qc_test_order.complete", site_id=None)
 
     definition = await session.get(QcTestDefinition, order.test_definition_id)
     if definition and definition.required:
@@ -1358,7 +1435,15 @@ async def open_oos_from_result(session: AsyncSession, cmd: OpenOosFromResultComm
 
     order = await session.get(QcTestOrder, source_result.test_order_id)
     sample = await session.get(QcSample, order.sample_id) if order else None
-    batch_id = sample.source_id if sample and sample.source_type == "batch" else None
+    batch_id: uuid.UUID | None = None
+    if sample and sample.source_type == "batch":
+        batch_id = sample.source_id
+    elif sample and sample.source_type == "batch_step":
+        # A step-level in-process sample's source_id points at its gxp_batch_step row, not the batch
+        # directly -- resolve it so OosRecord.batch_id is populated (release/service.py's open-OOS
+        # release-blocker check reads this column directly, not through QcSample).
+        step = await session.get(BatchStep, sample.source_id)
+        batch_id = step.batch_id if step else None
     material_lot_id = sample.source_id if sample and sample.source_type == "material_lot" else None
 
     oos = OosRecord(
@@ -1431,6 +1516,8 @@ async def record_lab_investigation(
     if oos.state not in ("open", "lab_investigation"):
         raise InvalidTransitionError("Lab investigation can only be recorded while the OOS is open or under lab investigation", current_status=oos.state)
 
+    await evaluate_policy(session, actor_user_id, action="oos_record.lab_investigation", site_id=oos.site_id)
+
     activity = OosInvestigationActivity(
         oos_record_id=oos.id, phase="lab_investigation", activity_type=cmd.activity_type,
         checklist_item=cmd.checklist_item, response_text=cmd.response_text,
@@ -1492,6 +1579,8 @@ async def classify_lab_cause(session: AsyncSession, cmd: ClassifyLabCauseCommand
         raise StaleVersionError("OOS record was modified since it was read", expected_version=cmd.expected_version, current_version=oos.version)
     if oos.state not in ("open", "lab_investigation"):
         raise InvalidTransitionError("Only a newly-opened or under-investigation OOS can be classified", current_status=oos.state)
+
+    await evaluate_policy(session, actor_user_id, action="oos_record.classify_lab_cause", site_id=oos.site_id)
 
     has_activity = (
         await session.execute(select(OosInvestigationActivity.id).where(OosInvestigationActivity.oos_record_id == oos.id))
@@ -1644,6 +1733,31 @@ async def authorize_retest_plan(session: AsyncSession, cmd: AuthorizeRetestPlanC
     if oos.state != "extended_investigation":
         raise RetestNotAuthorizedError("A retest plan can only be authorized during extended investigation", current_status=oos.state)
 
+    await evaluate_policy(session, actor_user_id, action="oos_record.retest_plan", site_id=oos.site_id)
+
+    # Client_Decisions_Neededanswers Topic 3 Q6 (2026-10-02): "the number of permitted retests should
+    # be defined by the applicable test procedure/SOP and should not be unlimited" -- resolved via the
+    # OOS's own source result -> test order -> test definition (the governing procedure/SOP record).
+    # None = no configured cap on that test, matching this codebase's "captured, not silently capped"
+    # precedent for authored-but-unconfigured policy values.
+    source_result = await session.get(QcResult, oos.source_result_id)
+    definition = await session.get(QcTestOrder, source_result.test_order_id) if source_result else None
+    definition = await session.get(QcTestDefinition, definition.test_definition_id) if definition else None
+    if definition is not None and definition.max_retests is not None:
+        prior_retests = (
+            await session.execute(
+                select(func.coalesce(func.sum(OosRetestPlan.number_of_retests), 0)).where(
+                    OosRetestPlan.oos_record_id == oos.id
+                )
+            )
+        ).scalar_one()
+        if prior_retests + cmd.number_of_retests > definition.max_retests:
+            raise RetestNotAuthorizedError(
+                "Retest plan would exceed the test procedure's maximum permitted retests",
+                max_retests=definition.max_retests, already_authorized=prior_retests,
+                requested=cmd.number_of_retests,
+            )
+
     plan = OosRetestPlan(
         oos_record_id=oos.id, justification=cmd.justification, number_of_retests=cmd.number_of_retests,
         method_ref=cmd.method_ref, analyst_criteria=cmd.analyst_criteria, instrument_criteria=cmd.instrument_criteria,
@@ -1692,6 +1806,8 @@ async def authorize_resample_plan(session: AsyncSession, cmd: AuthorizeResampleP
         raise NotFoundError("OOS record not found")
     if oos.state != "extended_investigation":
         raise ResampleNotAuthorizedError("A resample plan can only be authorized during extended investigation", current_status=oos.state)
+
+    await evaluate_policy(session, actor_user_id, action="oos_record.resample_plan", site_id=oos.site_id)
 
     plan = OosResamplePlan(
         oos_record_id=oos.id, scientific_rationale=cmd.scientific_rationale, sampling_plan_ref=cmd.sampling_plan_ref,
@@ -1750,6 +1866,8 @@ async def record_impact_assessment(
         raise StaleVersionError("OOS record was modified since it was read", expected_version=cmd.expected_version, current_version=oos.version)
     if oos.state not in ("qa_review", "extended_investigation"):
         raise InvalidTransitionError("Impact assessment requires lab or extended investigation to be complete", current_status=oos.state)
+
+    await evaluate_policy(session, actor_user_id, action="oos_record.impact", site_id=oos.site_id)
 
     session.add(
         OosInvestigationActivity(
@@ -1940,6 +2058,157 @@ async def close_oos(session: AsyncSession, cmd: CloseOosCommand, actor_user_id: 
 
 
 # ---------------------------------------------------------------------------
+# ReopenOos / LinkOosChangeControl -- Client_Decisions_Neededanswers Topic 3 Q4/Q5 (2026-10-02,
+# project-owner-directed): closes SG-074's "reopen" and "CAPA/Change Control link" gaps. Reopen is
+# unsigned/RBAC-gated only, same precedent as reopen_oot/reopen_capa (neither has a Document 106 row
+# either); no independence check either, matching those two. Q4's "the appropriate investigation step"
+# is a caller-chosen target (bounded to a validated set of real pre-approval states), not a single
+# hardcoded landing point this pass would otherwise have to guess.
+# ---------------------------------------------------------------------------
+
+
+OOS_REOPEN_TARGET_STATES = ("lab_investigation", "qa_review", "extended_investigation", "final_disposition")
+
+
+class ReopenOosCommand(CommandEnvelope):
+    oos_record_id: uuid.UUID
+    expected_version: int
+    reason: str
+    new_evidence: str
+    target_state: str  # one of OOS_REOPEN_TARGET_STATES
+
+
+async def reopen_oos(session: AsyncSession, cmd: ReopenOosCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    result = await session.execute(select(OosRecord).where(OosRecord.id == cmd.oos_record_id).with_for_update())
+    oos = result.scalar_one_or_none()
+    if oos is None:
+        raise NotFoundError("OOS record not found")
+    if oos.version != cmd.expected_version:
+        raise StaleVersionError(
+            "OOS record was modified since it was read",
+            expected_version=cmd.expected_version, current_version=oos.version,
+        )
+    if oos.state != "closed":
+        raise InvalidTransitionError("Only a closed OOS record can be reopened", current_status=oos.state)
+    if cmd.target_state not in OOS_REOPEN_TARGET_STATES:
+        raise ValidationFailedError(
+            "target_state must be one of the OOS investigation's own pre-approval states",
+            allowed=list(OOS_REOPEN_TARGET_STATES),
+        )
+    if not cmd.reason.strip() or not cmd.new_evidence.strip():
+        raise ValidationFailedError("reason and new_evidence are required to reopen a closed OOS record")
+
+    await evaluate_policy(session, actor_user_id, action="oos_record.reopen", site_id=oos.site_id)
+
+    old_state = oos.state
+    oos.reopen_history = [
+        *oos.reopen_history,
+        {
+            "previous_closed_at": oos.closed_at.isoformat() if oos.closed_at else None,
+            "target_state": cmd.target_state, "reason": cmd.reason, "new_evidence": cmd.new_evidence,
+            "reopened_by": str(actor_user_id), "reopened_at": datetime.now(timezone.utc).isoformat(),
+        },
+    ]
+    oos.state = cmd.target_state
+    oos.closed_at = None
+    oos.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=oos.site_id, aggregate_type="oos_record", aggregate_id=oos.id, aggregate_version=oos.version,
+        action="Changed", actor_id=actor_user_id, correlation_id=correlation_id, reason=cmd.reason,
+        old_value={"state": old_state}, new_value={"state": oos.state},
+    )
+    await write_outbox_event(
+        session, event_type="OOSReopened", aggregate_type="oos_record", aggregate_id=oos.id,
+        aggregate_version=oos.version, payload={"id": str(oos.id)}, correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=oos.site_id, command_type="ReopenOos", aggregate_type="oos_record", aggregate_id=oos.id,
+        expected_version=cmd.expected_version, resulting_version=oos.version, idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash, actor_user_id=actor_user_id, payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=oos.id, resulting_version=oos.version,
+        audit_event_id=audit_event.id, correlation_id=correlation_id,
+    )
+
+
+class LinkOosChangeControlCommand(CommandEnvelope):
+    oos_record_id: uuid.UUID
+    expected_version: int
+    change_control_id: uuid.UUID
+
+
+async def link_oos_change_control(
+    session: AsyncSession, cmd: LinkOosChangeControlCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    result = await session.execute(select(OosRecord).where(OosRecord.id == cmd.oos_record_id).with_for_update())
+    oos = result.scalar_one_or_none()
+    if oos is None:
+        raise NotFoundError("OOS record not found")
+    if oos.version != cmd.expected_version:
+        raise StaleVersionError(
+            "OOS record was modified since it was read",
+            expected_version=cmd.expected_version, current_version=oos.version,
+        )
+    if (await session.get(ChangeControl, cmd.change_control_id)) is None:
+        raise NotFoundError("Change control record not found", change_control_id=str(cmd.change_control_id))
+
+    await evaluate_policy(session, actor_user_id, action="oos_record.link_change_control", site_id=oos.site_id)
+
+    old_change_control_id = oos.change_control_id
+    oos.change_control_id = cmd.change_control_id
+    oos.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=oos.site_id, aggregate_type="oos_record", aggregate_id=oos.id, aggregate_version=oos.version,
+        action="Changed", actor_id=actor_user_id, correlation_id=correlation_id,
+        old_value={"change_control_id": str(old_change_control_id) if old_change_control_id else None},
+        new_value={"change_control_id": str(cmd.change_control_id)},
+    )
+    await write_outbox_event(
+        session, event_type="OOSChangeControlLinked", aggregate_type="oos_record", aggregate_id=oos.id,
+        aggregate_version=oos.version, payload={"id": str(oos.id), "change_control_id": str(cmd.change_control_id)},
+        correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=oos.site_id, command_type="LinkOosChangeControl", aggregate_type="oos_record",
+        aggregate_id=oos.id, expected_version=cmd.expected_version, resulting_version=oos.version,
+        idempotency_key=cmd.idempotency_key, command_hash=payload_hash, actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=oos.id, resulting_version=oos.version,
+        audit_event_id=audit_event.id, correlation_id=correlation_id,
+    )
+
+
+async def get_oos_linked_capas(session: AsyncSession, oos_record_id: uuid.UUID) -> list[dict]:
+    """Q5's OOS->CAPA direction needs no new column: CapaRecord.source_type=='oos'/source_id already
+    covers it (app/modules/qms/capa_models.py). A reverse query, not a stored link."""
+    from app.modules.qms.capa_models import CapaRecord
+
+    rows = (
+        await session.execute(
+            select(CapaRecord).where(CapaRecord.source_type == "oos", CapaRecord.source_id == oos_record_id)
+        )
+    ).scalars().all()
+    return [{"id": str(c.id), "capa_number": c.capa_number, "state": c.state} for c in rows]
+
+
+# ---------------------------------------------------------------------------
 # EvaluateOot -- OOT-FR-001/002/003/009: POST /quality/oot/v1/evaluate. Unsigned. Reuses
 # `_evaluate_acceptance` exactly as Document 23's own acceptance-rule classification -- no released trend
 # rule for the test definition is a hard OOT_RULE_NOT_RELEASED error here (unlike record_result's silent
@@ -2082,4 +2351,73 @@ async def close_oot(session: AsyncSession, cmd: CloseOotCommand, actor_user_id: 
     return MutationReceipt(
         command_id=receipt.id, aggregate_id=oot.id, resulting_version=oot.version,
         audit_event_id=audit_event.id, signature_id=signature_id, correlation_id=correlation_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# ReopenOot -- SG-074 Task 3 Part B. Same shape as qms.commands.reopen_deviation()/reopen_capa(): reason +
+# new_evidence required, permission-gated, unsigned. OOS reopen is not built here -- see SG-074's register
+# entry (oos_record's DDL-frozen 17-column schema has no reopen_history column to add, and OOS's richer
+# multi-stage investigation state machine has no Document-25-defined landing state after "closed", unlike
+# OOT's flat open/closed model where "open" is the only, unambiguous target).
+# ---------------------------------------------------------------------------
+
+
+class ReopenOotCommand(CommandEnvelope):
+    oot_record_id: uuid.UUID
+    expected_version: int
+    reason: str
+    new_evidence: str
+
+
+async def reopen_oot(session: AsyncSession, cmd: ReopenOotCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    result = await session.execute(select(OotRecord).where(OotRecord.id == cmd.oot_record_id).with_for_update())
+    oot = result.scalar_one_or_none()
+    if oot is None:
+        raise NotFoundError("OOT record not found")
+    if oot.version != cmd.expected_version:
+        raise StaleVersionError("OOT record was modified since it was read", expected_version=cmd.expected_version, current_version=oot.version)
+    if oot.state != "closed":
+        raise InvalidTransitionError("Only a closed OOT record can be reopened", current_status=oot.state)
+    if not cmd.reason.strip() or not cmd.new_evidence.strip():
+        raise ValidationFailedError("reason and new_evidence are required to reopen a closed OOT record")
+
+    await evaluate_policy(session, actor_user_id, action="oot_record.reopen", site_id=None)
+
+    old_state = oot.state
+    oot.reopen_history = [
+        *oot.reopen_history,
+        {
+            "previous_closed_at": oot.closed_at.isoformat() if oot.closed_at else None,
+            "reason": cmd.reason, "new_evidence": cmd.new_evidence, "reopened_by": str(actor_user_id),
+            "reopened_at": datetime.now(timezone.utc).isoformat(),
+        },
+    ]
+    oot.state = "open"
+    oot.closed_at = None
+    oot.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=None, aggregate_type="oot_record", aggregate_id=oot.id, aggregate_version=oot.version,
+        action="Changed", actor_id=actor_user_id, correlation_id=correlation_id, reason=cmd.reason,
+        old_value={"state": old_state}, new_value={"state": oot.state},
+    )
+    await write_outbox_event(
+        session, event_type="OOTReopened", aggregate_type="oot_record", aggregate_id=oot.id,
+        aggregate_version=oot.version, payload={"id": str(oot.id)}, correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=None, command_type="ReopenOot", aggregate_type="oot_record", aggregate_id=oot.id,
+        expected_version=cmd.expected_version, resulting_version=oot.version, idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash, actor_user_id=actor_user_id, payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=oot.id, resulting_version=oot.version,
+        audit_event_id=audit_event.id, correlation_id=correlation_id,
     )

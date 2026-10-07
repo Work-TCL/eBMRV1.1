@@ -1,9 +1,11 @@
 """Document 11 (SPEC-EBMR-002) -- the buildable slice: create/issue/start/hold/resume/abort a batch and
 claim/start a batch step, against real released product_master/recipe_master versions. New, additive
 module -- does not touch app/modules/batch (the legacy Batch-facing stub); the full pre-existing suite
-passes unmodified, proving that. Everything gated on gxp_step_result/gxp_step_evidence_link/
-gxp_batch_hold or on absent infrastructure (Temporal, Material Service, Equipment, qualification schema,
-exception/rework/branch entities) is out of scope this pass -- SG-047/SG-048.
+passes unmodified, proving that. Everything gated on gxp_step_evidence_link/gxp_batch_hold's full
+generality or on absent infrastructure (Temporal, qualification schema, exception/rework/branch entities)
+is out of scope this pass -- SG-047/SG-048. Material/equipment step-eligibility (SG-048 #012/#013) are
+both now covered -- see `test_complete_step_blocked_without_required_material_then_succeeds_after_
+consumption` and `test_start_step_blocked_without_required_equipment_then_succeeds_with_eligible_asset`.
 """
 
 import uuid
@@ -13,7 +15,18 @@ from sqlalchemy import select
 
 from app.core.security import hash_password
 from app.modules.batch_execution.models import Batch
+from app.modules.equipment.commands import QUALIFIED_MARKER
+from app.modules.equipment.models import EquipmentAsset
 from app.modules.iam.models import Permission, Qualification, Role, RolePermission, User, UserSiteRole
+from app.modules.material.models import (
+    DispensedContainer,
+    DispensingOrder,
+    InventoryTransaction,
+    Material,
+    MaterialConsumption,
+    MaterialLot,
+)
+from app.modules.material_specification.models import MaterialSpecificationVersion
 from app.modules.signature.models import SignaturePolicy
 from tests.conftest import DEMO_PASSWORD, auth_headers, idem, login
 
@@ -34,7 +47,8 @@ async def _make_admin(db, seeded, username="admin.batch"):
 
 async def _make_released_product_and_recipe(
     client, admin_token, site_id, tag, step_a_role=None, step_a_parameters=None, step_a_evidence=None,
-    step_a_qualification_code=None,
+    step_a_qualification_code=None, step_a_equipment_requirements=None, step_a_qc_requirements=None,
+    step_a_material_requirements=None,
 ):
     resp = await client.post(
         "/products/v1/drafts",
@@ -82,6 +96,9 @@ async def _make_released_product_and_recipe(
                     **({"parameters": step_a_parameters} if step_a_parameters else {}),
                     **({"evidence_requirements": step_a_evidence} if step_a_evidence else {}),
                     **({"required_qualification_code": step_a_qualification_code} if step_a_qualification_code else {}),
+                    **({"equipment_requirements": step_a_equipment_requirements} if step_a_equipment_requirements else {}),
+                    **({"qc_requirements": step_a_qc_requirements} if step_a_qc_requirements else {}),
+                    **({"material_requirements": step_a_material_requirements} if step_a_material_requirements else {}),
                 },
                 {"stable_step_code": "STEP-B", "section_code": "SEC-1", "step_type": "instruction", "sequence_hint": 2},
             ],
@@ -109,7 +126,8 @@ async def _make_released_product_and_recipe(
 
 async def _released_pair(
     db, client, seeded, tag, step_a_role=None, step_a_parameters=None, step_a_evidence=None,
-    step_a_qualification_code=None,
+    step_a_qualification_code=None, step_a_equipment_requirements=None, step_a_qc_requirements=None,
+    step_a_material_requirements=None,
 ):
     async with db.begin():
         await _make_admin(db, seeded, f"admin.batch{tag}")
@@ -119,6 +137,8 @@ async def _released_pair(
     product_version_id, recipe_version_id = await _make_released_product_and_recipe(
         client, admin_token, seeded["site_id"], tag, step_a_role=step_a_role, step_a_parameters=step_a_parameters,
         step_a_evidence=step_a_evidence, step_a_qualification_code=step_a_qualification_code,
+        step_a_equipment_requirements=step_a_equipment_requirements, step_a_qc_requirements=step_a_qc_requirements,
+        step_a_material_requirements=step_a_material_requirements,
     )
     return admin_token, product_version_id, recipe_version_id
 
@@ -248,11 +268,12 @@ async def test_issue_creates_snapshot_and_instantiates_steps(client, seeded, db)
     )
     batch_id = resp.json()["aggregate_id"]
 
-    # SG-146 (remainder, module 4 of 8): "kg" has no released rules.gxp_uom row in this environment --
-    # the dual-write is a no-op (expand-phase contract, nothing breaks).
+    # Client requirements #2/#3 (2026-09-21): "kg" is now a baseline released rules.gxp_uom row (see
+    # conftest.py's `seeded` fixture) and create_batch hardens uom resolution via
+    # `_resolve_uom_id_strict` -- the dual-write resolves.
     batch_row = await db.get(Batch, uuid.UUID(batch_id))
     assert batch_row.target_uom == "kg"
-    assert batch_row.target_uom_id is None
+    assert batch_row.target_uom_id is not None
 
     resp = await client.post(
         f"/batches/v1/{batch_id}/issue",
@@ -926,6 +947,15 @@ async def test_hold_and_resume_step_blocks_and_restores_progress(client, seeded,
     assert resumed["state"] == "in_progress"
     assert step_id not in view["active_hold_by_step_id"]
 
+    # Read-path completeness fix: released_at/released_by/release_reason are written by resume_step but
+    # were never surfaced anywhere before holds_by_step_id -- only the single active hold was visible.
+    assert len(view["holds_by_step_id"][step_id]) == 1
+    closed_hold = view["holds_by_step_id"][step_id][0]
+    assert closed_hold["reason"] == "waiting on a fresh balance calibration"
+    assert closed_hold["released_at"] is not None
+    assert closed_hold["released_by"] is not None
+    assert closed_hold["release_reason"] == "balance recalibrated, verified"
+
     # Now genuinely completable.
     challenge_id = await _sign_step(client, admin_token, batch_id, step_id, "results")
     resp = await client.post(
@@ -1232,6 +1262,239 @@ async def test_complete_step_blocked_without_required_evidence_then_succeeds_aft
             "idempotency_key": idem(), "batch_id": batch_id, "step_id": ready_step["step_id"],
             "expected_version": step_version,
             "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+
+# ---------------------------------------------------------------------------
+# Client requirement #12 -- a step's declared required in-process QC test(s) must reach a passing result
+# before the step can be marked complete. Same completion-gate shape as the parameter/evidence checks
+# above.
+# ---------------------------------------------------------------------------
+
+
+async def test_complete_step_blocked_without_required_qc_test_then_succeeds_after_passing_result(client, seeded, db):
+    import uuid as uuid_mod
+
+    from app.modules.qc.models import (
+        QcResult,
+        QcSample,
+        QcTestDefinition,
+        QcTestOrder,
+        QcTestRun,
+        QcTestSpecification,
+    )
+
+    async with db.begin():
+        spec = QcTestSpecification(
+            spec_code="SPEC-BATQC1", version_no=1, scope_type="in_process",
+            scope_version_id=uuid_mod.uuid4(), status="released",
+        )
+        db.add(spec)
+        await db.flush()
+        spec_id = spec.id
+        definition = QcTestDefinition(
+            specification_id=spec.id, test_code="IPC-WEIGHT", test_name="In-process weight check",
+            result_data_type="numeric", required=True, release_blocking=True,
+        )
+        db.add(definition)
+        await db.flush()
+        definition_id = definition.id
+
+    admin_token, product_version_id, recipe_version_id = await _released_pair(
+        db, client, seeded, "qc1",
+        step_a_qc_requirements=[{"qc_test_specification_id": str(spec_id), "required": True}],
+    )
+    resp = await client.post(
+        "/batches/v1",
+        json=_create_body(seeded["site_id"], product_version_id, recipe_version_id, "BAT-QC-1"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
+    step_id = ready_step["step_id"]
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "expected_version": ready_step["version"]},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    step_version = ready_step["version"] + 1
+
+    challenge_id = await _sign_step(client, admin_token, batch_id, step_id, "complete")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/complete",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id,
+            "expected_version": step_version, "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 422, resp.text
+    body = resp.json()
+    assert body["code"] == "VALIDATION_FAILED"
+    assert body["details"]["missing_qc_test_specification_ids"] == [str(spec_id)]
+
+    async with db.begin():
+        sample = QcSample(
+            sample_number=f"SMP-BATQC1-{uuid_mod.uuid4().hex[:6]}", sample_type="in_process",
+            source_type="batch_step", source_id=uuid_mod.UUID(step_id), state="testing_complete",
+        )
+        db.add(sample)
+        await db.flush()
+        order = QcTestOrder(sample_id=sample.id, test_definition_id=definition_id, state="reviewed", blocking=True)
+        db.add(order)
+        await db.flush()
+        run = QcTestRun(test_order_id=order.id)
+        db.add(run)
+        await db.flush()
+        db.add(QcResult(test_order_id=order.id, test_run_id=run.id, result_type="numeric", outcome="pass"))
+
+    # The OOS "Open from result" picker must find this batch_step-sourced sample's result too, not
+    # only samples sourced directly against the batch.
+    resp = await client.get(f"/qc/v1/results?batch_id={batch_id}", headers=auth_headers(admin_token))
+    assert resp.status_code == 200, resp.text
+    assert any("In-process weight check" in r["label"] for r in resp.json()), resp.json()
+
+    challenge_id = await _sign_step(client, admin_token, batch_id, step_id, "complete")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/complete",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id,
+            "expected_version": step_version, "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+
+async def test_complete_step_blocked_without_required_material_then_succeeds_after_consumption(client, seeded, db):
+    """SG-045/SG-048 #012 (BAT-FR-012, 2026-09-22): a step declaring a RecipeMaterialRequirement cannot
+    be completed until a matching MaterialConsumption exists for the batch. See
+    `_enforce_step_material`'s own docstring for the deliberate scope (material identity, not step
+    attribution or quantity/UOM tolerance)."""
+    site_id = seeded["site_id"]
+    async with db.begin():
+        material = Material(site_id=site_id, code="RM-BATMAT1", name="Batch Material Test", uom="kg")
+        db.add(material)
+        await db.flush()
+        material_id = material.id
+        spec_version = MaterialSpecificationVersion(
+            material_spec_business_id="SPEC-BATMAT1", version_no=1, material_id=material_id,
+            name="Batch Material Spec", site_id=site_id,
+        )
+        db.add(spec_version)
+        await db.flush()
+        spec_version_id = spec_version.id
+
+    admin_token, product_version_id, recipe_version_id = await _released_pair(
+        db, client, seeded, "mat1",
+        step_a_material_requirements=[{"material_spec_version_id": str(spec_version_id)}],
+    )
+
+    resp = await client.post(
+        "/batches/v1",
+        json=_create_body(seeded["site_id"], product_version_id, recipe_version_id, "BAT-MAT-1"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
+    step_id = ready_step["step_id"]
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "expected_version": ready_step["version"]},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    step_version = ready_step["version"] + 1
+
+    challenge_id = await _sign_step(client, admin_token, batch_id, step_id, "complete")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/complete",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id,
+            "expected_version": step_version, "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 422, resp.text
+    body = resp.json()
+    assert body["code"] == "VALIDATION_FAILED"
+    assert body["details"]["missing_material_spec_version_ids"] == [str(spec_version_id)]
+
+    async with db.begin():
+        admin_user_id = (await db.execute(select(User.id).where(User.username == "admin.batchmat1"))).scalar_one()
+        lot = MaterialLot(
+            material_id=material_id, site_id=site_id, internal_lot="LOT-BATMAT1",
+            received_quantity="10.000000", available_quantity="10.000000", uom="kg",
+            status="released", received_by_user_id=admin_user_id,
+        )
+        db.add(lot)
+        order = DispensingOrder(
+            site_id=site_id, batch_id=uuid.UUID(batch_id), material_id=material_id,
+            target_qty="1.000000", target_uom="kg", tolerance_low="0.900000", tolerance_high="1.100000",
+            requested_by_user_id=admin_user_id,
+        )
+        db.add(order)
+        await db.flush()
+        container = DispensedContainer(
+            batch_id=uuid.UUID(batch_id), material_id=material_id, dispensing_order_id=order.id,
+            container_code="DC-BATMAT1", actual_quantity="1.000000", uom="kg",
+        )
+        db.add(container)
+        txn = InventoryTransaction(
+            site_id=site_id, material_lot_id=lot.id, transaction_type="CONSUME", quantity="1.000000", uom="kg",
+            actor_type="human", actor_id=str(admin_user_id),
+        )
+        db.add(txn)
+        await db.flush()
+        db.add(
+            MaterialConsumption(
+                site_id=site_id, batch_id=uuid.UUID(batch_id), dispensed_container_id=container.id,
+                material_lot_id=lot.id, quantity="1.000000", uom="kg", source_type="manual",
+                transaction_id=txn.id, recorded_by_user_id=admin_user_id,
+            )
+        )
+
+    challenge_id = await _sign_step(client, admin_token, batch_id, step_id, "complete")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/complete",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id,
+            "expected_version": step_version, "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+
+async def test_complete_step_unaffected_when_no_qc_requirement_declared(client, seeded, db):
+    """Regression check: a step with no RecipeStepQcRequirement rows completes exactly as before."""
+    admin_token, product_version_id, recipe_version_id = await _released_pair(db, client, seeded, "qc2")
+    resp = await client.post(
+        "/batches/v1",
+        json=_create_body(seeded["site_id"], product_version_id, recipe_version_id, "BAT-QC-2"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
+    step_id = ready_step["step_id"]
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "expected_version": ready_step["version"]},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    step_version = ready_step["version"] + 1
+
+    challenge_id = await _sign_step(client, admin_token, batch_id, step_id, "complete")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/complete",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id,
+            "expected_version": step_version, "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
         },
         headers=auth_headers(admin_token),
     )
@@ -1753,3 +2016,168 @@ async def test_handover_step_rejected_when_not_in_progress(client, seeded, db):
     )
     assert resp.status_code == 409, resp.text
     assert resp.json()["code"] == "INVALID_TRANSITION"
+
+
+async def test_start_step_blocked_without_required_equipment_then_succeeds_with_eligible_asset(client, seeded, db):
+    """Known-limitations fix (docs/testing/demo-gujarati/08 §8.8, and this module's own docstring naming
+    "Equipment master eligibility wiring" as not-yet-built): RecipeEquipmentRequirement is frozen onto
+    BatchStepEquipmentRequirement at issue and enforced at step-start via
+    commands.py::_enforce_step_equipment, reusing equipment.commands.get_eligibility() rather than
+    reinventing calibration/qualification currency checks."""
+    admin_token, product_version_id, recipe_version_id = await _released_pair(
+        db, client, seeded, "equip1",
+        step_a_equipment_requirements=[{"equipment_class": "balance", "require_current_qualification": True}],
+    )
+    resp = await client.post(
+        "/batches/v1",
+        json=_create_body(seeded["site_id"], product_version_id, recipe_version_id, "BAT-EQUIP-1"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
+
+    # The frozen requirement is visible on the execution view (surfaced for the step-start UI).
+    view = (await client.get(f"/batches/v1/{batch_id}/execution-view", headers=auth_headers(admin_token))).json()
+    step = next(s for s in view["steps"] if s["step_id"] == ready_step["step_id"])
+    assert step["equipment_requirements"] == [
+        {
+            "equipment_class": "balance", "equipment_class_id": None, "exact_equipment_optional": True,
+            "require_current_calibration": False, "require_current_qualification": True, "require_current_cleaning": False,
+        }
+    ]
+
+    # No equipment_asset_ids supplied at all -> the requirement can't be satisfied.
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{ready_step['step_id']}/start",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": ready_step["step_id"],
+            "expected_version": ready_step["version"],
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["code"] == "EQUIPMENT_REQUIREMENT_NOT_MET"
+
+    async with db.begin():
+        asset = EquipmentAsset(
+            site_id=seeded["site_id"], equipment_code="BAL-EQUIP-1", state="QUALIFIED_AVAILABLE",
+            qualification_status=None,
+        )
+        db.add(asset)
+        await db.flush()
+        asset_id = str(asset.id)
+
+    # A supplied asset that fails the declared eligibility check (not qualified) -> still blocked.
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{ready_step['step_id']}/start",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": ready_step["step_id"],
+            "expected_version": ready_step["version"], "equipment_asset_ids": [asset_id],
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["code"] == "EQUIPMENT_NOT_QUALIFIED"
+
+    async with db.begin():
+        row = (await db.execute(select(EquipmentAsset).where(EquipmentAsset.id == uuid.UUID(asset_id)))).scalar_one()
+        row.qualification_status = QUALIFIED_MARKER
+
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{ready_step['step_id']}/start",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": ready_step["step_id"],
+            "expected_version": ready_step["version"], "equipment_asset_ids": [asset_id],
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    # 2026-09-19, project-owner-directed: the asset that satisfied the requirement is now persisted
+    # (EquipmentUseLog, log_type="production") -- previously checked live here and discarded, so
+    # qa_review/release had no record of which equipment a batch actually used (see their own
+    # _equipment_signals docstrings).
+    from app.modules.equipment.models import EquipmentUseLog
+
+    async with db.begin():
+        use_log = (
+            await db.execute(select(EquipmentUseLog).where(EquipmentUseLog.equipment_asset_id == uuid.UUID(asset_id)))
+        ).scalar_one()
+        assert use_log.batch_id == uuid.UUID(batch_id)
+        assert use_log.step_id == uuid.UUID(ready_step["step_id"])
+        assert use_log.log_type == "production"
+
+
+async def test_out_of_range_result_auto_opens_a_deviation(client, seeded, db):
+    """Known-limitations fix (docs/testing/demo-gujarati/08 §8.8 item 2), project-owner-directed
+    2026-09-18: an in-process result outside min/max now automatically opens a DeviationRecord (OPEN,
+    unassigned owner, severity=minor, deviation_type=process) instead of staying purely informational.
+    An in-range result on the same step must NOT open one."""
+    admin_token, product_version_id, recipe_version_id = await _released_pair(
+        db, client, seeded, "oor1",
+        step_a_parameters=[
+            {
+                "parameter_code": "WEIGHT", "data_type": "numeric", "uom": "kg", "source_type": "manual",
+                "required": True, "min_value": "1.0", "max_value": "2.0",
+            },
+        ],
+    )
+    resp = await client.post(
+        "/batches/v1",
+        json=_create_body(seeded["site_id"], product_version_id, recipe_version_id, "BAT-OOR-1"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
+    step_id = ready_step["step_id"]
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/start",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "expected_version": ready_step["version"]},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    step_version = ready_step["version"] + 1
+
+    challenge_id = await _sign_step(client, admin_token, batch_id, step_id, "results")
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/results",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "expected_version": step_version,
+            "results": [{"parameter_code": "WEIGHT", "value_numeric": "2.50000000", "uom": "kg", "source_type": "manual"}],
+            "challenge_id": challenge_id, "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    deviations = (
+        await client.get(f"/qms/v1/deviations?site_id={seeded['site_id']}", headers=auth_headers(admin_token))
+    ).json()["items"]
+    auto_opened = [d for d in deviations if d["deviation_number"].startswith("DEV-AUTO-BAT-OOR-1-")]
+    assert len(auto_opened) == 1, deviations
+    deviation = auto_opened[0]
+    assert deviation["state"] == "OPEN"
+    assert deviation["severity"] == "minor"
+    assert deviation["deviation_type"] == "process"
+    assert deviation["source_type"] == "batch"
+    assert deviation["source_id"] == batch_id
+    assert deviation["owner_subject_id"] is None
+
+    # A second, in-range result recorded against the (now version-bumped) step must not open a second
+    # deviation.
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{step_id}/results",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": step_id, "expected_version": step_version + 1,
+            "results": [{"parameter_code": "WEIGHT", "value_numeric": "1.50000000", "uom": "kg", "source_type": "manual"}],
+            "challenge_id": await _sign_step(client, admin_token, batch_id, step_id, "results"),
+            "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    deviations_after = (
+        await client.get(f"/qms/v1/deviations?site_id={seeded['site_id']}", headers=auth_headers(admin_token))
+    ).json()["items"]
+    still_auto_opened = [d for d in deviations_after if d["deviation_number"].startswith("DEV-AUTO-BAT-OOR-1-")]
+    assert len(still_auto_opened) == 1, deviations_after

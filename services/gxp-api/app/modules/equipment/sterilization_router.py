@@ -13,6 +13,7 @@ from app.modules.equipment.models import EquipmentAsset
 from app.modules.equipment.sterilization_commands import (
     CompleteFilterUseCommand,
     CreateProcessCycleCommand,
+    CreateProcessCycleProfileVersionCommand,
     InstallFilterCommand,
     RecordCycleDataCommand,
     RecordFilterIntegrityTestCommand,
@@ -20,6 +21,7 @@ from app.modules.equipment.sterilization_commands import (
     StartCycleCommand,
     complete_filter_use,
     create_process_cycle,
+    create_process_cycle_profile_version,
     cycle_record_hash,
     filter_use_record_hash,
     get_item_status,
@@ -72,11 +74,15 @@ def _cycle_dict(cycle: ProcessCycle, refs: dict | None = None) -> dict:
         "reprocessing_authorization_ref": cycle.reprocessing_authorization_ref,
         "requires_deviation": cycle.requires_deviation,
         "started_at": cycle.started_at.isoformat() if cycle.started_at else None,
+        "started_by_user_id": str(cycle.started_by_user_id) if cycle.started_by_user_id else None,
         "started_by_full_name": refs.get("started_by_full_name"),
         "started_by_username": refs.get("started_by_username"),
         "completed_at": cycle.completed_at.isoformat() if cycle.completed_at else None,
+        "reviewer_user_id": str(cycle.reviewer_user_id) if cycle.reviewer_user_id else None,
         "reviewer_full_name": refs.get("reviewer_full_name"),
         "reviewer_username": refs.get("reviewer_username"),
+        "review_signature_id": str(cycle.review_signature_id) if cycle.review_signature_id else None,
+        "deviation_reference_id": str(cycle.deviation_reference_id) if cycle.deviation_reference_id else None,
         "version": cycle.version,
         "created_at": cycle.created_at.isoformat() if cycle.created_at else None,
     }
@@ -196,15 +202,25 @@ CYCLE_SORTABLE = {
 
 @router.get("/cycles")
 async def list_cycles(
-    site_id: uuid.UUID, session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params),
+    site_id: uuid.UUID,
+    batch_id: uuid.UUID | None = None,
+    session: AsyncSession = Depends(get_session),
+    params: PageParams = Depends(page_params),
+    actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     """Browsable list for `/sterilization`'s own "Sterilization cycles" section -- the page previously had
     no way to see what cycles existed at all, only look one up by an already-known id. Same SG-081
     read-side precedent as `/items/eligible` and `/profiles` above; a plain listing here doesn't conflict
     with any future write/CRUD contract. Paginated (shared envelope) so the frontend's `DataTable` can
-    page/search/sort it the same as every other list page."""
+    page/search/sort it the same as every other list page.
+
+    `batch_id` is optional (additive) -- built for the Batch Workspace, which needs a batch's
+    sterilization activity without paging through the whole site; `ProcessCycle.batch_id` already
+    existed on the row, this just exposes it as a filter."""
     async with session.begin():
         stmt = select(ProcessCycle).where(ProcessCycle.site_id == site_id)
+        if batch_id is not None:
+            stmt = stmt.where(ProcessCycle.batch_id == batch_id)
         if params.q:
             stmt = stmt.where(ProcessCycle.process_type.ilike(f"%{params.q}%"))
         rows, envelope = await paginate(session, stmt, params, sortable=CYCLE_SORTABLE, default_sort=ProcessCycle.created_at)
@@ -232,7 +248,10 @@ def _profile_summary_dict(profile: ProcessCycleProfileVersion) -> dict:
 
 @router.get("/profiles")
 async def list_profiles(
-    session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params), state: str | None = "RELEASED",
+    session: AsyncSession = Depends(get_session),
+    params: PageParams = Depends(page_params),
+    state: str | None = "RELEASED",
+    actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     """Real picker data for `CreateProcessCycleCommand.profile_version_id` -- previously free-text UUID
     entry with no way to discover a valid id, same SG-081 read-side precedent as `/items/eligible` above.
@@ -249,6 +268,19 @@ async def list_profiles(
             session, stmt, params, sortable=PROFILE_SORTABLE, default_sort=ProcessCycleProfileVersion.created_at
         )
         return {**envelope, "items": [_profile_summary_dict(p) for (p,) in rows]}
+
+
+@router.post("/profiles", response_model=MutationReceipt)
+async def post_create_profile(
+    cmd: CreateProcessCycleProfileVersionCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    """SG-203 RESOLVED 2026-09-16, project-owner-directed. See sterilization_commands.py's own docstring
+    note above `CreateProcessCycleProfileVersionCommand` for the authoring-role/lifecycle decision."""
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="process_cycle_profile_version.create", site_id=cmd.site_id)
+        return await create_process_cycle_profile_version(session, cmd, actor.user_id)
 
 
 @router.post("/cycles", response_model=MutationReceipt)
@@ -274,7 +306,11 @@ async def post_create_cip_sip_cycle(
 
 
 @router.get("/cycles/{cycle_id}")
-async def get_cycle(cycle_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_cycle(
+    cycle_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     cycle = await session.get(ProcessCycle, cycle_id)
     if cycle is None:
         raise NotFoundError("Process cycle not found")
@@ -436,7 +472,11 @@ async def get_eligible_items(
 
 
 @router.get("/items/{item_id}/status")
-async def get_status(item_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_status(
+    item_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     async with session.begin():
         return await get_item_status(session, item_id)
 
@@ -445,13 +485,28 @@ def _filter_use_dict(use: SterileFilterUse) -> dict:
     return {
         "id": str(use.id),
         "site_id": str(use.site_id),
+        "filter_lot": use.filter_lot,
         "filter_serial": use.filter_serial,
+        "filter_type": use.filter_type,
+        "manufacturer": use.manufacturer,
+        "batch_id": str(use.batch_id) if use.batch_id else None,
+        "sterilization_cycle_id": str(use.sterilization_cycle_id) if use.sterilization_cycle_id else None,
+        "housing_location": use.housing_location,
+        "direction": use.direction,
+        "installed_by_user_id": str(use.installed_by_user_id) if use.installed_by_user_id else None,
+        "installed_at": use.installed_at.isoformat() if use.installed_at else None,
         "state": use.state,
         "pre_use_integrity_result": use.pre_use_integrity_result,
+        "pre_use_integrity_ref": use.pre_use_integrity_ref,
         "post_use_integrity_result": use.post_use_integrity_result,
+        "post_use_integrity_ref": use.post_use_integrity_ref,
+        "process_parameters": use.process_parameters,
         "reuse_count": use.reuse_count,
+        "performer_user_id": str(use.performer_user_id) if use.performer_user_id else None,
         "requires_deviation": use.requires_deviation,
+        "deviation_reference_id": str(use.deviation_reference_id) if use.deviation_reference_id else None,
         "version": use.version,
+        "created_at": use.created_at.isoformat() if use.created_at else None,
     }
 
 
@@ -467,7 +522,11 @@ async def post_install_filter(
 
 
 @filtration_router.get("/filters/{use_id}")
-async def get_filter_use(use_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_filter_use(
+    use_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     use = await session.get(SterileFilterUse, use_id)
     if use is None:
         raise NotFoundError("Sterile filter use not found")

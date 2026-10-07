@@ -26,12 +26,13 @@ async def _make_admin(db, seeded, username):
 
 async def _setup(db, seeded, tag, *, signed=False):
     """Creates an admin user (and, when signed=True, a real signature_required policy for disposition/
-    close -- otherwise both are left signature_required=False, matching test_release.py's precedent for
-    modules not under signature-specific test)."""
+    close/preapprove -- otherwise all three are left signature_required=False, matching test_release.py's
+    precedent for modules not under signature-specific test)."""
     async with db.begin():
         owner = await _make_admin(db, seeded, f"admin.dev{tag}")
         db.add(SignaturePolicy(record_type="deviation_record", action="disposition", meaning="Approved", signature_required=signed))
         db.add(SignaturePolicy(record_type="deviation_record", action="close", meaning="Approved", signature_required=signed))
+        db.add(SignaturePolicy(record_type="deviation_record", action="preapprove", meaning="Approved", signature_required=signed))
     return owner
 
 
@@ -412,6 +413,158 @@ async def test_planned_deviation_expired_blocks_triage(client, seeded, db):
     )
     assert resp.status_code == 409
     assert resp.json()["code"] == "PLANNED_DEVIATION_EXPIRED"
+
+
+# --- Client Topic 11 (SG-061) planned-deviation pre-approval -----------------------------------------
+
+
+async def test_planned_deviation_blocks_pipeline_until_preapproved(client, seeded, db):
+    owner = await _setup(db, seeded, "p1")
+    token = await login(client, "admin.devp1")
+    deviation_id = await _create(
+        client, token, seeded["site_id"], owner.id, planned=True,
+        planned_scope={
+            "scope": "alternate supplier for 2 batches",
+            "start_date": (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),
+            "end_date": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
+        },
+    )
+    blocked_resp = await client.post(
+        f"/qms/v1/deviations/{deviation_id}/triage",
+        json={"idempotency_key": idem(), "deviation_id": deviation_id, "expected_version": 1, "severity": "minor", "investigation_priority": "low"},
+        headers=auth_headers(token),
+    )
+    assert blocked_resp.status_code == 409, blocked_resp.text
+    assert blocked_resp.json()["code"] == "PLANNED_DEVIATION_NOT_PREAPPROVED"
+
+    preapprove_resp = await client.post(
+        f"/qms/v1/deviations/{deviation_id}/preapprove",
+        json={"idempotency_key": idem(), "deviation_id": deviation_id, "expected_version": 1, "reason": "confirmed justified exception"},
+        headers=auth_headers(token),
+    )
+    assert preapprove_resp.status_code == 200, preapprove_resp.text
+
+    triage_resp = await client.post(
+        f"/qms/v1/deviations/{deviation_id}/triage",
+        json={"idempotency_key": idem(), "deviation_id": deviation_id, "expected_version": 2, "severity": "minor", "investigation_priority": "low"},
+        headers=auth_headers(token),
+    )
+    assert triage_resp.status_code == 200, triage_resp.text
+
+
+async def test_planned_deviation_not_yet_effective_blocks_after_preapproval(client, seeded, db):
+    owner = await _setup(db, seeded, "p2")
+    token = await login(client, "admin.devp2")
+    deviation_id = await _create(
+        client, token, seeded["site_id"], owner.id, planned=True,
+        planned_scope={
+            "scope": "alternate supplier, starts next month",
+            "start_date": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
+            "end_date": (datetime.now(timezone.utc) + timedelta(days=60)).isoformat(),
+        },
+    )
+    preapprove_resp = await client.post(
+        f"/qms/v1/deviations/{deviation_id}/preapprove",
+        json={"idempotency_key": idem(), "deviation_id": deviation_id, "expected_version": 1, "reason": "reviewed and approved in advance"},
+        headers=auth_headers(token),
+    )
+    assert preapprove_resp.status_code == 200, preapprove_resp.text
+
+    resp = await client.post(
+        f"/qms/v1/deviations/{deviation_id}/triage",
+        json={"idempotency_key": idem(), "deviation_id": deviation_id, "expected_version": 2, "severity": "minor", "investigation_priority": "low"},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["code"] == "PLANNED_DEVIATION_NOT_YET_EFFECTIVE"
+
+
+async def test_preapprove_requires_planned_deviation(client, seeded, db):
+    owner = await _setup(db, seeded, "p3")
+    token = await login(client, "admin.devp3")
+    deviation_id = await _create(client, token, seeded["site_id"], owner.id)
+    resp = await client.post(
+        f"/qms/v1/deviations/{deviation_id}/preapprove",
+        json={"idempotency_key": idem(), "deviation_id": deviation_id, "expected_version": 1, "reason": "n/a"},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["code"] == "VALIDATION_FAILED"
+
+
+async def test_preapprove_requires_signature_when_policy_requires_it(client, seeded, db):
+    owner = await _setup(db, seeded, "p4", signed=True)
+    token = await login(client, "admin.devp4")
+    deviation_id = await _create(
+        client, token, seeded["site_id"], owner.id, planned=True,
+        planned_scope={
+            "scope": "alternate supplier", "start_date": (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),
+            "end_date": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
+        },
+    )
+    resp = await client.post(
+        f"/qms/v1/deviations/{deviation_id}/preapprove",
+        json={"idempotency_key": idem(), "deviation_id": deviation_id, "expected_version": 1, "reason": "reviewed"},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 428, resp.text
+    assert resp.json()["code"] == "MISSING_SIGNATURE"
+
+
+async def test_preapprove_signature_challenge_round_trip(client, seeded, db):
+    owner = await _setup(db, seeded, "p5", signed=True)
+    token = await login(client, "admin.devp5")
+    deviation_id = await _create(
+        client, token, seeded["site_id"], owner.id, planned=True,
+        planned_scope={
+            "scope": "alternate supplier", "start_date": (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),
+            "end_date": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
+        },
+    )
+    challenge_resp = await client.post(
+        f"/qms/v1/deviations/{deviation_id}/signature-challenges",
+        json={"action": "preapprove"}, headers=auth_headers(token),
+    )
+    assert challenge_resp.status_code == 200, challenge_resp.text
+    body = challenge_resp.json()
+    assert body["meaning"] == "Approved"
+
+    resp = await client.post(
+        f"/qms/v1/deviations/{deviation_id}/preapprove",
+        json={
+            "idempotency_key": idem(), "deviation_id": deviation_id, "expected_version": 1, "reason": "reviewed and approved",
+            "challenge_id": body["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["signature_id"] is not None
+
+
+async def test_preapprove_already_done_rejected(client, seeded, db):
+    owner = await _setup(db, seeded, "p6")
+    token = await login(client, "admin.devp6")
+    deviation_id = await _create(
+        client, token, seeded["site_id"], owner.id, planned=True,
+        planned_scope={
+            "scope": "alternate supplier", "start_date": (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),
+            "end_date": (datetime.now(timezone.utc) + timedelta(days=30)).isoformat(),
+        },
+    )
+    first_resp = await client.post(
+        f"/qms/v1/deviations/{deviation_id}/preapprove",
+        json={"idempotency_key": idem(), "deviation_id": deviation_id, "expected_version": 1, "reason": "reviewed"},
+        headers=auth_headers(token),
+    )
+    assert first_resp.status_code == 200, first_resp.text
+
+    second_resp = await client.post(
+        f"/qms/v1/deviations/{deviation_id}/preapprove",
+        json={"idempotency_key": idem(), "deviation_id": deviation_id, "expected_version": 2, "reason": "reviewed again"},
+        headers=auth_headers(token),
+    )
+    assert second_resp.status_code == 409, second_resp.text
+    assert second_resp.json()["code"] == "INVALID_TRANSITION"
 
 
 async def test_stale_version_rejected(client, seeded, db):

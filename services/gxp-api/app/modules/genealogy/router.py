@@ -24,11 +24,28 @@ def _node_dict(node) -> dict:
     }
 
 
+def _edge_dict(edge) -> dict:
+    return {
+        "id": str(edge.id),
+        "from_node_id": str(edge.from_node_id),
+        "to_node_id": str(edge.to_node_id),
+        "edge_type": edge.edge_type,
+        "quantity": str(edge.quantity) if edge.quantity is not None else None,
+        "uom": edge.uom,
+        "step_id": str(edge.step_id) if edge.step_id else None,
+        "source_event_id": str(edge.source_event_id) if edge.source_event_id else None,
+        "state": edge.state,
+        "supersedes_edge_id": str(edge.supersedes_edge_id) if edge.supersedes_edge_id else None,
+        "created_at": edge.created_at.isoformat(),
+    }
+
+
 def _trace_dict(trace: dict) -> dict:
     return {
         "root_node_id": str(trace["root_node_id"]),
         "nodes": [_node_dict(n) for n in trace["nodes"]],
         "edge_ids": [str(e) for e in trace["edge_ids"]],
+        "edges": [_edge_dict(e) for e in trace["edges"]],
         "truncated": trace["truncated"],
     }
 
@@ -41,7 +58,7 @@ async def get_nodes_lookup(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> list[dict]:
-    await evaluate_policy(session, actor.user_id, action="genealogy.view", site_id=None)
+    await evaluate_policy(session, actor.user_id, action="genealogy.view", site_id=site_id)
     nodes = await genealogy_service.lookup(session, site_id, node_type=node_type, business_ref=business_ref)
     return [_node_dict(n) for n in nodes]
 
@@ -52,7 +69,8 @@ async def get_node_ancestors(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="genealogy.view", site_id=None)
+    node = await genealogy_service.get_node(session, node_id)
+    await evaluate_policy(session, actor.user_id, action="genealogy.view", site_id=node.site_id)
     return _trace_dict(await genealogy_service.get_ancestors(session, node_id))
 
 
@@ -62,7 +80,8 @@ async def get_node_descendants(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="genealogy.view", site_id=None)
+    node = await genealogy_service.get_node(session, node_id)
+    await evaluate_policy(session, actor.user_id, action="genealogy.view", site_id=node.site_id)
     return _trace_dict(await genealogy_service.get_descendants(session, node_id))
 
 
@@ -73,7 +92,7 @@ async def get_serial_full_trace(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="genealogy.view", site_id=None)
+    await evaluate_policy(session, actor.user_id, action="genealogy.view", site_id=site_id)
     trace = await genealogy_service.full_trace(session, site_id, serial)
     return {
         "root": _node_dict(trace["root"]),
@@ -89,7 +108,7 @@ async def get_material_lot_affected_products(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="genealogy.view", site_id=None)
+    await evaluate_policy(session, actor.user_id, action="genealogy.view", site_id=site_id)
     result = await genealogy_service.affected_products(session, site_id, lot)
     return {
         "root": _node_dict(result["root"]),

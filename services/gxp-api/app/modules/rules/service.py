@@ -46,6 +46,7 @@ async def list_released_rules(session: AsyncSession) -> list[dict]:
         latest[row.rule_id] = row  # last wins => newest effective_from per rule_id
     return [
         {
+            "rule_object_id": str(r.rule_object_id),
             "rule_id": r.rule_id,
             "rule_type": r.rule_type,
             "semantic_version": r.semantic_version,
@@ -53,6 +54,33 @@ async def list_released_rules(session: AsyncSession) -> list[dict]:
             "effective_to": r.effective_to.isoformat() if r.effective_to else None,
         }
         for r in sorted(latest.values(), key=lambda x: x.rule_id)
+    ]
+
+
+async def list_released_uoms(session: AsyncSession) -> list[dict]:
+    """Read-only picker data: one row per `code` with a released version (highest version wins). UOM had
+    no list-all endpoint at all until this pass (DDCP_Client_Demo_Guide_Gujarati.md §9.6 -- parameter/
+    material/batch-size UOM fields were free text despite `gxp_uom` already existing as released reference
+    data; `GET /uom/{code}/versions` existed to look one code up, but nothing let a caller discover which
+    codes exist in the first place). Same SG-081 read-side precedent as `list_released_rules` above: a
+    plain read-only GET listing doesn't conflict with any future write/CRUD contract."""
+    rows = (
+        (await session.execute(select(UnitOfMeasure).where(UnitOfMeasure.status == "released").order_by(UnitOfMeasure.code, UnitOfMeasure.version)))
+        .scalars()
+        .all()
+    )
+    latest: dict[str, UnitOfMeasure] = {}
+    for row in rows:
+        latest[row.code] = row  # last wins => highest version per code
+    return [
+        {
+            "uom_id": str(u.uom_id),
+            "code": u.code,
+            "dimension": u.dimension,
+            "base_unit": u.base_unit,
+            "precision_dp": u.precision_dp,
+        }
+        for u in sorted(latest.values(), key=lambda x: x.code)
     ]
 
 
@@ -65,6 +93,18 @@ async def list_versions(session: AsyncSession, rule_id: str) -> list[RuleDefinit
                 .order_by(RuleDefinition.created_at)
             )
         )
+        .scalars()
+        .all()
+    )
+
+
+async def list_all_rules(session: AsyncSession) -> list[RuleDefinition]:
+    """Every rule version regardless of status (draft/validated/released), for the Rules page's own
+    always-visible table -- unlike `list_released_rules()` (picker data for other modules to reference a
+    *released* rule), this is the authoring surface's own view of everything that exists, replacing a
+    "type the exact rule_id to look it up" step nobody could discover their own drafts through."""
+    return (
+        (await session.execute(select(RuleDefinition).order_by(RuleDefinition.rule_id, RuleDefinition.created_at)))
         .scalars()
         .all()
     )

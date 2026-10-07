@@ -4,6 +4,11 @@ import { useEffect, useState } from "react";
 import {
   api,
   ApiError,
+  canCollectSample,
+  canCreateMaterialReceipt,
+  canCreateSamplingOrder,
+  canReleaseMaterialLotV2,
+  canRetestMaterialLot,
   formatDateTime,
   listAll,
   newIdempotencyKey,
@@ -13,8 +18,10 @@ import {
   type MaterialLot,
   type MutationReceipt,
   type Paged,
+  type WarehouseLocation,
+  STORAGE_CONDITIONS,
 } from "@/lib/api";
-import { useEntityOptions } from "@/lib/hooks";
+import { useEntityOptions, useMe } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
@@ -22,9 +29,11 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { UomSelect } from "@/components/ui/UomSelect";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { MaterialLotStatePill } from "@/components/ui/StatePill";
+import { Banner } from "@/components/ui/Banner";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
@@ -32,15 +41,33 @@ import { EntityPickerField } from "@/components/shared/EntityPicker";
 const STATUS_OPTIONS = ["", "quarantine", "released", "rejected", "consumed", "expired"];
 
 export default function MaterialLotsPage() {
+  const { me } = useMe();
   const [statusFilter, setStatusFilter] = useState("");
   const [reloadToken, setReloadToken] = useState(0);
 
   const [receiveOpen, setReceiveOpen] = useState(false);
-  const [dispositionLot, setDispositionLot] = useState<MaterialLot | null>(null);
+  const [releaseLot, setReleaseLot] = useState<MaterialLot | null>(null);
+  const [rejectLot, setRejectLot] = useState<MaterialLot | null>(null);
   const [samplingLot, setSamplingLot] = useState<MaterialLot | null>(null);
   const [collectingOrder, setCollectingOrder] = useState<{ id: string; version: number } | null>(null);
   const [qualityStatusLot, setQualityStatusLot] = useState<MaterialLot | null>(null);
   const [retestingLot, setRetestingLot] = useState<MaterialLot | null>(null);
+  const canReleaseV2 = canReleaseMaterialLotV2(me);
+  const canReceive = canCreateMaterialReceipt(me);
+  const canSample = canCreateSamplingOrder(me);
+  const canRetest = canRetestMaterialLot(me);
+  const canCollect = canCollectSample(me);
+
+  // Deep link from the Workflow Actions bell (`?q=<internal_lot>`) -- pre-fills the search box with the
+  // lot number so the reader lands on it directly instead of an empty list. Reads window.location
+  // directly rather than next/navigation's useSearchParams(), same as recipe-master's own `?openFamily=`
+  // deep link, to avoid opting this page into a Suspense boundary it has no other reason to need.
+  const [initialQuery, setInitialQuery] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("q");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (q) setInitialQuery(q);
+  }, []);
 
   function fetchLots(query: ListQuery): Promise<Paged<MaterialLot>> {
     const search = new URLSearchParams({
@@ -85,7 +112,30 @@ export default function MaterialLotsPage() {
     { key: "received_at", header: "Received", sortable: true, render: (l) => formatDateTime(l.received_at) },
     { key: "released_at", header: "Released", sortable: true, render: (l) => formatDateTime(l.released_at) },
     { key: "expiry_date", header: "Expiry", sortable: true, render: (l) => l.expiry_date ?? "—" },
-    { key: "status", header: "Status", sortable: true, render: (l) => <MaterialLotStatePill status={l.status} /> },
+    { key: "storage_condition", header: "Storage", sortable: false, render: (l) => l.storage_condition ?? "—" },
+    {
+      key: "status",
+      header: "Status",
+      sortable: true,
+      render: (l) => (
+        <span className="flex items-center gap-2">
+          <MaterialLotStatePill status={l.status} />
+          {/* Client Topic 4 (Q10) / Topic 2: a lot accepted despite a receiving discrepancy, or
+           * released via supplier-COA reliance, stays visibly flagged rather than looking like an
+           * ordinary lot. */}
+          {l.is_exception_release && (
+            <span className="fs-2 error-text" title={l.exception_reason ?? "Accepted despite a receiving discrepancy"}>
+              Exception
+            </span>
+          )}
+          {l.coa_reliance && (
+            <span className="fs-2 text-muted" title={l.coa_reliance_reason ?? "Released via supplier COA reliance"}>
+              COA reliance
+            </span>
+          )}
+        </span>
+      ),
+    },
     {
       key: "actions",
       header: "",
@@ -94,20 +144,25 @@ export default function MaterialLotsPage() {
           <Button size="sm" variant="ghost" onClick={() => setQualityStatusLot(l)}>
             <Icon name="info" /> Quality status
           </Button>
-          {(l.status === "quarantine" || l.status === "sampling") && (
+          {(l.status === "quarantine" || l.status === "sampling") && canSample && (
             <Button size="sm" variant="secondary" onClick={() => setSamplingLot(l)}>
               <Icon name="flask" /> Sample
             </Button>
           )}
-          {l.status === "quarantine" && (
+          {l.status === "quarantine" && canRetest && (
             <Button size="sm" variant="secondary" onClick={() => setRetestingLot(l)}>
               <Icon name="refresh" /> Retest
             </Button>
           )}
-          {l.status === "quarantine" && (
-            <Button size="sm" variant="secondary" onClick={() => setDispositionLot(l)}>
-              <Icon name="badge-check" /> Disposition
-            </Button>
+          {l.status === "quarantine" && canReleaseV2 && (
+            <>
+              <Button size="sm" variant="secondary" onClick={() => setReleaseLot(l)}>
+                <Icon name="badge-check" /> Release (QA)
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => setRejectLot(l)}>
+                <Icon name="x" /> Reject (QA)
+              </Button>
+            </>
           )}
         </div>
       ),
@@ -120,9 +175,11 @@ export default function MaterialLotsPage() {
         title="Material lots"
         subtitle="Every received lot, its QC disposition status, and remaining quantity."
         action={
-          <Button variant="primary" onClick={() => setReceiveOpen(true)}>
-            <Icon name="plus" /> Receive lot
-          </Button>
+          canReceive && (
+            <Button variant="primary" onClick={() => setReceiveOpen(true)}>
+              <Icon name="plus" /> Receive lot
+            </Button>
+          )
         }
       />
 
@@ -155,6 +212,7 @@ export default function MaterialLotsPage() {
           emptyMessage="No material lots yet - receive one to get started."
           defaultSort={{ by: "received_at", dir: "desc" }}
           reloadToken={reloadToken}
+          initialQuery={initialQuery}
         />
       </Card>
 
@@ -168,12 +226,25 @@ export default function MaterialLotsPage() {
         />
       )}
 
-      {dispositionLot && (
-        <DispositionModal
-          lot={dispositionLot}
-          onClose={() => setDispositionLot(null)}
+      {releaseLot && (
+        <ReleaseRejectV2Modal
+          lot={releaseLot}
+          decision="release"
+          onClose={() => setReleaseLot(null)}
           onDone={() => {
-            setDispositionLot(null);
+            setReleaseLot(null);
+            setReloadToken((n) => n + 1);
+          }}
+        />
+      )}
+
+      {rejectLot && (
+        <ReleaseRejectV2Modal
+          lot={rejectLot}
+          decision="reject"
+          onClose={() => setRejectLot(null)}
+          onDone={() => {
+            setRejectLot(null);
             setReloadToken((n) => n + 1);
           }}
         />
@@ -194,6 +265,7 @@ export default function MaterialLotsPage() {
       {collectingOrder && (
         <CollectSampleModal
           order={collectingOrder}
+          canCollect={canCollect}
           onClose={() => setCollectingOrder(null)}
           onDone={() => {
             setCollectingOrder(null);
@@ -227,6 +299,9 @@ function ReceiveLotModal({ onClose, onDone }: { onClose: () => void; onDone: () 
   const [uom, setUom] = useState("");
   const [uomTouched, setUomTouched] = useState(false);
   const [expiryDate, setExpiryDate] = useState("");
+  const [storageLocationId, setStorageLocationId] = useState("");
+  const [storageCondition, setStorageCondition] = useState("");
+  const [locations, setLocations] = useState<WarehouseLocation[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -236,18 +311,27 @@ function ReceiveLotModal({ onClose, onDone }: { onClose: () => void; onDone: () 
       if (ms.length) {
         setMaterialId(ms[0].id);
         setUom(ms[0].uom);
+        setStorageCondition(ms[0].default_storage_condition ?? "");
       }
     });
   }, []);
+
+  useEffect(() => {
+    const material = materials.find((m) => m.id === materialId);
+    if (!material) return;
+    listAll<WarehouseLocation>("/inventory/v1/warehouse-locations", { site_id: material.site_id })
+      .then(setLocations)
+      .catch(() => setLocations([]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [materialId]);
 
   // Switching material re-seeds the unit with that material's standard unit — but only while the
   // operator hasn't overridden it, so picking "Liter" for this receipt survives a later material change.
   function selectMaterial(id: string) {
     setMaterialId(id);
-    if (!uomTouched) {
-      const material = materials.find((m) => m.id === id);
-      if (material) setUom(material.uom);
-    }
+    const material = materials.find((m) => m.id === id);
+    if (!uomTouched && material) setUom(material.uom);
+    if (material) setStorageCondition(material.default_storage_condition ?? "");
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -266,6 +350,8 @@ function ReceiveLotModal({ onClose, onDone }: { onClose: () => void; onDone: () 
         received_quantity: quantity,
         uom: uom.trim() || material.uom,
         expiry_date: expiryDate || null,
+        storage_location_id: storageLocationId || null,
+        storage_condition: storageCondition || null,
       });
       onDone();
     } catch (err) {
@@ -297,20 +383,41 @@ function ReceiveLotModal({ onClose, onDone }: { onClose: () => void; onDone: () 
           <Field label="Received quantity" required>
             <Input value={quantity} onChange={(e) => setQuantity(e.target.value)} required />
           </Field>
-          <Field label="Unit of measure" required hint="Defaults to the material's standard unit - change it if this lot was received in a different unit, e.g. L instead of mL.">
-            <Input
-              value={uom}
-              onChange={(e) => {
-                setUomTouched(true);
-                setUom(e.target.value);
-              }}
-              required
-            />
+          <UomSelect
+            value={uom}
+            onChange={(v) => {
+              setUomTouched(true);
+              setUom(v);
+            }}
+            required
+            hint="Defaults to the material's standard unit - change it if this lot was received in a different unit, e.g. L instead of mL."
+          />
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          <Field label="Expiry date" hint="Optional.">
+            <Input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
+          </Field>
+          <Field label="Storage condition" hint="Defaults to the material's own default.">
+            <Select value={storageCondition} onChange={(e) => setStorageCondition(e.target.value)}>
+              <option value="">—</option>
+              {STORAGE_CONDITIONS.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Storage location" hint="Optional.">
+            <Select value={storageLocationId} onChange={(e) => setStorageLocationId(e.target.value)}>
+              <option value="">—</option>
+              {locations.map((loc) => (
+                <option key={loc.id} value={loc.id}>
+                  {loc.location_code} ({loc.zone_type})
+                </option>
+              ))}
+            </Select>
           </Field>
         </div>
-        <Field label="Expiry date" hint="Optional.">
-          <Input type="date" value={expiryDate} onChange={(e) => setExpiryDate(e.target.value)} />
-        </Field>
         {error && <p className="error-text mb-3">{error}</p>}
         <p className="hint mb-3">Received lots enter Quarantine automatically and cannot be issued until QC dispositions them.</p>
         <div className="flex justify-between gap-3 mt-2">
@@ -326,17 +433,50 @@ function ReceiveLotModal({ onClose, onDone }: { onClose: () => void; onDone: () 
   );
 }
 
-function DispositionModal({
+/** Document 19 v2 (RCV-FR-026/027) — the formal QA release/reject path. SG-075 (2026-09-22): this is now
+ * the *only* disposition path — the legacy QC-Reviewer-signed `disposition` endpoint / `DispositionModal`
+ * this comment used to distinguish itself from was retired (two live paths with mismatched signer
+ * authorization on the same quality-status transition). Backend (`POST /materials/v1/lots/{id}/release`
+ * or `.../reject`) enforces material_lot.release/.reject (QA Releaser + Admin only) and independence
+ * (signer must not be the receiver or sampler of this same lot). `container_ids` left blank means the
+ * whole lot; the underlying command already supports a partial per-container decision if ever needed
+ * here. */
+interface ReleaseReadiness {
+  missing_required_tests: string[];
+  coa_reliance_available: boolean;
+}
+
+/** Client_Decisions_Neededanswers Topics 1/2: release_material_lot now hard-blocks until every
+ * required+release_blocking QC test has a passing reviewed result, unless QA explicitly relies on the
+ * supplier's COA instead (approved supplier + COA on file + documented reason). Fetched here so the
+ * signer sees this *before* opening the signature ceremony, not as a surprise 409 after signing. */
+function ReleaseRejectV2Modal({
   lot,
+  decision,
   onClose,
   onDone,
 }: {
   lot: MaterialLot;
+  decision: "release" | "reject";
   onClose: () => void;
   onDone: () => void;
 }) {
-  const [decision, setDecision] = useState<"released" | "rejected">("released");
   const [reason, setReason] = useState("");
+  const [coaReliance, setCoaReliance] = useState(false);
+  const [readiness, setReadiness] = useState<ReleaseReadiness | null>(null);
+  const label = decision === "release" ? "Release" : "Reject";
+
+  useEffect(() => {
+    if (decision !== "release") return;
+    api
+      .get<ReleaseReadiness>(`/materials/v1/lots/${lot.id}/release-readiness`)
+      .then(setReadiness)
+      .catch(() => setReadiness(null));
+  }, [decision, lot.id]);
+
+  const missingTests = readiness?.missing_required_tests ?? [];
+  const blockedOnRequiredTest = decision === "release" && missingTests.length > 0;
+  const reasonRequired = decision === "reject" || (blockedOnRequiredTest && coaReliance);
 
   return (
     <SignatureCeremony
@@ -344,39 +484,66 @@ function DispositionModal({
       onClose={onClose}
       onDone={onDone}
       challengePath={`/material-lots/${lot.id}/signature-challenges`}
-      action="disposition"
-      title={`QC disposition - lot ${lot.internal_lot}`}
+      action={decision}
+      title={`${label} (QA) - lot ${lot.internal_lot}`}
       summary={
         <>
           {lot.material_name} ({lot.material_code}) - {lot.received_quantity} {lot.uom} received{" "}
           {lot.received_at ? formatDateTime(lot.received_at) : ""}
-          {lot.expiry_date ? `, expires ${lot.expiry_date}` : ""}.
+          {lot.expiry_date ? `, expires ${lot.expiry_date}` : ""}. Signer must be independent of this
+          lot&apos;s receiver and sampler (enforced server-side).
         </>
       }
-      submitVariant={decision === "rejected" ? "danger" : "success"}
+      submitLabel={`Sign & ${label.toLowerCase()}`}
+      submitVariant={decision === "reject" ? "danger" : "success"}
       reason="none"
+      disabled={(blockedOnRequiredTest && !coaReliance) || (reasonRequired && !reason.trim())}
       extraFields={
         <>
-          <Field label="Decision" required>
-            <Select value={decision} onChange={(e) => setDecision(e.target.value as "released" | "rejected")}>
-              <option value="released">Release</option>
-              <option value="rejected">Reject</option>
-            </Select>
-          </Field>
-          <Field label="Reason" hint="Required for a reject decision in a real deployment; optional here.">
+          {blockedOnRequiredTest && (
+            <Banner tone={coaReliance ? "warn" : "critical"} title="Required test(s) not passed">
+              {missingTests.join(", ")}. Release is blocked (Client Topic 1) unless relying on the
+              supplier&rsquo;s Certificate of Analysis instead (Client Topic 2 — only available for an
+              approved supplier with a COA on file).
+            </Banner>
+          )}
+          {blockedOnRequiredTest && (
+            <Field>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={coaReliance}
+                  onChange={(e) => setCoaReliance(e.target.checked)}
+                  disabled={readiness ? !readiness.coa_reliance_available : true}
+                />
+                Rely on the supplier&rsquo;s COA instead of in-house testing
+              </label>
+            </Field>
+          )}
+          <Field
+            label="Reason"
+            required={reasonRequired}
+            hint={
+              decision === "reject"
+                ? "Required for a reject decision."
+                : coaReliance
+                  ? "Required: document that the COA was reviewed and meets specification."
+                  : "Optional."
+            }
+          >
             <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
           </Field>
         </>
       }
       onSign={(p) =>
-        api.post<MutationReceipt>(`/material-lots/${lot.id}/disposition`, {
+        api.post<MutationReceipt>(`/materials/v1/lots/${lot.id}/${decision}`, {
           idempotency_key: p.idempotency_key,
           lot_id: lot.id,
           expected_version: lot.version,
-          decision,
           reason: reason || null,
           challenge_id: p.challenge_id,
           reauth_password: p.reauth_password,
+          ...(decision === "release" ? { coa_reliance: coaReliance } : {}),
         })
       }
     />
@@ -509,10 +676,12 @@ function CollectSampleModal({
   order,
   onClose,
   onDone,
+  canCollect,
 }: {
   order: { id: string; version: number };
   onClose: () => void;
   onDone: () => void;
+  canCollect: boolean;
 }) {
   const [orderId, setOrderId] = useState(order.id);
   const [expectedVersion, setExpectedVersion] = useState(String(order.version));
@@ -549,6 +718,12 @@ function CollectSampleModal({
           the id and version below come from the order you just created, or can be entered directly if
           already known.
         </p>
+        {!canCollect && (
+          <p className="fs-2 text-muted mb-3">
+            The order was created. You don&apos;t have permission to record the collection yourself - a QC Reviewer
+            or Admin will need to do this.
+          </p>
+        )}
         <div className="grid grid-cols-2 gap-4">
           <Field label="Sampling order ID" required>
             <Input value={orderId} onChange={(e) => setOrderId(e.target.value)} required />
@@ -559,22 +734,22 @@ function CollectSampleModal({
           <Field label="Sample quantity" required>
             <Input value={sampleQuantity} onChange={(e) => setSampleQuantity(e.target.value)} required />
           </Field>
-          <Field label="Sample UOM" required>
-            <Input value={sampleUom} onChange={(e) => setSampleUom(e.target.value)} required />
-          </Field>
+          <UomSelect label="Sample UOM" value={sampleUom} onChange={setSampleUom} required />
         </div>
         {error && <p className="error-text mb-2">{error}</p>}
         <div className="flex justify-between gap-3 mt-3">
           <Button type="button" variant="secondary" onClick={onClose}>
             Not yet - collect later
           </Button>
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={busy || !orderId.trim() || !expectedVersion.trim() || !sampleQuantity.trim() || !sampleUom.trim()}
-          >
-            {busy ? "Recording…" : "Record collection"}
-          </Button>
+          {canCollect && (
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={busy || !orderId.trim() || !expectedVersion.trim() || !sampleQuantity.trim() || !sampleUom.trim()}
+            >
+              {busy ? "Recording…" : "Record collection"}
+            </Button>
+          )}
         </div>
       </form>
     </Modal>

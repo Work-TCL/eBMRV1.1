@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.qms.commands import (
     CloseCommand,
     ContainDeviationCommand,
@@ -16,6 +16,7 @@ from app.modules.qms.commands import (
     ExtendCommand,
     ImpactCommand,
     InvestigationCommand,
+    PreapproveDeviationCommand,
     ReopenCommand,
     TriageDeviationCommand,
     assess_impact,
@@ -24,6 +25,7 @@ from app.modules.qms.commands import (
     create_deviation,
     disposition_deviation,
     extend_deviation,
+    preapprove_deviation,
     record_investigation,
     reopen_deviation,
     triage_deviation,
@@ -36,7 +38,7 @@ from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/qms/v1/deviations", tags=["qms-deviations"])
 
-DEVIATION_SIGNATURE_ACTIONS = ("disposition", "close")
+DEVIATION_SIGNATURE_ACTIONS = ("disposition", "close", "preapprove")
 
 
 @router.post("", response_model=MutationReceipt)
@@ -50,6 +52,26 @@ async def post_create(
         return await create_deviation(session, cmd, actor.user_id)
 
 
+# Client Topic 11 (SG-061, project-owner-directed): a planned deviation's formal QA Releaser
+# pre-approval, gating every forward-pipeline transition below (_assert_planned_deviation_preapproved_
+# and_effective in commands.py).
+@router.post("/{deviation_id}/preapprove", response_model=MutationReceipt)
+async def post_preapprove(
+    deviation_id: uuid.UUID,
+    cmd: PreapproveDeviationCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.deviation_id != deviation_id:
+        raise ValidationFailedError("deviation_id in path and body must match")
+    async with session.begin():
+        deviation = await session.get(DeviationRecord, deviation_id)
+        if deviation is None:
+            raise NotFoundError("Deviation not found")
+        await evaluate_policy(session, actor.user_id, action="qms_deviation.preapprove", site_id=deviation.site_id)
+        return await preapprove_deviation(session, cmd, actor.user_id)
+
+
 @router.post("/{deviation_id}/triage", response_model=MutationReceipt)
 async def post_triage(
     deviation_id: uuid.UUID,
@@ -60,7 +82,10 @@ async def post_triage(
     if cmd.deviation_id != deviation_id:
         raise ValidationFailedError("deviation_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="qms_deviation.triage", site_id=None)
+        deviation = await session.get(DeviationRecord, deviation_id)
+        if deviation is None:
+            raise NotFoundError("Deviation not found")
+        await evaluate_policy(session, actor.user_id, action="qms_deviation.triage", site_id=deviation.site_id)
         return await triage_deviation(session, cmd, actor.user_id)
 
 
@@ -74,7 +99,10 @@ async def post_contain(
     if cmd.deviation_id != deviation_id:
         raise ValidationFailedError("deviation_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="qms_deviation.contain", site_id=None)
+        deviation = await session.get(DeviationRecord, deviation_id)
+        if deviation is None:
+            raise NotFoundError("Deviation not found")
+        await evaluate_policy(session, actor.user_id, action="qms_deviation.contain", site_id=deviation.site_id)
         return await contain_deviation(session, cmd, actor.user_id)
 
 
@@ -88,7 +116,10 @@ async def post_investigation(
     if cmd.deviation_id != deviation_id:
         raise ValidationFailedError("deviation_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="qms_deviation.investigate", site_id=None)
+        deviation = await session.get(DeviationRecord, deviation_id)
+        if deviation is None:
+            raise NotFoundError("Deviation not found")
+        await evaluate_policy(session, actor.user_id, action="qms_deviation.investigate", site_id=deviation.site_id)
         return await record_investigation(session, cmd, actor.user_id)
 
 
@@ -102,7 +133,10 @@ async def post_impact(
     if cmd.deviation_id != deviation_id:
         raise ValidationFailedError("deviation_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="qms_deviation.impact", site_id=None)
+        deviation = await session.get(DeviationRecord, deviation_id)
+        if deviation is None:
+            raise NotFoundError("Deviation not found")
+        await evaluate_policy(session, actor.user_id, action="qms_deviation.impact", site_id=deviation.site_id)
         return await assess_impact(session, cmd, actor.user_id)
 
 
@@ -116,7 +150,10 @@ async def post_disposition(
     if cmd.deviation_id != deviation_id:
         raise ValidationFailedError("deviation_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="qms_deviation.disposition", site_id=None)
+        deviation = await session.get(DeviationRecord, deviation_id)
+        if deviation is None:
+            raise NotFoundError("Deviation not found")
+        await evaluate_policy(session, actor.user_id, action="qms_deviation.disposition", site_id=deviation.site_id)
         return await disposition_deviation(session, cmd, actor.user_id)
 
 
@@ -130,7 +167,10 @@ async def post_extend(
     if cmd.deviation_id != deviation_id:
         raise ValidationFailedError("deviation_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="qms_deviation.extend", site_id=None)
+        deviation = await session.get(DeviationRecord, deviation_id)
+        if deviation is None:
+            raise NotFoundError("Deviation not found")
+        await evaluate_policy(session, actor.user_id, action="qms_deviation.extend", site_id=deviation.site_id)
         return await extend_deviation(session, cmd, actor.user_id)
 
 
@@ -144,7 +184,10 @@ async def post_close(
     if cmd.deviation_id != deviation_id:
         raise ValidationFailedError("deviation_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="qms_deviation.close", site_id=None)
+        deviation = await session.get(DeviationRecord, deviation_id)
+        if deviation is None:
+            raise NotFoundError("Deviation not found")
+        await evaluate_policy(session, actor.user_id, action="qms_deviation.close", site_id=deviation.site_id)
         return await close_deviation(session, cmd, actor.user_id)
 
 
@@ -175,7 +218,10 @@ async def post_reopen(
     if cmd.deviation_id != deviation_id:
         raise ValidationFailedError("deviation_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="qms_deviation.reopen", site_id=None)
+        deviation = await session.get(DeviationRecord, deviation_id)
+        if deviation is None:
+            raise NotFoundError("Deviation not found")
+        await evaluate_policy(session, actor.user_id, action="qms_deviation.reopen", site_id=deviation.site_id)
         return await reopen_deviation(session, cmd, actor.user_id)
 
 
@@ -205,9 +251,13 @@ def _deviation_dict(record: DeviationRecord) -> dict:
         "source_version": record.source_version,
         "severity": record.severity,
         "state": record.state,
-        "owner_subject_id": str(record.owner_subject_id),
+        "owner_subject_id": sid(record.owner_subject_id),
         "investigator_subject_id": sid(record.investigator_subject_id),
         "planned": record.planned,
+        # Client Topic 11 (SG-061): surfaced at the list level too, since "pending pre-approval" is a
+        # status an operator or QA Releaser needs to see without opening every planned deviation.
+        "preapproved_by_user_id": sid(record.preapproved_by_user_id),
+        "preapproved_at": iso(record.preapproved_at),
         "disposition_code": record.disposition_code,
         "capa_required": record.capa_required,
         "change_control_required": record.change_control_required,
@@ -228,9 +278,9 @@ async def list_deviations(
     state: str | None = None,
     severity: str | None = None,
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="qms_deviation.view", site_id=site_id)
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="qms_deviation.view")
     stmt = filtered(
-        DeviationRecord, params, search_column=DeviationRecord.deviation_number, site_id=site_id, state=state
+        DeviationRecord, params, search_column=DeviationRecord.deviation_number, site_id=site_scope, state=state
     )
     if severity:
         stmt = stmt.where(DeviationRecord.severity == severity)

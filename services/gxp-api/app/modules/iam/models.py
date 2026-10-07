@@ -16,6 +16,10 @@ class Organization(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    # Onboarding wizard (client gap-analysis follow-up, 2026-10-06): the Company/Sites/Users/Roles step
+    # statuses themselves are derived from audit_events, never written here -- this is only the one
+    # genuinely-not-derivable decision, "the admin chose to skip the wizard".
+    onboarding_dismissed_at: Mapped[datetime | None] = mapped_column()
 
 
 class Site(Base):
@@ -178,6 +182,27 @@ class SodException(Base):
     review_due: Mapped[datetime | None] = mapped_column()
     state: Mapped[str] = mapped_column(String(30), nullable=False, default="active")
     version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
+
+
+class UserInvite(Base):
+    """WP-01 bulk-onboarding phase (2026-10-05 client gap analysis, Phase 1): a user created via bulk
+    import has no password yet (`status="pending_activation"`) -- this is the single-use, time-limited
+    token that lets them set their own password and activate the account, mirroring
+    `signature.SignaturePolicy`'s `SignatureChallenge` shape (single-use nonce + expiry) rather than
+    inventing a new pattern. `token_hash` is the SHA-256 digest of a `secrets.token_urlsafe(32)` value;
+    the raw token is emailed once and never persisted (same discipline as
+    `app.core.security.generate_service_credential`'s raw_secret)."""
+
+    __tablename__ = "user_invites"
+    __table_args__ = (UniqueConstraint("token_hash"), {"schema": "iam"})
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column()
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class ServiceIdentity(Base):

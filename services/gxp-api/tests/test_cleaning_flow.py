@@ -8,6 +8,18 @@ import uuid
 from tests.conftest import auth_headers, idem, login
 
 
+async def _create_equipment_class(client):
+    # equipment_class_id is now required/validated at creation (bug fix) -- a real class row is needed.
+    pe_token = await login(client, "process.engineer")
+    resp = await client.post(
+        "/recipes/v2/equipment-classes",
+        json={"idempotency_key": idem(), "class_code": f"CLASS-{uuid.uuid4().hex[:12]}", "name": "Test class"},
+        headers=auth_headers(pe_token),
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()["aggregate_id"]
+
+
 async def _create_execution(
     client, token, site_id, procedure_id, equipment_id=None, area_id=None, critical=False,
     sterilization_cycle_id=None, expect_status=200,
@@ -67,37 +79,41 @@ async def test_full_clean_and_independent_verify_flow(client, seeded):
 
     # Bootstrap a fresh equipment asset via the equipment module (no fixture asset in `seeded`).
     admin_token = await login(client, "equipment.admin")
+    equipment_class_id = await _create_equipment_class(client)
     resp = await client.post(
         "/equipment/v1/assets",
-        json={"idempotency_key": idem(), "site_id": str(site_id), "equipment_code": "EQP-CLN-1"},
+        json={
+            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id, "is_computer_operated": False,
+            "equipment_code": "EQP-CLN-1",
+        },
         headers=auth_headers(admin_token),
     )
     assert resp.status_code == 200, resp.text
     equipment_id = resp.json()["aggregate_id"]
 
     execution_id = await _create_execution(client, op_token, site_id, procedure_id, equipment_id=equipment_id)
-    detail = (await client.get(f"/cleaning/v1/executions/{execution_id}")).json()
+    detail = (await client.get(f"/cleaning/v1/executions/{execution_id}", headers=auth_headers(admin_token))).json()
     assert detail["state"] == "CLEANING"
 
-    asset_detail = (await client.get(f"/equipment/v1/assets/{equipment_id}")).json()
+    asset_detail = (await client.get(f"/equipment/v1/assets/{equipment_id}", headers=auth_headers(admin_token))).json()
     assert asset_detail["cleanliness_status"] == "CLEANING"
 
     resp = await _complete(client, op_token, execution_id, expected_version=1)
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/cleaning/v1/executions/{execution_id}")).json()
+    detail = (await client.get(f"/cleaning/v1/executions/{execution_id}", headers=auth_headers(admin_token))).json()
     assert detail["state"] == "CLEANING_VERIFICATION"
 
     challenge_id = await _challenge(client, qa_token, execution_id, "verify")
     resp = await _verify(client, qa_token, execution_id, expected_version=2, result="pass", challenge_id=challenge_id)
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/cleaning/v1/executions/{execution_id}")).json()
+    detail = (await client.get(f"/cleaning/v1/executions/{execution_id}", headers=auth_headers(admin_token))).json()
     assert detail["state"] == "CLEAN"
     assert detail["clean_until"] is not None
 
-    status = (await client.get(f"/cleaning/v1/equipment/{equipment_id}/status")).json()
+    status = (await client.get(f"/cleaning/v1/equipment/{equipment_id}/status", headers=auth_headers(admin_token))).json()
     assert status["cleanliness_status"] == "CLEAN"
 
-    asset_detail = (await client.get(f"/equipment/v1/assets/{equipment_id}")).json()
+    asset_detail = (await client.get(f"/equipment/v1/assets/{equipment_id}", headers=auth_headers(admin_token))).json()
     assert asset_detail["cleanliness_status"] == "CLEAN"
 
 
@@ -132,14 +148,14 @@ async def test_failed_verification_holds_and_is_never_overwritten(client, seeded
     challenge_id = await _challenge(client, qa_token, execution_id, "verify")
     resp = await _verify(client, qa_token, execution_id, expected_version=2, result="fail", challenge_id=challenge_id)
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/cleaning/v1/executions/{execution_id}")).json()
+    detail = (await client.get(f"/cleaning/v1/executions/{execution_id}", headers=auth_headers(qa_token))).json()
     assert detail["state"] == "HOLD"
     assert detail["requires_deviation"] is True
 
     # A repeat successful cleaning is a *new* execution -- the original failed record is never edited.
     second_id = await _create_execution(client, op_token, site_id, procedure_id, area_id=area_id)
     assert second_id != execution_id
-    first_detail_again = (await client.get(f"/cleaning/v1/executions/{execution_id}")).json()
+    first_detail_again = (await client.get(f"/cleaning/v1/executions/{execution_id}", headers=auth_headers(qa_token))).json()
     assert first_detail_again["state"] == "HOLD"
     assert first_detail_again["verification_result"] == "fail"
 
@@ -223,7 +239,7 @@ async def test_line_clearance_full_flow(client, seeded):
         headers=auth_headers(op_token),
     )
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/line-clearance/v1/{clearance_id}")).json()
+    detail = (await client.get(f"/line-clearance/v1/{clearance_id}", headers=auth_headers(op_token))).json()
     assert detail["state"] == "CLEARED"
     assert detail["area_code"] == "AREA-WAREHOUSE"
 
@@ -241,7 +257,7 @@ async def test_line_clearance_is_listed_with_resolved_area(client, seeded):
     assert resp.status_code == 200, resp.text
     clearance_id = resp.json()["aggregate_id"]
 
-    listing = (await client.get(f"/line-clearance/v1?site_id={site_id}")).json()
+    listing = (await client.get(f"/line-clearance/v1?site_id={site_id}", headers=auth_headers(op_token))).json()
     row = next((r for r in listing["items"] if r["id"] == clearance_id), None)
     assert row is not None
     assert row["area_code"] == "AREA-WAREHOUSE"
@@ -273,9 +289,13 @@ async def test_duplicate_active_cleaning_execution_rejected(client, seeded):
     site_id = seeded["site_id"]
     procedure_id = str(seeded["cleaning_procedures"]["CLN-PROC-001"].id)
 
+    equipment_class_id = await _create_equipment_class(client)
     resp = await client.post(
         "/equipment/v1/assets",
-        json={"idempotency_key": idem(), "site_id": str(site_id), "equipment_code": "EQP-CLN-DUP"},
+        json={
+            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id, "is_computer_operated": False,
+            "equipment_code": "EQP-CLN-DUP",
+        },
         headers=auth_headers(admin_token),
     )
     assert resp.status_code == 200, resp.text
@@ -325,7 +345,7 @@ async def test_swab_sample_created_when_procedure_requires_sampling(client, db, 
     execution_id = await _create_execution(client, op_token, site_id, str(procedure.id), area_id=area_id)
     resp = await _complete(client, op_token, execution_id, expected_version=1)
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/cleaning/v1/executions/{execution_id}")).json()
+    detail = (await client.get(f"/cleaning/v1/executions/{execution_id}", headers=auth_headers(op_token))).json()
     assert detail["swab_sample_id"] is not None
 
 
@@ -338,7 +358,7 @@ async def test_no_swab_sample_when_procedure_does_not_require_it(client, seeded)
 
     execution_id = await _create_execution(client, op_token, site_id, procedure_id, area_id=area_id)
     await _complete(client, op_token, execution_id, expected_version=1)
-    detail = (await client.get(f"/cleaning/v1/executions/{execution_id}")).json()
+    detail = (await client.get(f"/cleaning/v1/executions/{execution_id}", headers=auth_headers(op_token))).json()
     assert detail["swab_sample_id"] is None
 
 
@@ -361,7 +381,7 @@ async def test_protection_state_captured_on_complete(client, seeded):
         headers=auth_headers(op_token),
     )
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/cleaning/v1/executions/{execution_id}")).json()
+    detail = (await client.get(f"/cleaning/v1/executions/{execution_id}", headers=auth_headers(op_token))).json()
     assert detail["protection_state"] == protection_state
 
 
@@ -372,9 +392,13 @@ async def test_sterilization_cycle_link_recorded(client, seeded):
     site_id = seeded["site_id"]
     procedure_id = str(seeded["cleaning_procedures"]["CLN-PROC-001"].id)
 
+    equipment_class_id = await _create_equipment_class(client)
     resp = await client.post(
         "/equipment/v1/assets",
-        json={"idempotency_key": idem(), "site_id": str(site_id), "equipment_code": "EQP-CLN-CIP"},
+        json={
+            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id, "is_computer_operated": False,
+            "equipment_code": "EQP-CLN-CIP",
+        },
         headers=auth_headers(admin_token),
     )
     assert resp.status_code == 200, resp.text
@@ -405,7 +429,7 @@ async def test_sterilization_cycle_link_recorded(client, seeded):
     execution_id = await _create_execution(
         client, op_token, site_id, procedure_id, equipment_id=equipment_id, sterilization_cycle_id=cycle_id,
     )
-    detail = (await client.get(f"/cleaning/v1/executions/{execution_id}")).json()
+    detail = (await client.get(f"/cleaning/v1/executions/{execution_id}", headers=auth_headers(sterile_token))).json()
     assert detail["sterilization_cycle_id"] == cycle_id
 
 
@@ -428,9 +452,13 @@ async def test_line_clearance_wrong_equipment_installed_rejected(client, seeded)
     admin_token = await login(client, "equipment.admin")
     site_id = seeded["site_id"]
 
+    equipment_class_id = await _create_equipment_class(client)
     resp = await client.post(
         "/equipment/v1/assets",
-        json={"idempotency_key": idem(), "site_id": str(site_id), "equipment_code": "EQP-LC-BAD"},
+        json={
+            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id, "is_computer_operated": False,
+            "equipment_code": "EQP-LC-BAD",
+        },
         headers=auth_headers(admin_token),
     )
     assert resp.status_code == 200, resp.text
@@ -460,7 +488,7 @@ async def test_line_clearance_wrong_equipment_installed_rejected(client, seeded)
     )
     assert resp.status_code == 422, resp.text
     assert resp.json()["code"] == "WRONG_EQUIPMENT_INSTALLED"
-    detail = (await client.get(f"/line-clearance/v1/{clearance_id}")).json()
+    detail = (await client.get(f"/line-clearance/v1/{clearance_id}", headers=auth_headers(admin_token))).json()
     assert detail["state"] == "IN_PROGRESS"
 
 
@@ -472,9 +500,13 @@ async def test_line_clearance_eligible_equipment_installed_passes(client, seeded
     site_id = seeded["site_id"]
     procedure_id = str(seeded["cleaning_procedures"]["CLN-PROC-001"].id)
 
+    equipment_class_id = await _create_equipment_class(client)
     resp = await client.post(
         "/equipment/v1/assets",
-        json={"idempotency_key": idem(), "site_id": str(site_id), "equipment_code": "EQP-LC-GOOD"},
+        json={
+            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id, "is_computer_operated": False,
+            "equipment_code": "EQP-LC-GOOD",
+        },
         headers=auth_headers(admin_token),
     )
     assert resp.status_code == 200, resp.text
@@ -499,6 +531,21 @@ async def test_line_clearance_eligible_equipment_installed_passes(client, seeded
     )
     assert resp.status_code == 200, resp.text
 
+    # Client gap-analysis Phase 4 (2026-10-05): a passing result alone isn't enough for eligibility --
+    # QA approval is a separate, required step.
+    qa_releaser_token = await login(client, "qa.releaser")
+    history = (await client.get(f"/equipment/v1/{equipment_id}/history", headers=auth_headers(cal_token))).json()
+    calibration_id = history["calibrations"][0]["id"]
+    resp = await client.post(
+        f"/equipment/v1/{equipment_id}/calibrations",
+        json={
+            "idempotency_key": idem(), "asset_id": equipment_id, "expected_version": 3,
+            "calibration_id": calibration_id, "approved": True,
+        },
+        headers=auth_headers(qa_releaser_token),
+    )
+    assert resp.status_code == 200, resp.text
+
     # Clean the equipment (create -> complete -> pass verify) so cleanliness_status reaches CLEAN.
     execution_id = await _create_execution(client, op_token, site_id, procedure_id, equipment_id=equipment_id)
     await _complete(client, op_token, execution_id, expected_version=1)
@@ -506,7 +553,7 @@ async def test_line_clearance_eligible_equipment_installed_passes(client, seeded
     resp = await _verify(client, qa_token, execution_id, expected_version=2, result="pass", challenge_id=challenge_id)
     assert resp.status_code == 200, resp.text
 
-    eligibility = (await client.get(f"/equipment/v1/{equipment_id}/eligibility")).json()
+    eligibility = (await client.get(f"/equipment/v1/{equipment_id}/eligibility", headers=auth_headers(qa_token))).json()
     assert eligibility["eligible"] is True
 
     resp = await client.post(
@@ -532,7 +579,7 @@ async def test_line_clearance_eligible_equipment_installed_passes(client, seeded
         headers=auth_headers(op_token),
     )
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/line-clearance/v1/{clearance_id}")).json()
+    detail = (await client.get(f"/line-clearance/v1/{clearance_id}", headers=auth_headers(qa_token))).json()
     assert detail["state"] == "CLEARED"
 
 

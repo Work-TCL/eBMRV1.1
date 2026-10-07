@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { api, ApiError, newIdempotencyKey, pagedFetcher, type Material, type MutationReceipt } from "@/lib/api";
-import { useSites } from "@/lib/hooks";
+import { api, ApiError, canCreateMaterial, isAdminAnywhere, newIdempotencyKey, pagedFetcher, STORAGE_CONDITIONS, type Material, type MutationReceipt } from "@/lib/api";
+import { useMe, useSites } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
@@ -11,16 +11,21 @@ import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { CodeField } from "@/components/ui/CodeField";
+import { UomSelect } from "@/components/ui/UomSelect";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 
 const fetchMaterials = pagedFetcher<Material>("/materials");
 
 export default function MaterialsPage() {
+  const { me } = useMe();
   const [open, setOpen] = useState(false);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [uom, setUom] = useState("kg");
+  const [isInHouse, setIsInHouse] = useState(false);
+  const [defaultStorageCondition, setDefaultStorageCondition] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
@@ -29,6 +34,8 @@ export default function MaterialsPage() {
   const [editing, setEditing] = useState<Material | null>(null);
   const [editName, setEditName] = useState("");
   const [editStatus, setEditStatus] = useState("active");
+  const [editIsInHouse, setEditIsInHouse] = useState(false);
+  const [editDefaultStorageCondition, setEditDefaultStorageCondition] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
   const [editBusy, setEditBusy] = useState(false);
 
@@ -45,12 +52,16 @@ export default function MaterialsPage() {
       await api.post<MutationReceipt>("/materials", {
         idempotency_key: newIdempotencyKey(),
         site_id: sites[0].id,
-        code,
+        code: code || undefined,
         name,
         uom,
+        is_in_house: isInHouse,
+        default_storage_condition: defaultStorageCondition || null,
       });
       setCode("");
       setName("");
+      setIsInHouse(false);
+      setDefaultStorageCondition("");
       setOpen(false);
       setReloadToken((n) => n + 1);
     } catch (err) {
@@ -64,6 +75,8 @@ export default function MaterialsPage() {
     setEditing(m);
     setEditName(m.name);
     setEditStatus(m.status);
+    setEditIsInHouse(m.is_in_house);
+    setEditDefaultStorageCondition(m.default_storage_condition ?? "");
     setEditError(null);
   }
 
@@ -76,8 +89,11 @@ export default function MaterialsPage() {
       await api.patch<MutationReceipt>(`/materials/${editing.id}`, {
         idempotency_key: newIdempotencyKey(),
         material_id: editing.id,
+        expected_version: editing.version,
         name: editName,
         status: editStatus,
+        is_in_house: editIsInHouse,
+        default_storage_condition: editDefaultStorageCondition || null,
       });
       setEditing(null);
       setReloadToken((n) => n + 1);
@@ -117,18 +133,44 @@ export default function MaterialsPage() {
     { key: "uom", header: "UOM", sortable: false },
     { key: "status", header: "Status", sortable: true },
     {
+      key: "storage",
+      header: "Storage",
+      sortable: false,
+      render: (m) => (
+        <span className="fs-2 text-muted">
+          {m.is_in_house ? "In-house" : "Purchased"}
+          {m.default_storage_condition ? ` · ${m.default_storage_condition}` : ""}
+        </span>
+      ),
+    },
+    {
       key: "actions",
       header: "",
-      render: (m) => (
-        <div className="flex gap-2 justify-end">
-          <Button size="sm" variant="secondary" onClick={() => openEdit(m)}>
-            Edit
-          </Button>
-          <Button size="sm" variant="danger" onClick={() => setDeleting(m)}>
-            Delete
-          </Button>
-        </div>
-      ),
+      render: (m) => {
+        // DELETE /materials/{id} is platform.administer-gated server-side (Admin only) -- this button
+        // used to show enabled to every viewer regardless of role, so a non-Admin's click always failed
+        // with no explanation. Kept visible-but-disabled with a tooltip rather than hidden, matching the
+        // inventory adjustment-request approve/reject "explained disable" pattern (inventory/page.tsx).
+        const canDelete = isAdminAnywhere(me);
+        return (
+          <div className="flex gap-2 justify-end">
+            {canCreateMaterial(me) && (
+              <Button size="sm" variant="secondary" onClick={() => openEdit(m)}>
+                Edit
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="danger"
+              disabled={!canDelete}
+              title={canDelete ? undefined : "Only an Admin can delete a material master"}
+              onClick={() => setDeleting(m)}
+            >
+              Delete
+            </Button>
+          </div>
+        );
+      },
     },
   ];
 
@@ -138,9 +180,11 @@ export default function MaterialsPage() {
         title="Materials"
         subtitle="Raw material and component masters this site receives against."
         action={
-          <Button variant="primary" onClick={() => setOpen(true)}>
-            <Icon name="plus" /> New material
-          </Button>
+          canCreateMaterial(me) && (
+            <Button variant="primary" onClick={() => setOpen(true)}>
+              <Icon name="plus" /> New material
+            </Button>
+          )
         }
       />
 
@@ -160,15 +204,28 @@ export default function MaterialsPage() {
 
       <Modal open={open} onClose={() => setOpen(false)} title="New material">
         <form onSubmit={onSubmit}>
-          <Field label="Code" required>
-            <Input value={code} onChange={(e) => setCode(e.target.value)} required autoFocus />
-          </Field>
+          <CodeField label="Code" value={code} onChange={setCode} required />
           <Field label="Name" required>
             <Input value={name} onChange={(e) => setName(e.target.value)} required />
           </Field>
-          <Field label="Unit of measure" required error={error}>
-            <Input value={uom} onChange={(e) => setUom(e.target.value)} required />
-          </Field>
+          <UomSelect value={uom} onChange={setUom} required />
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Default storage condition" hint="Optional.">
+              <Select value={defaultStorageCondition} onChange={(e) => setDefaultStorageCondition(e.target.value)}>
+                <option value="">—</option>
+                {STORAGE_CONDITIONS.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <label className="flex items-center gap-2 fs-2" style={{ marginTop: "var(--space-5)" }}>
+              <input type="checkbox" checked={isInHouse} onChange={(e) => setIsInHouse(e.target.checked)} />
+              Manufactured/maintained in-house
+            </label>
+          </div>
+          {error && <p className="error-text mb-2">{error}</p>}
           <div className="flex justify-between gap-3 mt-4">
             <Button type="button" variant="secondary" onClick={() => setOpen(false)}>
               Cancel
@@ -194,6 +251,22 @@ export default function MaterialsPage() {
               <option value="inactive">inactive</option>
             </Select>
           </Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Default storage condition" hint="Optional.">
+              <Select value={editDefaultStorageCondition} onChange={(e) => setEditDefaultStorageCondition(e.target.value)}>
+                <option value="">—</option>
+                {STORAGE_CONDITIONS.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <label className="flex items-center gap-2 fs-2" style={{ marginTop: "var(--space-5)" }}>
+              <input type="checkbox" checked={editIsInHouse} onChange={(e) => setEditIsInHouse(e.target.checked)} />
+              Manufactured/maintained in-house
+            </label>
+          </div>
           <div className="flex justify-between gap-3 mt-4">
             <Button type="button" variant="secondary" onClick={() => setEditing(null)}>
               Cancel

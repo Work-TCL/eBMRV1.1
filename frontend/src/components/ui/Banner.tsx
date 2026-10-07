@@ -24,7 +24,7 @@ export function Banner({
       <Icon name={icon ?? TONE_ICON[tone]} />
       <div>
         {title && <p className="font-semibold">{title}</p>}
-        {children && <p className="fs-3 mt-1">{children}</p>}
+        {children && <div className="fs-3 mt-1">{children}</div>}
       </div>
     </div>
   );

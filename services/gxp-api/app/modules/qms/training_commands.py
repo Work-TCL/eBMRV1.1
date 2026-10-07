@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
-from app.modules.iam.models import User
+from app.modules.iam.models import Qualification, User
 from app.modules.qms import training_service
 from app.modules.qms.training_models import (
     ASSIGNMENT_ALLOWED_TRANSITIONS,
@@ -418,6 +418,18 @@ async def create_qualification(session: AsyncSession, cmd: CreateQualificationCo
     )
     session.add(qualification)
     await session.flush()
+
+    # SG-086 write-through: iam.qualifications is the store batch_execution/material's own
+    # execution-time gates actually read (QUALIFICATION_MISSING/QUALIFICATION_EXPIRED); qms
+    # is this record's declared owner (04_DATA_MODEL_CATALOGUE.md) but had no path to reach
+    # that gate. Mirrors this grant there rather than reconciling the two stores' full shape
+    # (version/state/scope have no iam.qualifications equivalent) -- SG-086 stays open.
+    session.add(
+        Qualification(
+            user_id=cmd.subject_id, qualification_code=cmd.qualification_code,
+            expires_at=cmd.effective_to, granted_by_user_id=actor_user_id,
+        )
+    )
 
     old_prior_state = None
     if cmd.renewed_from_qualification_id is not None:

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, ApiError, holdsAnyRole, listAll, newIdempotencyKey, type MutationReceipt } from "@/lib/api";
+import { api, ApiError, hasPermission, listAll, newIdempotencyKey, type MutationReceipt } from "@/lib/api";
 import { useMe, useSiteId } from "@/lib/hooks";
 import type { EntityOption, EntityOptionsStatus } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
@@ -74,7 +74,8 @@ interface IntegrationCommand {
 
 export default function ErpIntegrationPage() {
   const { me } = useMe();
-  const isAdmin = holdsAnyRole(me, ["Admin", "Integration Administrator"]);
+  // erp_instance.administer is the entry permission for this whole console (Document 48/52/53).
+  const isAdmin = hasPermission(me, "erp_instance.administer");
   // Bumped after a successful instance registration so every instance picker on the page refetches and
   // includes it immediately, rather than only after a full page reload.
   const [instanceListVersion, setInstanceListVersion] = useState(0);

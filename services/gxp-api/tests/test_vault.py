@@ -17,7 +17,7 @@ from app.modules.iam.models import User, UserSiteRole
 from app.modules.vault import service as vault_service
 from app.modules.vault.models import VaultObject
 from tests.conftest import DEMO_PASSWORD, auth_headers, idem, login
-from tests.test_batch_flow import _walk_batch_to_release_ready
+from tests.test_release import _setup as _release_setup
 
 
 async def _make_admin(db, seeded, username="admin.vault"):
@@ -50,56 +50,52 @@ async def _make_user_with_qa_releaser(db, seeded, username):
 
 
 async def test_release_batch_creates_vault_snapshot(client, seeded, db):
-    op_token = await login(client, "operator1")
-    reviewer_token = await login(client, "qa.reviewer")
-    releaser_token = await login(client, "qa.releaser")
+    """Ported off the retired `app.modules.batch` legacy flow (SG-044/SG-173 Phase 4/5, ADR-0013) onto
+    the authoritative `release/v1` scope-based release (`tests.test_release._setup`) -- same guarantee:
+    releasing a batch creates a real, integrity-verifiable Vault snapshot, not a synthetic `widget` object
+    like this file's other tests."""
     async with db.begin():
         await _make_admin(db, seeded)
     admin_token = await login(client, "admin.vault")
 
-    batch_id = await _walk_batch_to_release_ready(
-        client, op_token, reviewer_token, seeded["site_id"], "B-VAULT"
-    )
-    challenge = (
-        await client.post(
-            f"/batches/{batch_id}/signature-challenges",
-            json={"action": "release"},
-            headers=auth_headers(releaser_token),
-        )
-    ).json()
+    _rel_admin_token, batch_id = await _release_setup(db, client, seeded, "vault-1")
     resp = await client.post(
-        f"/batches/{batch_id}/release",
-        json={
-            "idempotency_key": idem(),
-            "batch_id": batch_id,
-            "expected_version": 8,
-            "decision": "released",
-            "challenge_id": challenge["challenge_id"],
-            "reauth_password": "ChangeMe123!",
-        },
-        headers=auth_headers(releaser_token),
+        f"/release/v1/scopes/batch/{batch_id}/evaluate",
+        json={"idempotency_key": idem(), "scope_type": "batch", "scope_id": batch_id},
+        headers=auth_headers(_rel_admin_token),
     )
     assert resp.status_code == 200, resp.text
-    batch_number = (await client.get(f"/batches/{batch_id}")).json()["batch_number"]
+    scope_id = resp.json()["aggregate_id"]
+    resp = await client.post(
+        f"/release/v1/scopes/{scope_id}/release",
+        json={"idempotency_key": idem(), "scope_id": scope_id, "expected_version": 2},
+        headers=auth_headers(_rel_admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    package = (
+        await client.get(f"/release/v1/scopes/{scope_id}/package", headers=auth_headers(_rel_admin_token))
+    ).json()
+    object_id = package["scope"]["released_vault_object_id"]
+    assert object_id is not None
 
     resp = await client.get(
-        f"/vault/v1/business/batch/{batch_number}/versions", headers=auth_headers(admin_token)
+        f"/vault/v1/business/release_package/{scope_id}/versions", headers=auth_headers(admin_token)
     )
     assert resp.status_code == 200, resp.text
     versions = resp.json()
     assert len(versions) == 1
     obj = versions[0]
-    assert obj["object_type"] == "batch"
+    assert obj["object_id"] == object_id
+    assert obj["object_type"] == "release_package"
     assert obj["internal_version"] == 1
     assert obj["status"] == "released"
-    assert obj["canonical_payload"]["decision"] == "released"
-    assert obj["canonical_payload"]["batch_number"] == batch_number
-    assert len(obj["canonical_payload"]["steps"]) == 2
+    assert obj["canonical_payload"]["batch_id"] == batch_id
 
     integrity = (
-        await client.get(f"/vault/v1/objects/{obj['object_id']}/integrity", headers=auth_headers(admin_token))
+        await client.get(f"/vault/v1/objects/{object_id}/integrity", headers=auth_headers(admin_token))
     ).json()
-    assert integrity == {"object_id": obj["object_id"], "digest_valid": True, "link_valid": True}
+    assert integrity == {"object_id": object_id, "digest_valid": True, "link_valid": True}
 
 
 async def test_second_release_increments_version_and_supersedes(db, seeded):

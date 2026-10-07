@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.qms.internal_audit_commands import (
     AddFindingCommand,
     CloseInternalAuditCommand,
@@ -52,7 +52,10 @@ async def post_start_internal_audit(
     if cmd.audit_id != audit_id:
         raise ValidationFailedError("audit_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="internal_audit.start", site_id=None)
+        audit = await session.get(InternalAudit, audit_id)
+        if audit is None:
+            raise NotFoundError("Internal audit not found")
+        await evaluate_policy(session, actor.user_id, action="internal_audit.start", site_id=audit.site_id)
         return await start_internal_audit(session, cmd, actor.user_id)
 
 
@@ -64,7 +67,10 @@ async def post_add_finding(
     if cmd.audit_id != audit_id:
         raise ValidationFailedError("audit_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="internal_audit.finding.add", site_id=None)
+        audit = await session.get(InternalAudit, audit_id)
+        if audit is None:
+            raise NotFoundError("Internal audit not found")
+        await evaluate_policy(session, actor.user_id, action="internal_audit.finding.add", site_id=audit.site_id)
         return await add_finding(session, cmd, actor.user_id)
 
 
@@ -76,7 +82,10 @@ async def post_respond_to_finding(
     if cmd.finding_id != finding_id:
         raise ValidationFailedError("finding_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="internal_audit.finding.response", site_id=None)
+        finding = await session.get(AuditFinding, finding_id)
+        if finding is None:
+            raise NotFoundError("Audit finding not found")
+        await evaluate_policy(session, actor.user_id, action="internal_audit.finding.response", site_id=finding.site_id)
         return await respond_to_finding(session, cmd, actor.user_id)
 
 
@@ -103,7 +112,10 @@ async def post_verify_finding(
     if cmd.finding_id != finding_id:
         raise ValidationFailedError("finding_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="internal_audit.finding.verify", site_id=None)
+        finding = await session.get(AuditFinding, finding_id)
+        if finding is None:
+            raise NotFoundError("Audit finding not found")
+        await evaluate_policy(session, actor.user_id, action="internal_audit.finding.verify", site_id=finding.site_id)
         return await verify_finding(session, cmd, actor.user_id)
 
 
@@ -130,7 +142,10 @@ async def post_close_internal_audit(
     if cmd.audit_id != audit_id:
         raise ValidationFailedError("audit_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="internal_audit.close", site_id=None)
+        audit = await session.get(InternalAudit, audit_id)
+        if audit is None:
+            raise NotFoundError("Internal audit not found")
+        await evaluate_policy(session, actor.user_id, action="internal_audit.close", site_id=audit.site_id)
         return await close_internal_audit(session, cmd, actor.user_id)
 
 
@@ -202,9 +217,9 @@ async def list_internal_audits(
     site_id: uuid.UUID | None = None,
     state: str | None = None,
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="internal_audit.view", site_id=site_id)
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="internal_audit.view")
     stmt = filtered(
-        InternalAudit, params, search_column=InternalAudit.audit_number, site_id=site_id, state=state
+        InternalAudit, params, search_column=InternalAudit.audit_number, site_id=site_scope, state=state
     )
     rows, envelope = await paginate(
         session, stmt, params, sortable=AUDIT_SORTABLE, default_sort=InternalAudit.scheduled_at
@@ -244,9 +259,9 @@ async def list_audit_findings(
     audit_id: uuid.UUID | None = None,
 ) -> dict:
     """Cross-audit finding worklist (AUD-FR-018 open-findings view), or one audit's findings."""
-    await evaluate_policy(session, actor.user_id, action="internal_audit.view", site_id=site_id)
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="internal_audit.view")
     stmt = filtered(
-        AuditFinding, params, search_column=AuditFinding.finding_number, site_id=site_id, state=state
+        AuditFinding, params, search_column=AuditFinding.finding_number, site_id=site_scope, state=state
     )
     if audit_id is not None:
         stmt = stmt.where(AuditFinding.audit_id == audit_id)

@@ -44,16 +44,29 @@ def _execution_dict(execution: CleaningExecution) -> dict:
         "equipment_id": str(execution.equipment_id) if execution.equipment_id else None,
         "area_id": str(execution.area_id) if execution.area_id else None,
         "procedure_version_id": str(execution.procedure_version_id),
+        "batch_context": execution.batch_context,
+        "critical": execution.critical,
         "state": execution.state,
+        "started_at": execution.started_at.isoformat() if execution.started_at else None,
+        "completed_at": execution.completed_at.isoformat() if execution.completed_at else None,
         "dirty_since": execution.dirty_since.isoformat(),
         "clean_until": execution.clean_until.isoformat() if execution.clean_until else None,
+        "agents_used": execution.agents_used,
+        "steps_log": execution.steps_log,
+        "previous_batch_identity_removed": execution.previous_batch_identity_removed,
+        "disassembly_verified": execution.disassembly_verified,
+        "inspection_result": execution.inspection_result,
+        "performer_user_id": str(execution.performer_user_id) if execution.performer_user_id else None,
+        "reviewer_user_id": str(execution.reviewer_user_id) if execution.reviewer_user_id else None,
         "verification_result": execution.verification_result,
         "dirty_hold_exceeded": execution.dirty_hold_exceeded,
         "requires_deviation": execution.requires_deviation,
+        "deviation_reference_id": str(execution.deviation_reference_id) if execution.deviation_reference_id else None,
         "swab_sample_id": str(execution.swab_sample_id) if execution.swab_sample_id else None,
         "protection_state": execution.protection_state,
         "sterilization_cycle_id": str(execution.sterilization_cycle_id) if execution.sterilization_cycle_id else None,
         "version": execution.version,
+        "created_at": execution.created_at.isoformat() if execution.created_at else None,
     }
 
 
@@ -69,7 +82,11 @@ async def post_create_execution(
 
 
 @router.get("/executions/{execution_id}")
-async def get_execution(execution_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_execution(
+    execution_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     execution = await session.get(CleaningExecution, execution_id)
     if execution is None:
         raise NotFoundError("Cleaning execution not found")
@@ -156,7 +173,11 @@ async def post_verify_cleaning(
 
 
 @router.get("/equipment/{equipment_id}/status")
-async def get_status(equipment_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_status(
+    equipment_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     async with session.begin():
         return await get_equipment_cleaning_status(session, equipment_id)
 
@@ -172,8 +193,11 @@ def _clearance_dict(clearance: LineClearance, refs: dict | None = None) -> dict:
         "previous_batch_number": refs.get("previous_batch_number"),
         "next_batch_id": str(clearance.next_batch_id) if clearance.next_batch_id else None,
         "next_batch_number": refs.get("next_batch_number"),
+        "checklist_version": clearance.checklist_version,
         "items": clearance.items,
         "critical": clearance.critical,
+        "performer_user_id": str(clearance.performer_user_id) if clearance.performer_user_id else None,
+        "verifier_user_id": str(clearance.verifier_user_id) if clearance.verifier_user_id else None,
         "state": clearance.state,
         "expiry_at": clearance.expiry_at.isoformat() if clearance.expiry_at else None,
         "version": clearance.version,
@@ -229,7 +253,10 @@ LINE_CLEARANCE_SORTABLE = {
 
 @line_clearance_router.get("")
 async def list_line_clearances(
-    site_id: uuid.UUID, session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params),
+    site_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    params: PageParams = Depends(page_params),
+    actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     """Browsable list for `/line-clearance`'s own page -- previously reachable only by already knowing a
     clearance's id (same SG-081 read-side precedent as sterilization's `/cycles` list)."""
@@ -255,7 +282,11 @@ async def post_create_line_clearance(
 
 
 @line_clearance_router.get("/{clearance_id}")
-async def get_line_clearance(clearance_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_line_clearance(
+    clearance_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     clearance = await session.get(LineClearance, clearance_id)
     if clearance is None:
         raise NotFoundError("Line clearance not found")

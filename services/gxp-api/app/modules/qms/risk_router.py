@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.qms.read_support import filtered, iso, sid
 from app.modules.qms.risk_commands import (
     AcceptRiskCommand,
@@ -49,7 +49,10 @@ async def post_add_assessment(
     if cmd.risk_id != risk_id:
         raise ValidationFailedError("risk_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="risk.assessment.add", site_id=None)
+        risk = await session.get(RiskRecord, risk_id)
+        if risk is None:
+            raise NotFoundError("Risk record not found")
+        await evaluate_policy(session, actor.user_id, action="risk.assessment.add", site_id=risk.site_id)
         return await add_assessment(session, cmd, actor.user_id)
 
 
@@ -61,7 +64,10 @@ async def post_add_controls(
     if cmd.risk_id != risk_id:
         raise ValidationFailedError("risk_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="risk.controls.add", site_id=None)
+        risk = await session.get(RiskRecord, risk_id)
+        if risk is None:
+            raise NotFoundError("Risk record not found")
+        await evaluate_policy(session, actor.user_id, action="risk.controls.add", site_id=risk.site_id)
         return await add_controls(session, cmd, actor.user_id)
 
 
@@ -73,7 +79,10 @@ async def post_accept_risk(
     if cmd.risk_id != risk_id:
         raise ValidationFailedError("risk_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="risk.accept", site_id=None)
+        risk = await session.get(RiskRecord, risk_id)
+        if risk is None:
+            raise NotFoundError("Risk record not found")
+        await evaluate_policy(session, actor.user_id, action="risk.accept", site_id=risk.site_id)
         return await accept_risk(session, cmd, actor.user_id)
 
 
@@ -85,7 +94,10 @@ async def post_review_risk(
     if cmd.risk_id != risk_id:
         raise ValidationFailedError("risk_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="risk.review", site_id=None)
+        risk = await session.get(RiskRecord, risk_id)
+        if risk is None:
+            raise NotFoundError("Risk record not found")
+        await evaluate_policy(session, actor.user_id, action="risk.review", site_id=risk.site_id)
         return await review_risk(session, cmd, actor.user_id)
 
 
@@ -182,8 +194,8 @@ async def list_risks(
     site_id: uuid.UUID | None = None,
     state: str | None = None,
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="risk.view", site_id=site_id)
-    stmt = filtered(RiskRecord, params, search_column=RiskRecord.risk_number, site_id=site_id, state=state)
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="risk.view")
+    stmt = filtered(RiskRecord, params, search_column=RiskRecord.risk_number, site_id=site_scope, state=state)
     rows, envelope = await paginate(
         session, stmt, params, sortable=RISK_SORTABLE, default_sort=RiskRecord.created_at
     )

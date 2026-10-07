@@ -210,11 +210,12 @@ async def assess_ai_use_case_risk(
     if existing is not None:
         return _receipt_from_existing(existing)
 
-    await evaluate_policy(session, actor_user_id, action="ai_governance.use_case.assess_risk", site_id=None)
-
     use_case = await session.get(AIUseCase, cmd.use_case_id)
     if use_case is None:
         raise NotFoundError("AI use case not found")
+    await evaluate_policy(
+        session, actor_user_id, action="ai_governance.use_case.assess_risk", site_id=use_case.site_id,
+    )
     if use_case.version != cmd.expected_version:
         raise StaleVersionError("AI use case changed since this request was prepared",
                                  current_version=use_case.version)
@@ -383,11 +384,10 @@ async def build_ai_request_context(
     if existing is not None:
         return {"receipt": _receipt_from_existing(existing)}
 
-    await evaluate_policy(session, actor_user_id, action="ai_governance.context.build", site_id=None)
-
     use_case = await session.get(AIUseCase, cmd.use_case_id)
     if use_case is None:
         raise NotFoundError("AI use case not found")
+    await evaluate_policy(session, actor_user_id, action="ai_governance.context.build", site_id=use_case.site_id)
 
     scoped: list[dict] = []
     for ref in cmd.requested_record_refs:
@@ -454,11 +454,12 @@ async def execute_ai_advisory(
     if existing is not None:
         return _receipt_from_existing(existing)
 
-    await evaluate_policy(session, actor_user_id, action="ai_governance.advisory.execute", site_id=None)
-
     use_case = await session.get(AIUseCase, cmd.use_case_id)
     if use_case is None:
         raise NotFoundError("AI use case not found")
+    await evaluate_policy(
+        session, actor_user_id, action="ai_governance.advisory.execute", site_id=use_case.site_id,
+    )
     if use_case.state != "ACTIVE":
         raise AIUseCaseNotActiveError("Use case must be ACTIVE to serve advisory requests",
                                        use_case_id=str(use_case.id), state=use_case.state)
@@ -546,11 +547,10 @@ async def authorize_ai_tool_call(
     if existing is not None:
         return _receipt_from_existing(existing)
 
-    await evaluate_policy(session, actor_user_id, action="ai_governance.tool.authorize", site_id=None)
-
     use_case = await session.get(AIUseCase, cmd.use_case_id)
     if use_case is None:
         raise NotFoundError("AI use case not found")
+    await evaluate_policy(session, actor_user_id, action="ai_governance.tool.authorize", site_id=use_case.site_id)
 
     tool_row = (await session.execute(
         select(AIToolRegistry).where(AIToolRegistry.tool_name == cmd.tool_name)
@@ -695,11 +695,10 @@ async def run_ai_evaluation_suite(
     if existing is not None:
         return _receipt_from_existing(existing)
 
-    await evaluate_policy(session, actor_user_id, action="ai_governance.evaluation.run", site_id=None)
-
     use_case = await session.get(AIUseCase, cmd.use_case_id)
     if use_case is None:
         raise NotFoundError("AI use case not found")
+    await evaluate_policy(session, actor_user_id, action="ai_governance.evaluation.run", site_id=use_case.site_id)
     if not cmd.dataset_ref:
         raise ValidationFailedError("dataset_ref is required")
 
@@ -937,11 +936,10 @@ async def retire_ai_use_case(
     if existing is not None:
         return _receipt_from_existing(existing)
 
-    await evaluate_policy(session, actor_user_id, action="ai_governance.use_case.retire", site_id=None)
-
     use_case = await session.get(AIUseCase, cmd.use_case_id)
     if use_case is None:
         raise NotFoundError("AI use case not found")
+    await evaluate_policy(session, actor_user_id, action="ai_governance.use_case.retire", site_id=use_case.site_id)
     if use_case.version != cmd.expected_version:
         raise StaleVersionError("AI use case changed since this request was prepared",
                                  current_version=use_case.version)
@@ -985,11 +983,12 @@ async def generate_ai_governance_package(
     if existing is not None:
         return {"receipt": _receipt_from_existing(existing)}
 
-    await evaluate_policy(session, actor_user_id, action="ai_governance.package.generate", site_id=None)
-
     use_case = await session.get(AIUseCase, cmd.use_case_id)
     if use_case is None:
         raise NotFoundError("AI use case not found")
+    await evaluate_policy(
+        session, actor_user_id, action="ai_governance.package.generate", site_id=use_case.site_id,
+    )
 
     risk_assessments = (await session.execute(
         select(AIRiskAssessment).where(AIRiskAssessment.use_case_id == use_case.id)

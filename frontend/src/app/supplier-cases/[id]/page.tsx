@@ -3,8 +3,7 @@
 import { use, useState } from "react";
 import {
   api,
-  canApproveQms,
-  canInvestigateQms,
+  hasPermission,
   formatDate,
   formatDateTime,
   isOverdue,
@@ -13,6 +12,7 @@ import {
   type SupplierCase,
 } from "@/lib/api";
 import { useApiResource, useMe } from "@/lib/hooks";
+import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { QmsDetailShell, useCommand } from "@/components/qms/QmsDetailShell";
 import { Fact, IdFact } from "@/components/ui/FactGrid";
 import { Card } from "@/components/ui/Card";
@@ -52,9 +52,24 @@ interface ScarDetail extends Scar {
 
 type Action = "issue_scar" | "response" | "review" | "effectiveness" | "close";
 
-// SG-138: no Document 106 policy rows for scar_record review/close.
-const SIGNATURE_GATED: Action[] = ["review", "close"];
+// SG-138 resolved 2026-09-10 (seed.py SIGNATURE_POLICY_FLOOR rows 95-96): scar_record review is QA
+// Reviewer-signed, close is QA Releaser-signed, via the shared Part 11 ceremony (challenge -> password
+// re-entry -> signed mutation) below -- the buttons for these two actions carry a hardcoded pen icon
+// accordingly (see ScarCard below).
 const SOURCE_STATUS_DECISIONS = ["no_change", "requalify", "suspend", "reinstate"];
+
+// The exact permission code app/modules/qms/scar_router.py checks for each action. Note scar.effectiveness
+// is held by QA Releaser, NOT QA Reviewer (unlike scar.response, which IS QA Reviewer) -- the old code's
+// "canWork" bucket lumped response+effectiveness together and would have shown QA Reviewer an
+// Effectiveness button it has no grant for, while hiding it from the QA Releaser who actually holds it
+// (audit finding 2026-09-18).
+const PERMISSION_FOR_ACTION: Record<Action, string> = {
+  issue_scar: "scar.issue",
+  response: "scar.response",
+  review: "scar.review",
+  effectiveness: "scar.effectiveness",
+  close: "scar.close",
+};
 
 export default function SupplierCaseDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -62,7 +77,8 @@ export default function SupplierCaseDetailPage({ params }: { params: Promise<{ i
   const [pending, setPending] = useState<{ action: Action; scar?: Scar } | null>(null);
   const { data, loading, error, reload } = useApiResource<CaseDetail>(`/qms/v1/supplier-cases/${id}`);
 
-  const canIssue = data && data.scars.length === 0 && canInvestigateQms(me);
+  const canDoAction = (a: Action) => hasPermission(me, PERMISSION_FOR_ACTION[a]);
+  const canIssue = data && data.scars.length === 0 && canDoAction("issue_scar");
 
   return (
     <QmsDetailShell
@@ -120,8 +136,7 @@ export default function SupplierCaseDetailPage({ params }: { params: Promise<{ i
                 key={scar.id}
                 scar={scar}
                 onAction={(action) => setPending({ action, scar })}
-                canWork={canInvestigateQms(me)}
-                canApprove={canApproveQms(me)}
+                canDo={canDoAction}
               />
             ))
           )}
@@ -147,13 +162,11 @@ export default function SupplierCaseDetailPage({ params }: { params: Promise<{ i
 function ScarCard({
   scar,
   onAction,
-  canWork,
-  canApprove,
+  canDo,
 }: {
   scar: Scar;
   onAction: (action: Action) => void;
-  canWork: boolean;
-  canApprove: boolean;
+  canDo: (action: Action) => boolean;
 }) {
   const detail = useApiResource<ScarDetail>(`/qms/v1/scars/${scar.id}`);
   const d = detail.data;
@@ -166,22 +179,22 @@ function ScarCard({
           {scar.scar_number} <WorkflowStatePill state={scar.state} />
         </span>
         <div className="flex gap-2">
-          {scar.state === "SCAR_ISSUED" && canWork && (
+          {scar.state === "SCAR_ISSUED" && canDo("response") && (
             <Button size="sm" variant="secondary" onClick={() => onAction("response")}>
               Record supplier response
             </Button>
           )}
-          {scar.state === "SUPPLIER_RESPONSE" && canApprove && (
+          {scar.state === "SUPPLIER_RESPONSE" && canDo("review") && (
             <Button size="sm" variant="secondary" onClick={() => onAction("review")}>
               <Icon name="pen" /> Review
             </Button>
           )}
-          {scar.state === "IMPLEMENTATION" && canWork && (
+          {scar.state === "IMPLEMENTATION" && canDo("effectiveness") && (
             <Button size="sm" variant="secondary" onClick={() => onAction("effectiveness")}>
               Effectiveness
             </Button>
           )}
-          {scar.state === "EFFECTIVENESS" && canApprove && (
+          {scar.state === "EFFECTIVENESS" && canDo("close") && (
             <Button size="sm" variant="primary" onClick={() => onAction("close")}>
               <Icon name="pen" /> Close
             </Button>
@@ -292,35 +305,123 @@ function ActionModal({
             supplier_root_cause: { description: rootCause },
             supplier_actions: { description: supplierActions },
           });
-        case "review":
-          return api.post(`/qms/v1/scars/${scar.id}/review`, { ...base, decision, rationale });
         case "effectiveness":
           return api.post(`/qms/v1/scars/${scar.id}/effectiveness`, {
             ...base,
             result,
             evidence: { description: evidence },
           });
-        case "close":
-          return api.post(`/qms/v1/scars/${scar.id}/close`, {
-            ...base,
+        default:
+          // review/close are signature-gated and never reach this form -- see the early returns below
+          // that render <SignatureCeremony> for them instead.
+          throw new Error(`${action} does not submit through the plain form`);
+      }
+    });
+  }
+
+  // Document 106 section 9 rows 95-96 (SG-138, resolved): review is QA Reviewer-signed, close is QA
+  // Releaser-signed.
+  if (action === "review" && scar) {
+    const scarPath = `/qms/v1/scars/${scar.id}`;
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`${scarPath}/signature-challenges`}
+        action="review"
+        title={`Review SCAR response - ${scar.scar_number}`}
+        summary="Records the internal review decision on the supplier's response. Signer must hold QA Reviewer authority."
+        submitLabel="Sign & record review"
+        submitVariant="success"
+        disabled={!rationale.trim()}
+        extraFields={
+          <>
+            <Field label="Decision" required>
+              <Select value={decision} onChange={(e) => setDecision(e.target.value)}>
+                <option value="accepted">accepted</option>
+                <option value="rejected">rejected - supplier must respond again</option>
+              </Select>
+            </Field>
+            <Field label="Rationale" required>
+              <textarea className="input" rows={3} value={rationale} onChange={(e) => setRationale(e.target.value)} required />
+            </Field>
+          </>
+        }
+        onSign={(p) =>
+          api.post(`${scarPath}/review`, {
+            idempotency_key: p.idempotency_key,
+            scar_id: scar.id,
+            expected_version: scar.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+            decision,
+            rationale,
+          })
+        }
+      />
+    );
+  }
+
+  if (action === "close" && scar) {
+    const scarPath = `/qms/v1/scars/${scar.id}`;
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`${scarPath}/signature-challenges`}
+        action="close"
+        title={`Close SCAR - ${scar.scar_number}`}
+        summary="Closes the SCAR permanently. This is a released quality decision - signer must hold QA Releaser authority."
+        submitLabel="Sign & close"
+        submitVariant="success"
+        disabled={!conclusion.trim() || (requalification && !rationale.trim())}
+        extraFields={
+          <>
+            <Field label="Source status decision" required hint="What happens to this supplier's approved status.">
+              <Select value={sourceStatus} onChange={(e) => setSourceStatus(e.target.value)}>
+                {SOURCE_STATUS_DECISIONS.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Conclusion" required>
+              <textarea className="input" rows={3} value={conclusion} onChange={(e) => setConclusion(e.target.value)} required />
+            </Field>
+            <label className="flex items-center gap-2 fs-2 mb-3">
+              <input type="checkbox" checked={requalification} onChange={(e) => setRequalification(e.target.checked)} />
+              Requalification required
+            </label>
+            {requalification && (
+              <Field label="Requalification rationale" required>
+                <textarea className="input" rows={2} value={rationale} onChange={(e) => setRationale(e.target.value)} required />
+              </Field>
+            )}
+          </>
+        }
+        onSign={(p) =>
+          api.post(`${scarPath}/close`, {
+            idempotency_key: p.idempotency_key,
+            scar_id: scar.id,
+            expected_version: scar.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
             source_status_decision: sourceStatus,
             conclusion,
             requalification_required: requalification,
             requalification_rationale: requalification ? rationale : null,
-          });
-      }
-    });
+          })
+        }
+      />
+    );
   }
 
   return (
     <Modal open onClose={onClose} title={LABEL[action]}>
       <form onSubmit={submit}>
-        {SIGNATURE_GATED.includes(action) && (
-          <Banner tone="warn" title="This transition requires an electronic signature">
-            This action needs a signature policy that hasn&apos;t been configured for this deployment yet, so it will be correctly refused rather than proceeding without one.
-          </Banner>
-        )}
-
         {action === "issue_scar" && (
           <>
             <div className="grid grid-cols-2 gap-4">
@@ -360,20 +461,6 @@ function ActionModal({
           </>
         )}
 
-        {action === "review" && (
-          <>
-            <Field label="Decision" required>
-              <Select value={decision} onChange={(e) => setDecision(e.target.value)}>
-                <option value="accepted">accepted</option>
-                <option value="rejected">rejected - supplier must respond again</option>
-              </Select>
-            </Field>
-            <Field label="Rationale" required>
-              <textarea className="input" rows={3} value={rationale} onChange={(e) => setRationale(e.target.value)} required />
-            </Field>
-          </>
-        )}
-
         {action === "effectiveness" && (
           <>
             <Field label="Result" required>
@@ -385,32 +472,6 @@ function ActionModal({
             <Field label="Evidence" required>
               <textarea className="input" rows={3} value={evidence} onChange={(e) => setEvidence(e.target.value)} required />
             </Field>
-          </>
-        )}
-
-        {action === "close" && (
-          <>
-            <Field label="Source status decision" required hint="What happens to this supplier's approved status.">
-              <Select value={sourceStatus} onChange={(e) => setSourceStatus(e.target.value)}>
-                {SOURCE_STATUS_DECISIONS.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-            <Field label="Conclusion" required>
-              <textarea className="input" rows={3} value={conclusion} onChange={(e) => setConclusion(e.target.value)} required />
-            </Field>
-            <label className="flex items-center gap-2 fs-2 mb-3">
-              <input type="checkbox" checked={requalification} onChange={(e) => setRequalification(e.target.checked)} />
-              Requalification required
-            </label>
-            {requalification && (
-              <Field label="Requalification rationale" required>
-                <textarea className="input" rows={2} value={rationale} onChange={(e) => setRationale(e.target.value)} required />
-              </Field>
-            )}
           </>
         )}
 

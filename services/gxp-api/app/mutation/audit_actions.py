@@ -45,6 +45,7 @@ KNOWN_AUDIT_ACTIONS: frozenset[str] = frozenset(
         "GovernancePackageGenerated",
         "IntegrationAccepted",
         "LossRecorded",
+        "OnboardingDismissed",
         "Performed",
         "PermissionsChanged",
         "Rejected",

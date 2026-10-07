@@ -5,15 +5,43 @@ import { usePathname, useRouter } from "next/navigation";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import {
   canAuthorRules,
+  canOperateEdgeGateways,
+  canOperateEvidence,
+  canOperateMachineIntegration,
+  canOperateSecurity,
+  canReleaseRules,
   canReviewAudit,
   canReviewVault,
   canViewProduct,
-  canViewQms,
   canViewRecipe,
+  hasAnyPermission,
   isAdminAnywhere,
   logout,
   type Me,
 } from "@/lib/api";
+
+// Nav-section gates below check a representative spread of each module's own view/entry permission
+// codes directly (hasAnyPermission), rather than one shared cross-module role check -- these four
+// sections cover genuinely unrelated permission domains (QMS record types, postmarket safety, the
+// validation platform, AI governance), and used to all share one "any of 6 core operational roles"
+// helper that had nothing to do with three of the four (audit finding 2026-09-18: e.g. Postmarket Safety
+// Reviewer -- the role this section exists for -- could never see it, since that role isn't one of the
+// six the old helper checked).
+const QMS_VIEW_CODES = [
+  "qms_deviation.view", "capa.view", "ncr.view", "change.view", "complaint.view", "field_action.view",
+  "internal_audit.view", "risk.view", "scar.view", "document.view", "training.subject.view",
+  "quality_metric.dashboard.view",
+];
+const POSTMARKET_VIEW_CODES = ["safety_case.view", "safety_signal.view", "reportability_track.view"];
+const VALIDATION_VIEW_CODES = ["validation.gate.view", "validation.package.view", "validation.traceability.view"];
+const AI_GOVERNANCE_ENTRY_CODES = [
+  "ai_governance.use_case.register", "ai_governance.context.build", "ai_governance.advisory.execute",
+];
+
+const canViewQualitySystem = (me: Me | null) => hasAnyPermission(me, QMS_VIEW_CODES);
+const canViewPostmarket = (me: Me | null) => hasAnyPermission(me, POSTMARKET_VIEW_CODES);
+const canViewValidation = (me: Me | null) => hasAnyPermission(me, VALIDATION_VIEW_CODES);
+const canViewAiGovernance = (me: Me | null) => hasAnyPermission(me, AI_GOVERNANCE_ENTRY_CODES);
 import { useMe } from "@/lib/hooks";
 
 interface NavItem {
@@ -35,6 +63,11 @@ const signedIn = (me: Me | null) => me !== null;
 /** The navigation model. Each section and item can gate itself on the signed-in user's roles.
  * Order top-to-bottom is render order. */
 const SECTIONS: NavSection[] = [
+  {
+    label: "Overview",
+    show: signedIn,
+    items: [{ href: "/home", label: "Home", icon: "home" }],
+  },
   {
     label: "Production",
     show: signedIn,
@@ -81,7 +114,7 @@ const SECTIONS: NavSection[] = [
   },
   {
     label: "Quality system",
-    show: canViewQms,
+    show: canViewQualitySystem,
     items: [
       { href: "/deviations", label: "Deviations", icon: "alert-triangle" },
       { href: "/capa", label: "CAPA", icon: "shield-check" },
@@ -107,12 +140,12 @@ const SECTIONS: NavSection[] = [
   },
   {
     label: "Postmarket",
-    show: canViewQms,
+    show: canViewPostmarket,
     items: [{ href: "/postmarket", label: "Safety & reporting", icon: "bell" }],
   },
   {
     label: "Validation",
-    show: canViewQms,
+    show: canViewValidation,
     items: [
       { href: "/validation", label: "Validation platform", icon: "clipboard" },
       { href: "/validation/go-live", label: "Deployment · PQ · go-live", icon: "badge-check" },
@@ -120,7 +153,7 @@ const SECTIONS: NavSection[] = [
   },
   {
     label: "AI",
-    show: canViewQms,
+    show: canViewAiGovernance,
     items: [{ href: "/ai", label: "AI governance", icon: "shield-check" }],
   },
   {
@@ -132,23 +165,37 @@ const SECTIONS: NavSection[] = [
     ],
   },
   {
+    // rules.author (draft/validate/simulate) and rules.release (release a validated rule/UOM/UOM
+    // conversion) are different grants — Admin + Process Engineer author, Admin + QA Releaser release
+    // — so gating on canAuthorRules alone hid this section from QA Releaser (found 2026-09-28, same
+    // SG-204 bug class as the Admin section below).
     label: "Engineering",
-    show: canAuthorRules,
+    show: (me) => canAuthorRules(me) || canReleaseRules(me),
     items: [{ href: "/rules", label: "Rules", icon: "gauge" }],
   },
   {
+    // Section gate is broadened beyond Admin so "Platform ops" (whose Evidence operations panel is
+    // really gated on evidence.upload/evidence.download, not Admin — see canOperateEvidence),
+    // "Security" (gated on the 5 dedicated WP-10 security roles, not Admin — see canOperateSecurity,
+    // 2026-09-18 fix, same SG-204 bug class) and "Edge gateways"/"Machine integration" (each bundles
+    // several independently-permissioned domains — Equipment Administrator, QA Releaser, Integration
+    // Administrator, QA Reviewer — found 2026-09-28, same SG-204 bug class again) show up for anyone
+    // who actually holds those permissions; every other item pins its own show back to Admin-only
+    // since those really are Admin-only server-side (platform.administer etc).
     label: "Admin",
-    show: isAdminAnywhere,
+    show: (me) =>
+      isAdminAnywhere(me) || canOperateEvidence(me) || canOperateSecurity(me) ||
+      canOperateEdgeGateways(me) || canOperateMachineIntegration(me),
     items: [
-      { href: "/admin/company", label: "Company", icon: "building" },
-      { href: "/admin/sites", label: "Sites", icon: "building" },
-      { href: "/admin/users", label: "Users", icon: "users" },
-      { href: "/admin/roles", label: "Roles", icon: "users" },
-      { href: "/admin/access-review", label: "Access review", icon: "shield-check" },
-      { href: "/security", label: "Security", icon: "lock" },
+      { href: "/admin/company", label: "Company", icon: "building", show: isAdminAnywhere },
+      { href: "/admin/sites", label: "Sites", icon: "building", show: isAdminAnywhere },
+      { href: "/admin/users", label: "Users", icon: "users", show: isAdminAnywhere },
+      { href: "/admin/roles", label: "Roles", icon: "users", show: isAdminAnywhere },
+      { href: "/admin/access-review", label: "Access review", icon: "shield-check", show: isAdminAnywhere },
+      { href: "/security", label: "Security", icon: "lock", show: canOperateSecurity },
       { href: "/platform", label: "Platform ops", icon: "database" },
-      { href: "/edge", label: "Edge gateways", icon: "scan" },
-      { href: "/machine-integration", label: "Machine integration", icon: "scan" },
+      { href: "/edge", label: "Edge gateways", icon: "scan", show: canOperateEdgeGateways },
+      { href: "/machine-integration", label: "Machine integration", icon: "scan", show: canOperateMachineIntegration },
     ],
   },
 ];

@@ -22,6 +22,10 @@ from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/security/v1", tags=["security-crypto"])
 
+# SG-213 reviewed: all 7 evaluate_policy calls below use site_id=None intentionally.
+# secret_metadata/certificate_metadata/crypto_profile carry no site_id column -- Document 65's actors
+# and data model operate at the platform/deployment level (see crypto_models.py module docstring).
+
 
 @router.post("/secrets", response_model=MutationReceipt)
 async def post_create_secret(

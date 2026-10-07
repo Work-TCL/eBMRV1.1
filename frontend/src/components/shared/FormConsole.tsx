@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { api, ApiError, newIdempotencyKey, type MutationReceipt } from "@/lib/api";
-import { useEntityOptions } from "@/lib/hooks";
+import { useEffect, useState } from "react";
+import { api, ApiError, hasPermission, newIdempotencyKey, type Me, type MutationReceipt } from "@/lib/api";
+import { useEntityOptions, type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
+import { UomSelect } from "@/components/ui/UomSelect";
 import {
   RepeatableRows,
   KeyValueRows,
@@ -41,10 +42,32 @@ export interface FormField {
     | "equipmentSelect"
     | "areaSelect"
     | "userSelect"
+    // `owner_type`/`owner_id` pair for a polymorphic-owner command (e.g. evidence staging). `owner_type`
+    // has no backend enum (it's a free String(80) column — grep-verified across every module), so
+    // "ownerTypeSelect" offers only the values this codebase actually creates evidence against today
+    // ("batch_step", "gxp_batch") plus an "Other…" escape hatch to free text — never a closed dropdown
+    // that could block a real owner_type this list doesn't happen to know about. "ownerIdSelect" reads
+    // the sibling "owner_type" field's current value and swaps in the matching picker: batch→step
+    // cascade, a plain batch picker, or free text for "Other".
+    | "ownerTypeSelect"
+    | "ownerIdSelect"
     // A file picker for a command field the backend expects as base64 content (e.g. evidence upload) —
     // reads the chosen file client-side and stores its base64 encoding, so the operator picks a file
     // instead of pasting a base64 blob into a text box.
     | "fileBase64"
+    // An evidence object picker: the caller enters the owner_type/owner_id the evidence was staged
+    // under (self-contained, not sent as form fields — GET /evidence/v1/objects has no unfiltered list,
+    // Document 72 declares none, so it must stay owner-scoped) and picks from the resulting list instead
+    // of pasting a raw evidence_id UUID. Manual-ID fallback available, same as every other picker type.
+    | "evidenceSelect"
+    // Client requirements #2/#3: a real enforced dropdown over the released rules.gxp_uom list instead
+    // of a free-text quantity-unit field, with the same inline "+ Add new UOM" affordance every other
+    // UomSelect usage in the app offers.
+    | "uomSelect"
+    // A dispensed-container picker scoped to the sibling "batch_id" field's current value (GET
+    // /dispensing/v1/dispensed-containers?batch_id=...) -- "Record a consumption"/"Record a return" both
+    // took `dispensed_container_id` as a raw pasted UUID with nothing to pick it from.
+    | "dispensedContainerSelect"
     | "repeat"
     | "kv"
     | "stringList";
@@ -78,6 +101,11 @@ export interface FormOp {
   template?: string;
   /** One-line description shown under the operation selector. */
   about?: string;
+  /** The RBAC permission code `evaluate_policy()` checks on this op's own endpoint. When set and the
+   * `me` passed to `FormConsole` lacks it, this op is left out of the operation selector entirely
+   * (never shown live-but-403ing) -- omit only for an op whose endpoint truly has no evaluate_policy()
+   * call (any authenticated user may perform it). */
+  requiredPermission?: string;
 }
 
 export function coerce(field: FormField, raw: string): unknown {
@@ -187,8 +215,14 @@ export function FormFieldsGrid({
               subFields={f.subFields ?? []}
               value={(complexValues[f.name] as RepeatRow[]) ?? []}
               onChange={(rows) => setComplexValues((c) => ({ ...c, [f.name]: rows }))}
+              materialLotOptions={entities.materialLots}
+              materialLotOptionsStatus={entities.materialLotsStatus}
               userOptions={entities.users}
               userOptionsStatus={entities.usersStatus}
+              equipmentOptions={entities.equipment}
+              equipmentOptionsStatus={entities.equipmentStatus}
+              areaOptions={entities.areas}
+              areaOptionsStatus={entities.areasStatus}
             />
           </div>
         ) : f.type === "kv" ? (
@@ -259,6 +293,79 @@ export function FormFieldsGrid({
             options={entities.users}
             status={entities.usersStatus}
             kind="user"
+          />
+        ) : f.type === "ownerTypeSelect" ? (
+          <OwnerTypeField
+            key={f.name}
+            label={f.label}
+            required={f.required}
+            hint={f.hint}
+            value={values[f.name] ?? ""}
+            onChange={(v) => setValues((c) => ({ ...c, [f.name]: v }))}
+          />
+        ) : f.type === "ownerIdSelect" ? (
+          values.owner_type === "batch_step" ? (
+            <BatchStepOwnerPicker
+              key={f.name}
+              label={f.label}
+              required={f.required}
+              hint={f.hint}
+              value={values[f.name] ?? ""}
+              onChange={(stepId) => setValues((c) => ({ ...c, [f.name]: stepId }))}
+              batchOptions={entities.batches}
+              batchOptionsStatus={entities.batchesStatus}
+            />
+          ) : values.owner_type === "gxp_batch" ? (
+            <EntityPickerField
+              key={f.name}
+              label={f.label}
+              required={f.required}
+              hint={f.hint}
+              value={values[f.name] ?? ""}
+              onChange={(v) => setValues((c) => ({ ...c, [f.name]: v }))}
+              options={entities.batches}
+              status={entities.batchesStatus}
+              kind="batch"
+            />
+          ) : (
+            <Field key={f.name} label={f.label} required={f.required} hint={f.hint ?? "Select an owner type above first."}>
+              <Input
+                type="text"
+                value={values[f.name] ?? ""}
+                onChange={(e) => setValues((c) => ({ ...c, [f.name]: e.target.value }))}
+                placeholder="Owner ID"
+              />
+            </Field>
+          )
+        ) : f.type === "evidenceSelect" ? (
+          <EvidenceObjectOwnerPicker
+            key={f.name}
+            label={f.label}
+            required={f.required}
+            hint={f.hint}
+            value={values[f.name] ?? ""}
+            onChange={(v) => setValues((c) => ({ ...c, [f.name]: v }))}
+            batchOptions={entities.batches}
+            batchOptionsStatus={entities.batchesStatus}
+          />
+        ) : f.type === "uomSelect" ? (
+          <UomSelect
+            key={f.name}
+            label={f.label}
+            required={f.required}
+            hint={f.hint}
+            value={values[f.name] ?? ""}
+            onChange={(v) => setValues((c) => ({ ...c, [f.name]: v }))}
+          />
+        ) : f.type === "dispensedContainerSelect" ? (
+          <DispensedContainerPicker
+            key={f.name}
+            label={f.label}
+            required={f.required}
+            hint={f.hint}
+            value={values[f.name] ?? ""}
+            onChange={(v) => setValues((c) => ({ ...c, [f.name]: v }))}
+            batchId={values.batch_id ?? ""}
           />
         ) : f.type === "fileBase64" ? (
           <FileBase64Field
@@ -359,6 +466,467 @@ function FileBase64Field({
   );
 }
 
+const pickerLinkStyle = {
+  background: "none",
+  border: "none",
+  padding: 0,
+  color: "var(--brand-600)",
+  fontSize: "var(--fs-2)",
+  cursor: "pointer",
+  textDecoration: "underline",
+} as const;
+
+/** The only `owner_type` values this codebase actually stages evidence against today (grep-verified:
+ * `batch_step` in the batch-execution "Link evidence" flow, `gxp_batch` in the evidence lifecycle test
+ * suite). `owner_type` itself has no backend enum — it's a free `String(80)` column — so this is a
+ * convenience shortlist, never a hard restriction: "Other…" drops to free text for anything else. */
+const KNOWN_OWNER_TYPES = [
+  { value: "batch_step", label: "Batch step" },
+  { value: "gxp_batch", label: "Batch (whole)" },
+];
+
+function OwnerTypeField({
+  label,
+  required,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string;
+  required?: boolean;
+  hint?: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const isKnown = KNOWN_OWNER_TYPES.some((o) => o.value === value);
+  const [manual, setManual] = useState(value !== "" && !isKnown);
+
+  if (manual) {
+    return (
+      <Field label={label} required={required} hint={hint}>
+        <Input type="text" value={value} onChange={(e) => onChange(e.target.value)} placeholder="Owner type" />
+        <button
+          type="button"
+          style={{ ...pickerLinkStyle, marginTop: 6 }}
+          onClick={() => {
+            setManual(false);
+            onChange("");
+          }}
+        >
+          Choose from list instead
+        </button>
+      </Field>
+    );
+  }
+
+  return (
+    <Field label={label} required={required} hint={hint}>
+      <Select
+        value={value}
+        onChange={(e) => {
+          if (e.target.value === "__other__") {
+            setManual(true);
+            onChange("");
+          } else {
+            onChange(e.target.value);
+          }
+        }}
+      >
+        <option value="">Select an owner type</option>
+        {KNOWN_OWNER_TYPES.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+        <option value="__other__">Other…</option>
+      </Select>
+    </Field>
+  );
+}
+
+/** Batch → step cascading picker, for a field referencing one specific batch step (e.g. evidence
+ * staging's "Owner ID" when "Owner type" is "batch_step") — the batch id alone isn't the field's value,
+ * so a plain `EntityPickerField` (one flat list) doesn't fit; this fetches the chosen batch's steps on
+ * demand rather than every step of every batch up front. Falls back to a manual-ID `Input` the same way
+ * every other "*Select" type does, for any owner_type this picker doesn't cover. */
+function BatchStepOwnerPicker({
+  label,
+  required,
+  hint,
+  value,
+  onChange,
+  batchOptions,
+  batchOptionsStatus,
+}: {
+  label: string;
+  required?: boolean;
+  hint?: string;
+  value: string;
+  onChange: (stepId: string) => void;
+  batchOptions: EntityOption[];
+  batchOptionsStatus: EntityOptionsStatus;
+}) {
+  const [manual, setManual] = useState(false);
+  const [batchId, setBatchId] = useState("");
+  const [steps, setSteps] = useState<{ step_id: string; recipe_step_code: string }[]>([]);
+  const [stepsStatus, setStepsStatus] = useState<EntityOptionsStatus>("empty");
+
+  function selectBatch(id: string) {
+    setBatchId(id);
+    setSteps([]);
+    if (!id) {
+      setStepsStatus("empty");
+      return;
+    }
+    setStepsStatus("loading");
+    api
+      .get<{ steps: { step_id: string; recipe_step_code: string }[] }>(`/batches/v1/${id}/execution-view`)
+      .then((res) => {
+        setSteps(res.steps);
+        setStepsStatus(res.steps.length ? "ready" : "empty");
+      })
+      .catch(() => setStepsStatus("error"));
+  }
+
+  if (manual || batchOptionsStatus === "error") {
+    return (
+      <Field label={label} required={required} hint={hint}>
+        <Input type="text" value={value} onChange={(e) => onChange(e.target.value)} placeholder="Owner ID" />
+        {batchOptionsStatus !== "error" && (
+          <button type="button" style={{ ...pickerLinkStyle, marginTop: 6 }} onClick={() => setManual(false)}>
+            Pick a batch step instead
+          </button>
+        )}
+      </Field>
+    );
+  }
+
+  return (
+    <Field label={label} required={required} hint={hint}>
+      <Select value={batchId} onChange={(e) => selectBatch(e.target.value)} disabled={batchOptionsStatus === "loading"}>
+        <option value="">{batchOptionsStatus === "loading" ? "Loading batches…" : "Select a batch"}</option>
+        {batchOptions.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </Select>
+      {batchId && (
+        <Select value={value} onChange={(e) => onChange(e.target.value)} disabled={stepsStatus === "loading"} style={{ marginTop: 6 }}>
+          <option value="">{stepsStatus === "loading" ? "Loading steps…" : "Select a step"}</option>
+          {steps.map((s) => (
+            <option key={s.step_id} value={s.step_id}>
+              {s.recipe_step_code}
+            </option>
+          ))}
+        </Select>
+      )}
+      <button type="button" style={{ ...pickerLinkStyle, marginTop: 6 }} onClick={() => setManual(true)}>
+        Not a batch step? Enter the owner ID manually
+      </button>
+    </Field>
+  );
+}
+
+interface DispensedContainerRow {
+  id: string;
+  container_code: string;
+  remaining_quantity: string;
+  uom: string;
+  status: string;
+}
+
+/** Picks a `DispensedContainer` scoped to the sibling "batch_id" field already on the same form --
+ * `GET /dispensing/v1/dispensed-containers?batch_id=...` (SG-222) is the first list endpoint for this
+ * entity; before it, "Record a consumption"/"Record a return" took a pasted UUID with nothing to copy
+ * it from. */
+function DispensedContainerPicker({
+  label,
+  required,
+  hint,
+  value,
+  onChange,
+  batchId,
+}: {
+  label: string;
+  required?: boolean;
+  hint?: string;
+  value: string;
+  onChange: (value: string) => void;
+  batchId: string;
+}) {
+  const [manual, setManual] = useState(false);
+  const [containers, setContainers] = useState<DispensedContainerRow[]>([]);
+  const [status, setStatus] = useState<EntityOptionsStatus>("empty");
+
+  useEffect(() => {
+    if (!batchId) {
+      setContainers([]);
+      setStatus("empty");
+      return;
+    }
+    let cancelled = false;
+    setStatus("loading");
+    api
+      .get<DispensedContainerRow[]>(`/dispensing/v1/dispensed-containers?batch_id=${encodeURIComponent(batchId)}`)
+      .then((rows) => {
+        if (cancelled) return;
+        setContainers(rows);
+        setStatus(rows.length ? "ready" : "empty");
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [batchId]);
+
+  if (manual || !batchId || status === "error") {
+    return (
+      <Field label={label} required={required} hint={hint ?? (!batchId ? "Select a batch above first." : undefined)}>
+        <Input type="text" value={value} onChange={(e) => onChange(e.target.value)} placeholder="Dispensed container ID" />
+        {batchId && status !== "error" && (
+          <button type="button" style={{ ...pickerLinkStyle, marginTop: 6 }} onClick={() => setManual(false)}>
+            Pick a dispensed container instead
+          </button>
+        )}
+      </Field>
+    );
+  }
+
+  return (
+    <Field label={label} required={required} hint={hint}>
+      <Select value={value} onChange={(e) => onChange(e.target.value)} disabled={status === "loading"}>
+        <option value="">{status === "loading" ? "Loading containers…" : containers.length ? "Select a container…" : "No dispensed containers for this batch"}</option>
+        {containers.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.container_code} - {c.remaining_quantity} {c.uom} ({c.status})
+          </option>
+        ))}
+      </Select>
+      <button type="button" style={{ ...pickerLinkStyle, marginTop: 6 }} onClick={() => setManual(true)}>
+        Enter the container ID manually
+      </button>
+    </Field>
+  );
+}
+
+interface EvidenceObjectRow {
+  id: string;
+  filename: string | null;
+  state: string;
+  content_hash: string | null;
+}
+
+/** Picks an evidence object by its real id instead of a pasted (and easily mistyped/truncated) UUID —
+ * the bug this fixes: "Finalize an upload", "Apply a legal hold" and "Download evidence" all took a
+ * free-text `evidence_id` with nothing to copy it from. `GET /evidence/v1/objects` has no unfiltered
+ * list (Document 72 declares none), so the operator scopes by owner first — the same `KNOWN_OWNER_TYPES`
+ * shortlist and batch/step cascade as `OwnerTypeField`/`BatchStepOwnerPicker` above, so picking an owner
+ * here feels identical to picking one when staging — then picks from that owner's evidence objects.
+ * The owner scope is local state only, never part of the submitted form fields (only the chosen
+ * evidence_id is). */
+export function EvidenceObjectOwnerPicker({
+  label,
+  required,
+  hint,
+  value,
+  onChange,
+  batchOptions,
+  batchOptionsStatus,
+}: {
+  label: string;
+  required?: boolean;
+  hint?: string;
+  value: string;
+  onChange: (evidenceId: string) => void;
+  batchOptions: EntityOption[];
+  batchOptionsStatus: EntityOptionsStatus;
+}) {
+  const [manualEvidence, setManualEvidence] = useState(false);
+  const [ownerKind, setOwnerKind] = useState<"batch_step" | "gxp_batch" | "other">("batch_step");
+  const [batchId, setBatchId] = useState("");
+  const [stepId, setStepId] = useState("");
+  const [steps, setSteps] = useState<{ step_id: string; recipe_step_code: string }[]>([]);
+  const [stepsStatus, setStepsStatus] = useState<EntityOptionsStatus>("empty");
+  const [manualOwnerType, setManualOwnerType] = useState("");
+  const [manualOwnerId, setManualOwnerId] = useState("");
+  const [rows, setRows] = useState<EvidenceObjectRow[]>([]);
+  const [status, setStatus] = useState<EntityOptionsStatus>("empty");
+
+  function fetchObjects(ot: string, oid: string) {
+    if (!ot.trim() || !oid.trim()) {
+      setRows([]);
+      setStatus("empty");
+      return;
+    }
+    setStatus("loading");
+    api
+      .get<{ evidence_objects: EvidenceObjectRow[] }>(
+        `/evidence/v1/objects?owner_type=${encodeURIComponent(ot.trim())}&owner_id=${encodeURIComponent(oid.trim())}`
+      )
+      .then((res) => {
+        setRows(res.evidence_objects);
+        setStatus(res.evidence_objects.length ? "ready" : "empty");
+      })
+      .catch(() => setStatus("error"));
+  }
+
+  function resetScope(kind: "batch_step" | "gxp_batch" | "other") {
+    setOwnerKind(kind);
+    setBatchId("");
+    setStepId("");
+    setSteps([]);
+    setStepsStatus("empty");
+    setManualOwnerType("");
+    setManualOwnerId("");
+    setRows([]);
+    setStatus("empty");
+    onChange("");
+  }
+
+  function selectBatchForStep(id: string) {
+    setBatchId(id);
+    setStepId("");
+    setSteps([]);
+    onChange("");
+    setRows([]);
+    setStatus("empty");
+    if (!id) {
+      setStepsStatus("empty");
+      return;
+    }
+    setStepsStatus("loading");
+    api
+      .get<{ steps: { step_id: string; recipe_step_code: string }[] }>(`/batches/v1/${id}/execution-view`)
+      .then((res) => {
+        setSteps(res.steps);
+        setStepsStatus(res.steps.length ? "ready" : "empty");
+      })
+      .catch(() => setStepsStatus("error"));
+  }
+
+  function selectStep(id: string) {
+    setStepId(id);
+    fetchObjects("batch_step", id);
+  }
+
+  function selectBatchForWhole(id: string) {
+    setBatchId(id);
+    fetchObjects("gxp_batch", id);
+  }
+
+  if (manualEvidence) {
+    return (
+      <Field label={label} required={required} hint={hint}>
+        <Input type="text" value={value} onChange={(e) => onChange(e.target.value)} placeholder="Evidence object ID" />
+        <button type="button" style={{ ...pickerLinkStyle, marginTop: 6 }} onClick={() => setManualEvidence(false)}>
+          Pick from a list instead
+        </button>
+      </Field>
+    );
+  }
+
+  return (
+    <Field label={label} required={required} hint={hint ?? "Pick the owner this evidence was staged under, then select it below."}>
+      <Select value={ownerKind} onChange={(e) => resetScope(e.target.value as "batch_step" | "gxp_batch" | "other")}>
+        <option value="batch_step">Owner: Batch step</option>
+        <option value="gxp_batch">Owner: Batch (whole)</option>
+        <option value="other">Owner: Other…</option>
+      </Select>
+
+      {ownerKind === "batch_step" && (
+        <>
+          <Select
+            value={batchId}
+            onChange={(e) => selectBatchForStep(e.target.value)}
+            disabled={batchOptionsStatus === "loading"}
+            style={{ marginTop: 6 }}
+          >
+            <option value="">{batchOptionsStatus === "loading" ? "Loading batches…" : "Select a batch"}</option>
+            {batchOptions.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+          {batchId && (
+            <Select value={stepId} onChange={(e) => selectStep(e.target.value)} disabled={stepsStatus === "loading"} style={{ marginTop: 6 }}>
+              <option value="">{stepsStatus === "loading" ? "Loading steps…" : "Select a step"}</option>
+              {steps.map((s) => (
+                <option key={s.step_id} value={s.step_id}>
+                  {s.recipe_step_code}
+                </option>
+              ))}
+            </Select>
+          )}
+        </>
+      )}
+
+      {ownerKind === "gxp_batch" && (
+        <Select
+          value={batchId}
+          onChange={(e) => selectBatchForWhole(e.target.value)}
+          disabled={batchOptionsStatus === "loading"}
+          style={{ marginTop: 6 }}
+        >
+          <option value="">{batchOptionsStatus === "loading" ? "Loading batches…" : "Select a batch"}</option>
+          {batchOptions.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </Select>
+      )}
+
+      {ownerKind === "other" && (
+        <div className="grid grid-cols-2 gap-2" style={{ marginTop: 6 }}>
+          <Input
+            type="text"
+            value={manualOwnerType}
+            onChange={(e) => setManualOwnerType(e.target.value)}
+            onBlur={() => fetchObjects(manualOwnerType, manualOwnerId)}
+            placeholder="Owner type"
+          />
+          <Input
+            type="text"
+            value={manualOwnerId}
+            onChange={(e) => setManualOwnerId(e.target.value)}
+            onBlur={() => fetchObjects(manualOwnerType, manualOwnerId)}
+            placeholder="Owner ID"
+          />
+        </div>
+      )}
+
+      <Select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={status !== "ready"}
+        style={{ marginTop: 6 }}
+      >
+        <option value="">
+          {status === "loading"
+            ? "Loading evidence objects…"
+            : status === "error"
+              ? "Couldn't load — enter the ID manually below"
+              : status === "empty"
+                ? "No evidence objects found for this owner"
+                : "Select an evidence object"}
+        </option>
+        {rows.map((r) => (
+          <option key={r.id} value={r.id}>
+            {`${r.filename ?? r.id} — ${r.state}${r.content_hash ? ` (${r.content_hash.slice(0, 10)}…)` : ""}`}
+          </option>
+        ))}
+      </Select>
+      <button type="button" style={{ ...pickerLinkStyle, marginTop: 6 }} onClick={() => setManualEvidence(true)}>
+        Enter the evidence object ID manually
+      </button>
+    </Field>
+  );
+}
+
 /**
  * A friendlier operations console: pick an operation, fill labelled fields (or a JSON body for the
  * genuinely nested ones), submit. Structured fields are coerced (number / bool / date → ISO / JSON)
@@ -370,17 +938,23 @@ export function FormConsole({
   subtitle,
   root,
   ops,
+  me,
 }: {
   title: string;
   subtitle?: string;
   root: string;
   ops: FormOp[];
+  /** When provided, ops carrying a `requiredPermission` the caller doesn't hold are left out of the
+   * selector entirely, instead of being shown and 403ing on submit. Omit only for a console whose ops
+   * are either all permission-free or already gated by the caller some other way. */
+  me?: Me | null;
 }) {
+  const ops_ = me === undefined ? ops : ops.filter((o) => !o.requiredPermission || hasPermission(me, o.requiredPermission));
   const [idx, setIdx] = useState(0);
-  const op = ops[idx];
-  const [values, setValues] = useState<Record<string, string>>(() => seedFieldValues(ops[0]?.fields ?? []));
-  const [complexValues, setComplexValues] = useState<ComplexValues>(() => seedComplexValues(ops[0]?.fields ?? []));
-  const [jsonBody, setJsonBody] = useState(ops[0]?.template ?? "{\n  \n}");
+  const op = ops_[Math.min(idx, ops_.length - 1)];
+  const [values, setValues] = useState<Record<string, string>>(() => seedFieldValues(ops_[0]?.fields ?? []));
+  const [complexValues, setComplexValues] = useState<ComplexValues>(() => seedComplexValues(ops_[0]?.fields ?? []));
+  const [jsonBody, setJsonBody] = useState(ops_[0]?.template ?? "{\n  \n}");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<unknown>(undefined);
@@ -388,15 +962,16 @@ export function FormConsole({
 
   function selectOp(next: number) {
     setIdx(next);
-    setValues(seedFieldValues(ops[next]?.fields ?? []));
-    setComplexValues(seedComplexValues(ops[next]?.fields ?? []));
-    setJsonBody(ops[next]?.template ?? "{\n  \n}");
+    setValues(seedFieldValues(ops_[next]?.fields ?? []));
+    setComplexValues(seedComplexValues(ops_[next]?.fields ?? []));
+    setJsonBody(ops_[next]?.template ?? "{\n  \n}");
     setError(null);
     setResult(undefined);
   }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (!op) return;
     setBusy(true);
     setError(null);
     setResult(undefined);
@@ -417,7 +992,16 @@ export function FormConsole({
     }
   }
 
-  const missingRequired = op.fields ? missingRequiredFields(op.fields, values, complexValues) : false;
+  const missingRequired = op?.fields ? missingRequiredFields(op.fields, values, complexValues) : false;
+
+  if (ops_.length === 0) {
+    return (
+      <Card pad className="mb-4">
+        <CardHeader title={title} />
+        <p className="fs-2 text-muted">You don&apos;t have permission to perform any action here.</p>
+      </Card>
+    );
+  }
 
   return (
     <Card pad className="mb-4">
@@ -426,7 +1010,7 @@ export function FormConsole({
       <form onSubmit={submit}>
         <Field label="Operation">
           <Select value={idx} onChange={(e) => selectOp(Number(e.target.value))}>
-            {ops.map((o, i) => (
+            {ops_.map((o, i) => (
               <option key={o.path + o.label} value={i}>
                 {o.label}
               </option>

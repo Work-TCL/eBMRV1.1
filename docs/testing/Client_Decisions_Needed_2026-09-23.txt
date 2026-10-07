@@ -1,0 +1,423 @@
+================================================================================
+ TOPIC 1: INCOMING MATERIAL TESTING AND RELEASE
+================================================================================
+
+BACKGROUND
+When raw material arrives from a supplier, the system already lets you record
+that a sample was taken and sent for lab testing. What it does NOT yet do is
+automatically stop that material from being used in production until the
+required test has actually passed.
+
+QUESTION 1
+When material arrives, should the system automatically BLOCK that material
+from being used in production until its required lab test (for example, an
+identity test) has passed?
+
+  (please describe): ____________________________________
+
+QUESTION 2
+Some companies allow trusting the supplier's own test certificate (a "COA" -
+Certificate of Analysis) instead of re-testing the material in-house.
+
+Should company allow trusting a supplier's certificate instead of
+re-testing, and if yes, who is allowed to approve that decision?
+
+  (please describe): ____________________________________
+
+WHAT HAPPENS IF NOT DECIDED: Material can still be tested and results
+recorded, but the system will not automatically stop it from being used
+before results come back. This is currently a manual/procedural control only.
+
+================================================================================
+ TOPIC 2: COMBINING MATERIAL CONTAINERS (TRACEABILITY HISTORY)
+================================================================================
+
+BACKGROUND
+The system already tracks and records history when ONE container of material
+is SPLIT into several smaller containers (for example, splitting one big drum
+into three smaller ones). This history is important for audits and for
+tracing which container went into which batch.
+
+The system does NOT yet record history when the OPPOSITE happens - when
+several containers of the SAME material are COMBINED into one container.
+
+QUESTION 3
+When two or more containers of the same material lot are combined into a
+single container, should the system keep a formal traceability record of
+this, the same way it does for splitting?
+
+ (please describe): ____________________________________
+
+WHAT HAPPENS IF NOT DECIDED: Combining containers still works in the system
+(quantities are added up correctly), but the "which original containers were
+combined into this one" history is not formally recorded for audits.
+
+
+================================================================================
+ TOPIC 3: OUT-OF-SPECIFICATION (OOS) LAB RESULT INVESTIGATIONS
+================================================================================
+
+BACKGROUND
+When a lab test result fails (comes back "Out-of-Specification" or "OOS"),
+the system walks the lab through a formal, multi-step investigation process
+and requires a supervisor's sign-off to close it. This part is already built
+and working.
+
+What is NOT yet decided is what happens if someone later needs to RE-OPEN an
+investigation that was already closed - for example, if new information comes
+to light after it was signed off.
+
+QUESTION 4
+Should it be possible to re-open a closed OOS investigation? If yes, when it
+is re-opened, which step of the investigation should it go back to?
+
+  (please describe): ____________________________________
+
+QUESTION 5
+Should an OOS investigation be formally linked to a corrective-action record
+(a "CAPA") or a "Change Control" record, so that anyone reviewing the CAPA
+can also see which lab failure caused it?
+
+  (please describe): ____________________________________
+
+
+QUESTION 6
+Is there a maximum number of times a lab test can be re-tried (retested)
+during an OOS investigation before it must be treated as a confirmed failure?
+
+  (please describe): ____________________________________
+
+WHAT HAPPENS IF NOT DECIDED: Once an investigation is closed, it stays closed
+in the system. If something needs to be corrected, a new investigation must be
+started from scratch. There is also currently no limit enforced on the number
+of retests.
+
+
+================================================================================
+ TOPIC 4: WHAT HAPPENS WHEN A DELIVERY IS PUT ON HOLD
+================================================================================
+
+BACKGROUND
+When a delivery arrives from a supplier and something is wrong with it - for
+example the packaging is damaged, the seal is broken, contamination is
+visible, the material's identity does not match the paperwork, or the
+supplier is not on your approved list - the system currently places that
+delivery on hold and stops there.
+
+Right now, there is NO way in the system to move a held delivery forward. It
+cannot be accepted, cannot be rejected, and cannot be turned into usable
+stock. It simply stays stuck on hold permanently, even for a minor issue a
+supervisor would normally be happy to wave through with a note.
+
+QUESTION 7
+When a delivery is put on hold for one of these reasons, should EVERY case
+require a full formal written report (a "Deviation"), or can small/minor
+issues be resolved by a supervisor with just a written note?
+
+  (please describe): ____________________________________
+
+QUESTION 8
+Who should be allowed to make the final decision on a held delivery, and
+should that decision require an electronic signature (the same kind of
+sign-off used elsewhere in the system for quality decisions)?
+
+  (please describe): ____________________________________
+
+QUESTION 9
+What decisions should be allowed for a held delivery? For example:
+  - Accept it anyway, with a written explanation
+  - Reject it and send it back to the supplier
+  - Ask the supplier to send a replacement shipment
+Are there other outcomes specific to how your business handles this today?
+
+  (please describe): ____________________________________
+
+QUESTION 10
+If a held delivery is accepted despite the problem, should it then go into
+your normal stock the usual way (quarantined, waiting for lab testing like
+any other delivery), or should it get a special/stricter status showing it
+was only accepted because of a documented exception?
+
+  (please describe): ____________________________________
+
+WHAT HAPPENS IF NOT DECIDED: A delivery placed on hold today has no way to
+move forward. It stays stuck on hold indefinitely and can never become usable
+stock, no matter how minor the original problem was.
+
+================================================================================
+ TOPIC 5: WEIGHING/DISPENSING - WHERE DOES THE TARGET AMOUNT COME FROM
+================================================================================
+
+BACKGROUND
+Before a worker weighs out material for a batch, the system needs to know how
+much to weigh (the "target quantity") and how much variation is acceptable
+(the "tolerance", e.g. plus or minus 2%).
+
+Right now, an operator or supervisor TYPES these two numbers in by hand every
+time a dispensing order is created. The system does not automatically pull
+this information from the approved batch recipe/formula, and it does not stop
+someone from accidentally typing in the wrong number.
+
+QUESTION 11
+Should the target weighing amount and its allowed tolerance always come
+automatically from the approved recipe/formula, with manual typing not
+allowed - or is it acceptable, for now, for a person to type these numbers in
+by hand each time?
+
+  (please describe): ____________________________________
+
+WHAT HAPPENS IF NOT DECIDED: Operators/supervisors will keep typing the
+target amount and tolerance in by hand for every dispensing order. The system
+does not check this against the approved recipe.
+
+================================================================================
+ TOPIC 6: SIGN-OFF TIMING WHEN STARTING A NEW DISPENSING ORDER
+================================================================================
+
+BACKGROUND
+Your quality procedure requires an electronic sign-off ("this was performed
+by me") for dispensing actions. Today, that sign-off happens on every action
+taken during dispensing - selecting the material, weighing it, and completing
+the order - except for the very first step of creating the dispensing order
+itself, which happens instantly with no sign-off required, because there is
+nothing yet to attach a signature to at that exact moment.
+
+QUESTION 12
+Is it acceptable that CREATING a new dispensing order does not require a
+sign-off (only the actual weighing/selection/completion steps that follow
+do), or do you need a sign-off at the moment an order is first created too?
+
+  (please describe): ____________________________________
+
+WHAT HAPPENS IF NOT DECIDED: Creating a dispensing order will continue to
+need no sign-off; every action taken after that point is already signed off
+as normal.
+
+================================================================================
+ TOPIC 7: FIXING INVENTORY COUNT DIFFERENCES / LOCKING STOCK DURING A COUNT
+================================================================================
+
+BACKGROUND
+When staff do a physical stock count and find a difference from what the
+system shows (more or less than expected), they can currently record and fix
+that difference themselves in the system. This correction does NOT currently
+require a second person to check and approve it - one person can do it alone.
+
+Separately, some companies like to temporarily "lock" a location or item
+during a physical count, so nobody else can move stock in or out while the
+count is happening. This locking feature does not exist in the system yet.
+
+QUESTION 13
+Should fixing an inventory count difference require a second person's
+sign-off/approval, or is it acceptable for one person to record and fix it
+by themselves?
+
+  (please describe): ____________________________________
+
+QUESTION 14
+Do you need the ability to temporarily lock a location or item so that no one
+can move stock in or out of it while a physical count is being done there?
+
+  (please describe): ____________________________________
+
+WHAT HAPPENS IF NOT DECIDED: One person can record and fix inventory count
+differences without a second person's sign-off, and there is currently no way
+to lock a location during a count.
+
+================================================================================
+ TOPIC 8: OVERRIDING THE "USE OLDEST STOCK FIRST" RULE
+================================================================================
+
+BACKGROUND
+The system automatically enforces using the oldest approved stock first, so
+that nothing sits unused until it expires. Some companies allow a supervisor
+to override this rule in special situations - for example, if the oldest
+stock is temporarily hard to reach, or a customer requires a specific batch.
+This override does not exist in the system yet; the oldest-first rule is
+always followed with no exceptions.
+
+QUESTION 15
+Should supervisors be allowed to override the "oldest stock first" rule in
+special situations, with a written reason recorded? If yes, who should be
+allowed to approve this?
+
+  (please describe): ____________________________________
+
+WHAT HAPPENS IF NOT DECIDED: The oldest-approved-stock-first rule is always
+enforced with no exceptions or overrides possible.
+
+================================================================================
+ TOPIC 10: SECOND-PERSON CHECK FOR MATERIALS/STEPS MARKED "CRITICAL"
+================================================================================
+
+BACKGROUND
+Some raw materials and recipe steps can be marked as "critical" in the
+system. Your quality procedure says that when a material or step is critical,
+an independent second person should double-check certain weighing/dispensing
+actions (selecting the material, weighing it, recording the reading).
+
+Right now, the system stores whether a material is marked "critical," but
+does not actually USE that flag yet to decide whether a second check is
+needed. The second-person check does not currently change based on whether
+something is marked critical or not.
+
+QUESTION 16
+Should an independent second-person check be required ONLY for materials/
+steps marked "critical" (and not for routine ones), or should the same level
+of check apply to every dispensing action regardless of criticality?
+
+  (please describe): ____________________________________
+
+WHAT HAPPENS IF NOT DECIDED: The "critical" flag on a material is stored, but
+it does not currently change how many people are required to check a
+dispensing action.
+
+================================================================================
+ TOPIC 11: APPROVING A "PLANNED" DEVIATION BEFORE IT HAPPENS
+================================================================================
+
+BACKGROUND
+A "planned deviation" is when you already know in advance that a process
+will deviate from normal for a specific, limited reason (for example: "we
+will use an alternate raw material supplier for the next 2 batches while our
+main supplier catches up"). Some companies require this kind of planned
+deviation to be reviewed and formally approved BEFORE it starts, not just
+written up afterward like an unplanned one.
+
+Right now, the system lets you record a planned deviation and its time
+window, and it correctly stops the plan from being used once that time
+window ends - but there is no formal "pre-approval" sign-off step before it
+starts.
+
+QUESTION 17
+Do you require a formal pre-approval sign-off before a planned deviation can
+be used, or is simply recording the plan and its time window enough for now?
+
+  (please describe): ____________________________________
+
+WHAT HAPPENS IF NOT DECIDED: Planned deviations can be recorded and will
+correctly expire on their planned end date, but nobody has to formally
+approve one before it starts being used.
+
+================================================================================
+ TOPIC 12: SIGN-OFF FOR KEY DDCP STEPS (PREFILLED SYRINGE / INJECTABLE DEVICE)
+================================================================================
+
+BACKGROUND
+For prefilled-syringe / injectable-device manufacturing (DDCP), there are
+four key checkpoints in the system: deciding what to do with a handed-off
+component, starting a fill run, completing a fill run, and releasing a
+device profile for use.
+
+Right now, NONE of these four checkpoints require an electronic signature.
+Anyone with access to the screen can complete them, with no formal sign-off
+recorded.
+
+QUESTION 18
+Should any of these four checkpoints - component handoff decision, fill
+start, fill complete, or profile release - require an electronic signature
+from a specific role? If yes, please specify which ones and by whom.
+
+  (please describe): ____________________________________
+
+WHAT HAPPENS IF NOT DECIDED: All four checkpoints will continue to work
+without anyone having to sign off on them.
+
+================================================================================
+ TOPIC 13: TWO SEPARATE BATCH PROGRESS TRACKERS THAT DON'T UPDATE EACH OTHER
+================================================================================
+
+BACKGROUND
+For DDCP products (like prefilled syringes), the system actually tracks
+batch progress in TWO separate places at the same time: the general
+step-by-step batch screen, and DDCP's own specialized screens (handoffs,
+fill runs, assembly).
+
+Right now, these two trackers do NOT update each other. Completing a step on
+one screen does not mark the matching step complete on the other screen. This
+means a batch can look "stuck"/incomplete on one screen even though the real
+work was finished and recorded on the other. It is even possible today for a
+batch to be marked "Released" while one of the two trackers still shows
+unfinished work.
+
+QUESTION 19
+Should finishing a step in one tracker (for example, completing a DDCP fill
+run) automatically mark the matching step complete in the other tracker (the
+general batch screen)? Or are these genuinely meant to be two separate,
+independent checklists that don't need to match each other?
+
+  (please describe): ____________________________________
+
+WHAT HAPPENS IF NOT DECIDED: The two trackers keep working independently,
+which can make a batch look incomplete on one screen even when the real work
+is done, and a batch can currently be marked "Released" while one tracker
+still shows unfinished steps.
+
+================================================================================
+ TOPIC 14: EQUIPMENT RESERVATIONS, RETIREMENT, AND RELOCATION
+================================================================================
+
+BACKGROUND
+The system does not yet have a way to: (1) reserve a specific piece of
+equipment in advance for an upcoming batch/time window, (2) formally
+retire/decommission a piece of equipment, or (3) record that a piece of
+equipment has been physically moved to a new location. None of these three
+actions exist in the system today.
+
+QUESTION 20
+Do you need the ability to reserve a specific piece of equipment in advance
+for a particular batch or time window?
+
+  (please describe): ____________________________________
+
+QUESTION 21
+When permanently retiring a piece of equipment, should that require a
+supervisor's approval/sign-off (since it can affect record-keeping and any
+batches still using that equipment)?
+
+  (please describe): ____________________________________
+
+QUESTION 22
+When equipment is physically moved to a new location, should the system
+automatically flag it as needing to be re-checked (re-qualified and/or
+re-cleaned) before it can be used again?
+
+  (please describe): ____________________________________
+
+WHAT HAPPENS IF NOT DECIDED: None of these three actions (reserving,
+retiring, or recording an equipment move) exist in the system yet.
+
+================================================================================
+ TOPIC 15: WHO CAN WORK ON WHICH SITE'S BATCHES  ** IMPORTANT **
+================================================================================
+
+BACKGROUND
+
+Your company may eventually run more than one manufacturing site/location
+under this system. Each staff member is normally assigned to work at one
+specific site.
+
+While testing this week, we found that right now, the system's permission
+check does NOT check which site a person is actually assigned to when they
+try to work on a batch, a document, or most other records. In practice, this
+means: if a staff member holds a job role (for example "Operator" or
+"Supervisor") ANYWHERE in the company, they can currently open and act on
+records belonging to ANY site, not just their own site.
+
+We want to be very clear: we did not build the system to work this way on
+purpose for a specific reason we can point to - we found it while testing a
+different feature, and every part of the system we checked works the same
+way, not just one or two screens. Before we spend time changing it, we need
+to know which of the following is actually true for your business.
+
+QUESTION (the most important one in this document)
+Should staff at Site A be BLOCKED from opening or working on records that
+belong to Site B (and vice versa), even if they hold the same job role at
+both places?
+
+  (please describe): ____________________________________
+
+WHAT HAPPENS IF NOT DECIDED: Any staff member holding a common role can
+currently see or act on any site's records, not just their own. If this is
+not the intended behavior, this is a real security gap that should be
+prioritized.

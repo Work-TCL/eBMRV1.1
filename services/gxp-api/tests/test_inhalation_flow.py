@@ -23,6 +23,7 @@ from app.modules.ddcp.models import (
     ProductionCountLedger,
 )
 from app.modules.equipment.models import EquipmentAsset
+from app.modules.iam.models import Role
 from app.modules.equipment.sterilization_models import ProcessCycle, ProcessCycleProfileVersion, SterilizationLoadItem
 from app.modules.material.models import Material, MaterialLot
 from app.modules.product_master.models import ProductVersion
@@ -132,7 +133,41 @@ async def _create_released_product_version(
     return pv
 
 
+async def _seed_ddcp_signature_floor(db, *, signed: bool = False) -> None:
+    """SG-148 Client Topic 12 (project-owner-directed): same test-file-local-only floor as
+    `test_ddcp_flow.py::_seed_ddcp_signature_floor` -- see that function's docstring for the full
+    rationale. Idempotent per test since it is called from multiple helper/test call sites.
+    """
+    existing = (
+        await db.execute(select(SignaturePolicy.id).where(SignaturePolicy.record_type == "ddcp_profile_version", SignaturePolicy.action == "release"))
+    ).scalar_one_or_none()
+    if existing is not None:
+        return
+    operator_role_id = (await db.execute(select(Role.id).where(Role.name == "DDCP Operator"))).scalar_one()
+    qa_releaser_role_id = (await db.execute(select(Role.id).where(Role.name == "QA Releaser"))).scalar_one()
+    db.add_all([
+        SignaturePolicy(
+            record_type="ddcp_profile_version", action="release", meaning="Released",
+            required_role_id=qa_releaser_role_id if signed else None, signature_required=signed,
+        ),
+        SignaturePolicy(
+            record_type="constituent_handoff", action="decide", meaning="Approved",
+            required_role_id=operator_role_id if signed else None, signature_required=signed,
+        ),
+        SignaturePolicy(
+            record_type="fill_operation", action="start", meaning="Performed",
+            required_role_id=operator_role_id if signed else None, signature_required=signed,
+        ),
+        SignaturePolicy(
+            record_type="fill_operation", action="complete", meaning="Performed",
+            required_role_id=operator_role_id if signed else None, signature_required=signed,
+        ),
+    ])
+    await db.flush()
+
+
 async def _create_and_release_profile(db, seeded, actor_id, *, profile_code: str, subtype: str = "MDI", fill_route: str | None = "pressure_fill") -> DdcpProfileVersion:
+    await _seed_ddcp_signature_floor(db)
     product_version = await _create_released_product_version(db, seeded, code=profile_code)
     receipt = await inhalation_commands.create_inhalation_profile_version(
         db,
@@ -154,6 +189,7 @@ async def _create_and_release_profile(db, seeded, actor_id, *, profile_code: str
 
 
 async def _accept_constituents(db, seeded, actor_id, batch, bulk_batch, device_lot):
+    await _seed_ddcp_signature_floor(db)
     for from_c, to_c, ref in (("DRUG", "formulation", {"batch_id": str(bulk_batch.id)}), ("DEVICE", "valve", {"lot_id": str(device_lot.id)})):
         receipt = await ddcp_commands.record_constituent_handoff(
             db, ddcp_commands.RecordConstituentHandoffCommand(idempotency_key=idem(), batch_id=batch.id, from_constituent=from_c, to_constituent=to_c, source_batch_reference=ref), actor_id,
@@ -366,6 +402,7 @@ async def test_propellant_and_powder_blend_constituents_captured(seeded, db):
     constituent_requirement component_roles, accepted via the shared constituent-handoff functions (no
     new constituent_type needed, matching Document 56's own §4 which names no distinct type for either)."""
 
+    await _seed_ddcp_signature_floor(db)
     actor_id = seeded["users"]["ddcp.operator"].id
     mdi_product = await _create_released_product_version(db, seeded, code="INH-MDI-PROPELLANT")
 
@@ -420,6 +457,7 @@ async def test_component_prep_verified_via_shared_sterilization_check(seeded, db
     inhalation profile's declared STERILIZED requirement is verified the same way for a 'valve' component
     role, via Document 42's real sterilization tracking, not a guessed/unverified capture."""
 
+    await _seed_ddcp_signature_floor(db)
     actor_id = seeded["users"]["ddcp.operator"].id
     compprep_product = await _create_released_product_version(db, seeded, code="INH-COMPPREP")
     profile_receipt = await inhalation_commands.create_inhalation_profile_version(
@@ -515,6 +553,7 @@ async def test_environment_gate_blocks_readiness_when_not_ready(seeded, db):
     not generic constants') blocks readiness with ENVIRONMENT_NOT_READY when the profile declares an
     environment_profile_id and the snapshot reports not-ready."""
 
+    await _seed_ddcp_signature_floor(db)
     actor_id = seeded["users"]["ddcp.operator"].id
     env_product = await _create_released_product_version(db, seeded, code="INH-ENV-1")
     profile_receipt = await inhalation_commands.create_inhalation_profile_version(
@@ -600,6 +639,7 @@ async def test_release_readiness_blocks_on_pending_handoff_and_failed_test(seede
     """INH-FR-027: a real negative-path assertion -- release readiness must actually block when a device
     handoff is pending and a functional test has failed, not just the happy path."""
 
+    await _seed_ddcp_signature_floor(db)
     actor_id = seeded["users"]["ddcp.operator"].id
     batch = await _create_batch(db, seeded, batch_number="BATCH-INH-BLOCK-1")
     bulk_batch = await _create_batch(db, seeded, batch_number="BULK-FORMULATION-BLOCK-1")

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { api, ApiError } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { api, ApiError, listAll } from "@/lib/api";
+import { type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Banner } from "@/components/ui/Banner";
@@ -10,8 +11,102 @@ import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Icon } from "@/components/ui/Icon";
 import { JsonPanel } from "@/components/ui/JsonPanel";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
 import { FormConsole } from "@/components/shared/FormConsole";
 import { SignedJsonForm, type SignedJsonOp } from "@/components/shared/SignedJsonForm";
+
+// Local list hooks for this page's own FK pickers (use-case / model-deployment / advisory ids) — kept
+// here rather than in the shared `useEntityOptions()` since this module is the only consumer. Follows
+// the same "fetch once on mount, map to {value,label}" shape as `useEntityOptions`'s own per-entity
+// effects (`frontend/src/lib/hooks.ts`), against the real paginated `/ai-governance/v1` list endpoints
+// (`{items: [...], ...}` envelope, same shape `listAll` consumes).
+
+interface AiUseCaseRow {
+  use_case_id: string;
+  name: string;
+  state: string;
+}
+
+function useAiUseCases(): { options: EntityOption[]; status: EntityOptionsStatus } {
+  const [options, setOptions] = useState<EntityOption[]>([]);
+  const [status, setStatus] = useState<EntityOptionsStatus>("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+    listAll<AiUseCaseRow>("/ai-governance/v1/use-cases")
+      .then((rows) => {
+        if (cancelled) return;
+        setOptions(rows.map((r) => ({ value: r.use_case_id, label: `${r.name} (${r.state})` })));
+        setStatus(rows.length ? "ready" : "empty");
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return { options, status };
+}
+
+interface AiModelDeploymentRow {
+  model_deployment_id: string;
+  provider: string;
+  model: string;
+  state: string;
+}
+
+function useAiModelDeployments(): { options: EntityOption[]; status: EntityOptionsStatus } {
+  const [options, setOptions] = useState<EntityOption[]>([]);
+  const [status, setStatus] = useState<EntityOptionsStatus>("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+    listAll<AiModelDeploymentRow>("/ai-governance/v1/model-deployments")
+      .then((rows) => {
+        if (cancelled) return;
+        setOptions(rows.map((r) => ({ value: r.model_deployment_id, label: `${r.provider} / ${r.model} (${r.state})` })));
+        setStatus(rows.length ? "ready" : "empty");
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return { options, status };
+}
+
+interface AiAdvisoryRow {
+  advisory_id: string;
+  status: string;
+}
+
+function useAiAdvisories(): { options: EntityOption[]; status: EntityOptionsStatus } {
+  const [options, setOptions] = useState<EntityOption[]>([]);
+  const [status, setStatus] = useState<EntityOptionsStatus>("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+    listAll<AiAdvisoryRow>("/ai-governance/v1/advisories")
+      .then((rows) => {
+        if (cancelled) return;
+        setOptions(rows.map((r) => ({ value: r.advisory_id, label: `${r.advisory_id.slice(0, 8)}… (${r.status})` })));
+        setStatus(rows.length ? "ready" : "empty");
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return { options, status };
+}
 
 // Mirrors app/modules/ai_governance/commands.py (13 functions) + router.py (24 routes, added 2026-09-01
 // -- SG-171). The module has a real HTTP surface now; this page is an operable console, not just a
@@ -267,6 +362,7 @@ function UseCasesCard() {
   const [result, setResult] = useState<unknown>(undefined);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const useCases = useAiUseCases();
 
   async function run(path: string) {
     setBusy(true);
@@ -284,9 +380,14 @@ function UseCasesCard() {
     <Card pad className="mb-4">
       <CardHeader title="Use cases" />
       <div className="grid grid-cols-3 gap-4 mb-3">
-        <Field label="Use case ID (for lookup)">
-          <Input value={id} onChange={(e) => setId(e.target.value)} placeholder="uuid" />
-        </Field>
+        <EntityPickerField
+          label="Use case ID (for lookup)"
+          value={id}
+          onChange={setId}
+          options={useCases.options}
+          status={useCases.status}
+          kind="use case"
+        />
         <Field label="State filter (for list)" hint="DRAFT / RISK_ASSESSED / ACTIVE / RETIRED">
           <Input value={state} onChange={(e) => setState(e.target.value)} />
         </Field>
@@ -315,6 +416,8 @@ function ModelDeploymentsCard() {
   const [result, setResult] = useState<unknown>(undefined);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const modelDeployments = useAiModelDeployments();
+  const useCases = useAiUseCases();
 
   async function run(path: string) {
     setBusy(true);
@@ -332,12 +435,22 @@ function ModelDeploymentsCard() {
     <Card pad className="mb-4">
       <CardHeader title="Model deployments" />
       <div className="grid grid-cols-3 gap-4 mb-3">
-        <Field label="Model deployment ID (for lookup)">
-          <Input value={id} onChange={(e) => setId(e.target.value)} placeholder="uuid" />
-        </Field>
-        <Field label="Use case ID filter (for list)">
-          <Input value={useCaseId} onChange={(e) => setUseCaseId(e.target.value)} placeholder="uuid" />
-        </Field>
+        <EntityPickerField
+          label="Model deployment ID (for lookup)"
+          value={id}
+          onChange={setId}
+          options={modelDeployments.options}
+          status={modelDeployments.status}
+          kind="model deployment"
+        />
+        <EntityPickerField
+          label="Use case ID filter (for list)"
+          value={useCaseId}
+          onChange={setUseCaseId}
+          options={useCases.options}
+          status={useCases.status}
+          kind="use case"
+        />
       </div>
       <div className="flex flex-wrap gap-2">
         <Button variant="secondary" disabled={busy} onClick={() => run(`/ai-governance/v1/model-deployments${useCaseId ? `?use_case_id=${encodeURIComponent(useCaseId.trim())}` : ""}`)}>
@@ -363,6 +476,8 @@ function AdvisoriesCard() {
   const [result, setResult] = useState<unknown>(undefined);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const advisories = useAiAdvisories();
+  const useCases = useAiUseCases();
 
   async function run(path: string) {
     setBusy(true);
@@ -380,12 +495,22 @@ function AdvisoriesCard() {
     <Card pad className="mb-4">
       <CardHeader title="Advisories" />
       <div className="grid grid-cols-3 gap-4 mb-3">
-        <Field label="Advisory ID (for lookup)">
-          <Input value={id} onChange={(e) => setId(e.target.value)} placeholder="uuid" />
-        </Field>
-        <Field label="Use case ID filter (for list)">
-          <Input value={useCaseId} onChange={(e) => setUseCaseId(e.target.value)} placeholder="uuid" />
-        </Field>
+        <EntityPickerField
+          label="Advisory ID (for lookup)"
+          value={id}
+          onChange={setId}
+          options={advisories.options}
+          status={advisories.status}
+          kind="advisory"
+        />
+        <EntityPickerField
+          label="Use case ID filter (for list)"
+          value={useCaseId}
+          onChange={setUseCaseId}
+          options={useCases.options}
+          status={useCases.status}
+          kind="use case"
+        />
       </div>
       <div className="flex flex-wrap gap-2">
         <Button variant="secondary" disabled={busy} onClick={() => run(`/ai-governance/v1/advisories${useCaseId ? `?use_case_id=${encodeURIComponent(useCaseId.trim())}` : ""}`)}>

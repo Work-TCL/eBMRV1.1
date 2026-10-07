@@ -14,6 +14,7 @@ from app.modules.batch_execution.commands import (
     BatchTransitionCommand,
     CompleteStepCommand,
     CreateBatchCommand,
+    GenerateBatchRecordPdfCommand,
     HandoverStepCommand,
     HoldStepCommand,
     IssueBatchCommand,
@@ -31,6 +32,7 @@ from app.modules.batch_execution.commands import (
     approve_step_result_correction,
     complete_step,
     create_batch,
+    generate_batch_record_pdf,
     handover_step,
     hold_batch,
     hold_step,
@@ -45,7 +47,9 @@ from app.modules.batch_execution.commands import (
     start_step,
 )
 from app.modules.batch_execution.models import Batch, BatchStep, StepResult
+from app.modules.batch_execution.record_service import build_batch_record, get_batch_workspace
 from app.modules.iam.models import User
+from app.modules.material_specification.models import MaterialSpecificationVersion
 from app.modules.policy.service import evaluate_policy
 from app.modules.product_master.models import ProductVersion
 from app.modules.recipe_master.models import RecipeFamily, RecipeParameter, RecipeVersion
@@ -110,12 +114,29 @@ async def _recipe_context_by_id(session: AsyncSession, batches: list) -> dict[uu
     return {row.id: (row.recipe_code, row.version_no) for row in rows}
 
 
-def _step_dict(step, assigned_user: User | None = None) -> dict:
+def _frozen_equipment_requirement_dict(eq) -> dict:
+    return {
+        "equipment_class": eq.equipment_class,
+        "equipment_class_id": str(eq.equipment_class_id) if eq.equipment_class_id else None,
+        "exact_equipment_optional": eq.exact_equipment_optional,
+        "require_current_calibration": eq.require_current_calibration,
+        "require_current_qualification": eq.require_current_qualification,
+        "require_current_cleaning": eq.require_current_cleaning,
+    }
+
+
+def _step_dict(step, assigned_user: User | None = None, frozen_equipment_requirements: list | None = None) -> dict:
     return {
         "step_id": str(step.id),
         "batch_id": str(step.batch_id),
         "recipe_step_code": step.recipe_step_code,
         "required_role_code": step.required_role_code,
+        "required_qualification_code": step.required_qualification_code,
+        # Known-limitations fix (docs/testing/demo-gujarati/08 §8.8): the frozen requirements
+        # commands.py::_enforce_step_equipment actually checks at step-start.
+        "equipment_requirements": [_frozen_equipment_requirement_dict(eq) for eq in (frozen_equipment_requirements or [])],
+        "scope_type": step.scope_type,
+        "scope_id": str(step.scope_id) if step.scope_id else None,
         "state": step.state,
         "version": step.version,
         "assigned_subject_id": str(step.assigned_subject_id) if step.assigned_subject_id else None,
@@ -167,11 +188,81 @@ def _evidence_requirement_dict(e) -> dict:
     }
 
 
+def _material_requirement_dict(m, material_spec: MaterialSpecificationVersion | None) -> dict:
+    """SG-048 #012/#013's display-only half -- shows what the recipe already declares (SG-045's own
+    tolerance/consume-mode/substitution shape) without adding a lot-consumption/reservation capability,
+    which stays open pending SG-045's still-unresolved schema question."""
+    return {
+        "material_spec_version_id": str(m.material_spec_version_id),
+        "material_spec_business_id": material_spec.material_spec_business_id if material_spec else None,
+        "material_name": material_spec.name if material_spec else None,
+        "target_value": str(m.target_value) if m.target_value is not None else None,
+        "min_value": str(m.min_value) if m.min_value is not None else None,
+        "max_value": str(m.max_value) if m.max_value is not None else None,
+        "uom": m.uom,
+        "consume_mode": m.consume_mode,
+        "substitution_allowed": m.substitution_allowed,
+        "genealogy_required": m.genealogy_required,
+    }
+
+
+def _correction_dict(c, original_result, requested_user: User | None, approved_user: User | None) -> dict:
+    return {
+        "correction_id": str(c.id),
+        "original_result_id": str(c.original_result_id),
+        "parameter_code": original_result.parameter_code if original_result else None,
+        "reason_text": c.reason_text,
+        "corrected_value_numeric": str(c.corrected_value_numeric) if c.corrected_value_numeric is not None else None,
+        "corrected_value_text": c.corrected_value_text,
+        "corrected_value_bool": c.corrected_value_bool,
+        "status": c.status,
+        "requested_by_user_id": str(c.requested_by_user_id),
+        "requested_by_username": requested_user.username if requested_user else None,
+        "approved_by_user_id": str(c.approved_by_user_id) if c.approved_by_user_id else None,
+        "approved_by_username": approved_user.username if approved_user else None,
+        "resulting_result_id": str(c.resulting_result_id) if c.resulting_result_id else None,
+        "created_at": c.created_at.isoformat() if c.created_at else None,
+        "completed_at": c.completed_at.isoformat() if c.completed_at else None,
+    }
+
+
+def _hold_dict(h, held_by_user: User | None, released_by_user: User | None) -> dict:
+    """Full StepHold shape, active or released -- released_at/released_by/release_reason/
+    release_signature_id are written by resume_step but were never read back anywhere before this
+    (only the single currently-open hold was ever surfaced, via active_hold_by_step_id below)."""
+    return {
+        "id": str(h.id),
+        "reason": h.reason,
+        "held_at": h.held_at.isoformat() if h.held_at else None,
+        "held_by": str(h.held_by),
+        "held_by_username": held_by_user.username if held_by_user else None,
+        "hold_signature_id": str(h.hold_signature_id) if h.hold_signature_id else None,
+        "released_at": h.released_at.isoformat() if h.released_at else None,
+        "released_by": str(h.released_by) if h.released_by else None,
+        "released_by_username": released_by_user.username if released_by_user else None,
+        "release_reason": h.release_reason,
+        "release_signature_id": str(h.release_signature_id) if h.release_signature_id else None,
+    }
+
+
+def _equipment_requirement_dict(eq) -> dict:
+    return {
+        "equipment_class": eq.equipment_class,
+        "exact_equipment_optional": eq.exact_equipment_optional,
+        "require_current_calibration": eq.require_current_calibration,
+        "require_current_qualification": eq.require_current_qualification,
+        "require_current_cleaning": eq.require_current_cleaning,
+    }
+
+
 # BAT-FR-005 ("execution has immutable parent instruction") + Document 11 §9's execution-UI field list
 # (instruction, section, target/limits context) -- the "step detail" view, read from the live recipe
 # graph (display-only; not used for any regulated decision -- the frozen execution snapshot in Vault
 # remains the authoritative instruction record, VLT-FR-006/007).
-def _step_detail_dict(step, recipe_step, section, predecessors: list[str], successors: list[str], evidence: list) -> dict:
+def _step_detail_dict(
+    step, recipe_step, section, predecessors: list[str], successors: list[str], evidence: list,
+    material_requirements: list, equipment_requirements: list, material_specs_by_id: dict,
+) -> dict:
     return {
         "step_type": recipe_step.step_type if recipe_step else None,
         "instruction_text": recipe_step.instruction_text if recipe_step else None,
@@ -179,9 +270,14 @@ def _step_detail_dict(step, recipe_step, section, predecessors: list[str], succe
         "sequence_hint": recipe_step.sequence_hint if recipe_step else None,
         "section_code": section.stable_section_code if section else None,
         "section_name": section.name if section else None,
+        "expected_hold_duration_minutes": recipe_step.expected_hold_duration_minutes if recipe_step else None,
         "predecessor_codes": predecessors,
         "successor_codes": successors,
         "evidence_requirements": [_evidence_requirement_dict(e) for e in evidence],
+        "material_requirements": [
+            _material_requirement_dict(m, material_specs_by_id.get(m.material_spec_version_id)) for m in material_requirements
+        ],
+        "equipment_requirements": [_equipment_requirement_dict(eq) for eq in equipment_requirements],
     }
 
 
@@ -214,7 +310,8 @@ async def post_issue_batch(
     if cmd.batch_id != batch_id:
         raise ValidationFailedError("batch_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.issue", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.issue", site_id=batch.site_id)
         return await issue_batch(session, cmd, actor.user_id)
 
 
@@ -228,7 +325,8 @@ async def post_start_batch(
     if cmd.batch_id != batch_id:
         raise ValidationFailedError("batch_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         return await start_batch(session, cmd, actor.user_id)
 
 
@@ -242,7 +340,8 @@ async def post_hold_batch(
     if cmd.batch_id != batch_id:
         raise ValidationFailedError("batch_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         return await hold_batch(session, cmd, actor.user_id)
 
 
@@ -256,7 +355,8 @@ async def post_resume_batch(
     if cmd.batch_id != batch_id:
         raise ValidationFailedError("batch_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         return await resume_batch(session, cmd, actor.user_id)
 
 
@@ -270,7 +370,8 @@ async def post_abort_batch(
     if cmd.batch_id != batch_id:
         raise ValidationFailedError("batch_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         return await abort_batch(session, cmd, actor.user_id)
 
 
@@ -285,7 +386,8 @@ async def post_start_step(
     if cmd.batch_id != batch_id or cmd.step_id != step_id:
         raise ValidationFailedError("batch_id/step_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         return await start_step(session, cmd, actor.user_id)
 
 
@@ -316,7 +418,8 @@ async def post_step_signature_challenge(
     if meaning is None:
         raise ValidationFailedError("Unknown action", action=body.action)
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         step = await session.get(BatchStep, step_id)
         if step is None or step.batch_id != batch_id:
             raise NotFoundError("Batch step not found")
@@ -343,7 +446,8 @@ async def post_record_step_results(
     if cmd.batch_id != batch_id or cmd.step_id != step_id:
         raise ValidationFailedError("batch_id/step_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         return await record_step_results(session, cmd, actor.user_id)
 
 
@@ -358,7 +462,8 @@ async def post_link_step_evidence(
     if cmd.batch_id != batch_id or cmd.step_id != step_id:
         raise ValidationFailedError("batch_id/step_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         return await link_step_evidence(session, cmd, actor.user_id)
 
 
@@ -373,7 +478,8 @@ async def post_complete_step(
     if cmd.batch_id != batch_id or cmd.step_id != step_id:
         raise ValidationFailedError("batch_id/step_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         return await complete_step(session, cmd, actor.user_id)
 
 
@@ -388,7 +494,8 @@ async def post_hold_step(
     if cmd.batch_id != batch_id or cmd.step_id != step_id:
         raise ValidationFailedError("batch_id/step_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         return await hold_step(session, cmd, actor.user_id)
 
 
@@ -403,7 +510,8 @@ async def post_resume_step(
     if cmd.batch_id != batch_id or cmd.step_id != step_id:
         raise ValidationFailedError("batch_id/step_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         return await resume_step(session, cmd, actor.user_id)
 
 
@@ -418,7 +526,8 @@ async def post_add_step_comment(
     if cmd.batch_id != batch_id or cmd.step_id != step_id:
         raise ValidationFailedError("batch_id/step_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         return await add_step_comment(session, cmd, actor.user_id)
 
 
@@ -433,7 +542,8 @@ async def post_handover_step(
     if cmd.batch_id != batch_id or cmd.step_id != step_id:
         raise ValidationFailedError("batch_id/step_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         return await handover_step(session, cmd, actor.user_id)
 
 
@@ -506,10 +616,10 @@ async def post_approve_step_result_correction(
 
 
 class BatchSignatureChallengeRequest(BaseModel):
-    action: str  # "production_complete" -- Document 106 row 16 (batch/production-complete)
+    action: str  # "production_complete" (Document 106 row 16) | "record_export" (SG-137, 2026-09-22)
 
 
-_BATCH_CHALLENGE_MEANINGS = {"production_complete": "Performed"}
+_BATCH_CHALLENGE_MEANINGS = {"production_complete": "Performed", "record_export": "Approved"}
 
 
 @router.post("/{batch_id}/signature-challenges")
@@ -525,10 +635,15 @@ async def post_batch_signature_challenge(
     if meaning is None:
         raise ValidationFailedError("Unknown action", action=body.action)
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        # SG-137 (2026-09-22): "record_export" is QA-Releaser-signed, not an execute-batch action, so
+        # this shared challenge endpoint can't gate on batch_execution.execute (Operator/Supervisor hold
+        # it, QA Releaser never did). The real authorization for which role may actually sign a given
+        # `body.action` is enforced later at signature-consumption time (enforce_signer_policy inside
+        # each command) -- this gate only needs to confirm the caller can see the batch at all.
         batch = await session.get(Batch, batch_id)
         if batch is None:
             raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=batch.site_id)
         challenge = await create_challenge(
             session,
             user_id=actor.user_id,
@@ -551,7 +666,8 @@ async def post_production_complete_batch(
     if cmd.batch_id != batch_id:
         raise ValidationFailedError("batch_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=None)
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.execute", site_id=batch.site_id)
         return await production_complete_batch(session, cmd, actor.user_id)
 
 
@@ -564,7 +680,7 @@ async def get_batch_list(
 ) -> dict:
     """BAT-FR-035 (partial production dashboard): active batches + hold state at a site. Bottlenecks,
     overdue timers and operator-assignment analytics are not built this pass -- see SG-048."""
-    await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=None)
+    await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=site_id)
     batches = await batch_execution_service.list_batches(session, site_id, state)
     product_versions = await _product_versions_by_id(session, batches)
     recipe_contexts = await _recipe_context_by_id(session, batches)
@@ -583,8 +699,8 @@ async def get_batch_detail(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=None)
     batch = await batch_execution_service.get_batch(session, batch_id)
+    await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=batch.site_id)
     product_version = await session.get(ProductVersion, batch.product_version_id)
     recipe_contexts = await _recipe_context_by_id(session, [batch])
     return _batch_dict(batch, product_version, recipe_contexts.get(batch.recipe_version_id))
@@ -596,14 +712,38 @@ async def get_execution_view(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=None)
+    batch_for_site = await batch_execution_service.get_batch(session, batch_id)
+    await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=batch_for_site.site_id)
     view = await batch_execution_service.get_execution_view(session, batch_id)
     product_version = await session.get(ProductVersion, view["batch"].product_version_id)
     recipe_contexts = await _recipe_context_by_id(session, [view["batch"]])
     assigned_users = await _users_by_id(session, {s.assigned_subject_id for s in view["steps"]})
+    material_spec_ids = {m.material_spec_version_id for reqs in view["material_requirements_by_code"].values() for m in reqs}
+    material_specs_by_id: dict = {}
+    if material_spec_ids:
+        rows = (
+            await session.execute(select(MaterialSpecificationVersion).where(MaterialSpecificationVersion.id.in_(material_spec_ids)))
+        ).scalars().all()
+        material_specs_by_id = {ms.id: ms for ms in rows}
+    results_by_id = {r.id: r for rows in view["results_by_step_id"].values() for r in rows}
+    correction_user_ids = {c.requested_by_user_id for cs in view["corrections_by_step_id"].values() for c in cs} | {
+        c.approved_by_user_id for cs in view["corrections_by_step_id"].values() for c in cs if c.approved_by_user_id
+    }
+    correction_users = await _users_by_id(session, correction_user_ids)
+    hold_user_ids = {h.held_by for hs in view["holds_by_step_id"].values() for h in hs} | {
+        h.released_by for hs in view["holds_by_step_id"].values() for h in hs if h.released_by
+    }
+    hold_users = await _users_by_id(session, hold_user_ids)
     return {
         "batch": _batch_dict(view["batch"], product_version, recipe_contexts.get(view["batch"].recipe_version_id)),
-        "steps": [_step_dict(s, assigned_users.get(s.assigned_subject_id)) for s in view["steps"]],
+        "steps": [
+            _step_dict(
+                s,
+                assigned_users.get(s.assigned_subject_id),
+                view["frozen_equipment_requirements_by_step_id"].get(s.id, []),
+            )
+            for s in view["steps"]
+        ],
         "blockers": view["blockers"],
         # BAT-FR-009 form definition + any already-recorded results, keyed by step_id so the UI can render
         # a per-step results form without a second round trip (SG-047 partial resolution).
@@ -626,13 +766,24 @@ async def get_execution_view(
                 view["predecessors_of"].get(s.recipe_step_code, []),
                 view["successors_of"].get(s.recipe_step_code, []),
                 view["evidence_by_code"].get(s.recipe_step_code, []),
+                view["material_requirements_by_code"].get(s.recipe_step_code, []),
+                view["equipment_requirements_by_code"].get(s.recipe_step_code, []),
+                material_specs_by_id,
             )
             for s in view["steps"]
         },
         # Active step-level hold, if any (BAT-FR-020 step scope, SG-047 further partial resolution).
         "active_hold_by_step_id": {
-            str(step_id): {"reason": h.reason, "held_at": h.held_at.isoformat() if h.held_at else None}
+            str(step_id): {
+                "id": str(h.id), "reason": h.reason, "held_at": h.held_at.isoformat() if h.held_at else None,
+                "held_by": str(h.held_by), "hold_signature_id": str(h.hold_signature_id) if h.hold_signature_id else None,
+            }
             for step_id, h in view["active_hold_by_step_id"].items()
+        },
+        # Full hold history (active and released), read-path completeness fix -- see _hold_dict.
+        "holds_by_step_id": {
+            str(step_id): [_hold_dict(h, hold_users.get(h.held_by), hold_users.get(h.released_by)) for h in holds]
+            for step_id, holds in view["holds_by_step_id"].items()
         },
         # BAT-FR-034, SG-048 #034 partial resolution.
         "comments_by_step_id": {
@@ -656,4 +807,69 @@ async def get_execution_view(
             ]
             for step_id, handovers in view["handovers_by_step_id"].items()
         },
+        # SG-047 (gxp_step_evidence_link half) -- written by link_step_evidence(), read internally by
+        # complete_step()'s evidence-count gate but never surfaced in this view until now.
+        "evidence_links_by_step_id": {
+            str(step_id): [
+                {
+                    "id": str(e.id), "evidence_id": str(e.evidence_id), "evidence_version": e.evidence_version,
+                    "evidence_sha256": e.evidence_sha256, "media_type": e.media_type,
+                    "requirement_code": e.requirement_code, "linked_by": str(e.linked_by),
+                    "created_at": e.created_at.isoformat() if e.created_at else None,
+                }
+                for e in links
+            ]
+            for step_id, links in view["evidence_links_by_step_id"].items()
+        },
+        # SG-048 #023's own gap: the correct/approve flow existed with no read-side visibility at all.
+        "corrections_by_step_id": {
+            str(step_id): [
+                _correction_dict(c, results_by_id.get(c.original_result_id), correction_users.get(c.requested_by_user_id), correction_users.get(c.approved_by_user_id))
+                for c in corrections
+            ]
+            for step_id, corrections in view["corrections_by_step_id"].items()
+        },
     }
+
+
+@router.get("/{batch_id}/record")
+async def get_batch_record(
+    batch_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """Client requirement #11 -- the structured Batch Record view: steps/results, material consumption,
+    equipment used, deviations, QC results, and signature/status history."""
+    batch_for_site = await batch_execution_service.get_batch(session, batch_id)
+    await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=batch_for_site.site_id)
+    return await build_batch_record(session, batch_id)
+
+
+@router.get("/{batch_id}/workspace")
+async def get_workspace(
+    batch_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """Batch Workspace -- one read-only contextual dashboard over Materials/Lots, QC, Equipment,
+    Sterile/Aseptic, Deviations/CAPA, and Release status for a single batch. Same view permission as
+    every other batch read (`batch_execution.view`) -- this creates no new authority, it only assembles
+    reads that already exist elsewhere."""
+    batch_for_site = await batch_execution_service.get_batch(session, batch_id)
+    await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=batch_for_site.site_id)
+    return await get_batch_workspace(session, batch_id)
+
+
+@router.post("/{batch_id}/record:generate-pdf", response_model=MutationReceipt)
+async def post_generate_batch_record_pdf(
+    batch_id: uuid.UUID,
+    cmd: GenerateBatchRecordPdfCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.batch_id != batch_id:
+        raise ValidationFailedError("batch_id in path and body must match")
+    async with session.begin():
+        batch = await batch_execution_service.get_batch(session, batch_id)
+        await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=batch.site_id)
+        return await generate_batch_record_pdf(session, cmd, actor.user_id)

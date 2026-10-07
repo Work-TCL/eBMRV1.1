@@ -2,6 +2,13 @@
 require_role()/require_admin_anywhere() checks. Covers: a permission grant unlocking a previously
 forbidden action, a Document 107 standing-role-pair SoD conflict denying an otherwise-permitted action,
 and the /permissions + /roles/{id}/permissions + /policy/v1/decisions endpoints.
+
+Ported off the retired `app.modules.{product,recipe,batch}` legacy trio (SG-044/SG-149/SG-173 Phase 4/5,
+ADR-0013, 2026-09-23) onto `product_master`/`recipe_master`/`batch_execution`. The permission gating this
+exercises (grant unlocks / SoD denies) is now `batch_execution.execute` (the coarse RBAC gate
+`post_start_step` checks) rather than the legacy `batch_step.start` -- an equivalent, even more direct fit,
+since batch_execution's own fine-grained per-step gate (`required_role_code`) is a separate, role-name-based
+mechanism, not a permission grant.
 """
 
 from sqlalchemy import select
@@ -9,12 +16,7 @@ from sqlalchemy import select
 from app.core.security import hash_password
 from app.modules.iam.models import Permission, Role, SodRule, User, UserSiteRole
 from tests.conftest import DEMO_PASSWORD, auth_headers, idem, login
-
-
-async def _promote_to_admin(db, user_id, site_id):
-    async with db.begin():
-        admin_role = (await db.execute(select(Role).where(Role.name == "Admin"))).scalar_one()
-        db.add(UserSiteRole(user_id=user_id, site_id=site_id, role_id=admin_role.id))
+from tests.test_batch_execution import _create_body, _issue_start_and_get_ready_step, _released_pair
 
 
 async def _create_role_and_user(db, site_id, role_name, username):
@@ -35,77 +37,38 @@ async def _create_role_and_user(db, site_id, role_name, username):
     return role, user
 
 
-async def _create_product_recipe_batch(client, token, site_id, batch_number):
-    resp = await client.post(
-        "/products",
-        json={"idempotency_key": idem(), "site_id": str(site_id), "code": f"P-{batch_number}", "name": "P"},
-        headers=auth_headers(token),
-    )
-    product_id = resp.json()["aggregate_id"]
-    resp = await client.post(
-        "/recipes",
-        json={
-            "idempotency_key": idem(),
-            "product_id": product_id,
-            "version": 1,
-            "steps": [{"step_number": 1, "name": "Step 1", "requires_signature": False}],
-        },
-        headers=auth_headers(token),
-    )
-    recipe_id = resp.json()["aggregate_id"]
-    resp = await client.post(
-        "/batches",
-        json={
-            "idempotency_key": idem(),
-            "site_id": str(site_id),
-            "product_id": product_id,
-            "recipe_id": recipe_id,
-            "recipe_version": 1,
-            "batch_number": batch_number,
-            "target_quantity": "1.000000",
-            "uom": "kg",
-        },
-        headers=auth_headers(token),
-    )
-    batch_id = resp.json()["aggregate_id"]
-    resp = await client.post(
-        f"/batches/{batch_id}/issue",
-        json={"idempotency_key": idem(), "batch_id": batch_id, "expected_version": 1},
-        headers=auth_headers(token),
-    )
-    assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/batches/{batch_id}")).json()
-    return batch_id, detail["steps"][0]
-
-
 async def test_permission_grant_unlocks_previously_forbidden_action(client, seeded, db):
-    await _promote_to_admin(db, seeded["users"]["operator1"].id, seeded["site_id"])
-    admin_token = await login(client, "operator1")
     site_id = seeded["site_id"]
+    admin_token, product_version_id, recipe_version_id = await _released_pair(db, client, seeded, "policy1")
 
     _role, _user = await _create_role_and_user(db, site_id, "Line Lead", "linelead1")
     ll_token = await login(client, "linelead1")
 
-    batch_id, step1 = await _create_product_recipe_batch(client, admin_token, site_id, "B-POLICY-1")
+    resp = await client.post(
+        "/batches/v1",
+        json=_create_body(site_id, product_version_id, recipe_version_id, "B-POLICY-1"),
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
 
     # Line Lead holds no permission yet -> denied.
     resp = await client.post(
-        f"/batches/{batch_id}/steps/{step1['batch_step_id']}/start",
+        f"/batches/v1/{batch_id}/steps/{ready_step['step_id']}/start",
         json={
-            "idempotency_key": idem(),
-            "batch_id": batch_id,
-            "expected_version": 2,
-            "batch_step_id": step1["batch_step_id"],
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": ready_step["step_id"],
+            "expected_version": ready_step["version"],
         },
         headers=auth_headers(ll_token),
     )
     assert resp.status_code == 403
     assert resp.json()["code"] == "ROLE_MISSING"
 
-    # Grant Line Lead the batch_step.start permission.
+    # Grant Line Lead the batch_execution.execute permission.
     role_id = str(_role.id)
     permission_id = (
-        await db.execute(select(Permission.id).where(Permission.code == "batch_step.start"))
+        await db.execute(select(Permission.id).where(Permission.code == "batch_execution.execute"))
     ).scalar_one()
     resp = await client.post(
         f"/roles/{role_id}/permissions",
@@ -115,16 +78,14 @@ async def test_permission_grant_unlocks_previously_forbidden_action(client, seed
     assert resp.status_code == 200, resp.text
 
     resp = await client.get(f"/roles/{role_id}/permissions", headers=auth_headers(admin_token))
-    assert [p["code"] for p in resp.json()] == ["batch_step.start"]
+    assert [p["code"] for p in resp.json()] == ["batch_execution.execute"]
 
     # Same action now succeeds.
     resp = await client.post(
-        f"/batches/{batch_id}/steps/{step1['batch_step_id']}/start",
+        f"/batches/v1/{batch_id}/steps/{ready_step['step_id']}/start",
         json={
-            "idempotency_key": idem(),
-            "batch_id": batch_id,
-            "expected_version": 2,
-            "batch_step_id": step1["batch_step_id"],
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": ready_step["step_id"],
+            "expected_version": ready_step["version"],
         },
         headers=auth_headers(ll_token),
     )
@@ -132,9 +93,8 @@ async def test_permission_grant_unlocks_previously_forbidden_action(client, seed
 
 
 async def test_sod_conflict_denies_gated_action_even_with_permission(client, seeded, db):
-    await _promote_to_admin(db, seeded["users"]["operator1"].id, seeded["site_id"])
-    admin_token = await login(client, "operator1")
     site_id = seeded["site_id"]
+    admin_token, product_version_id, recipe_version_id = await _released_pair(db, client, seeded, "policy2")
 
     role_a, user = await _create_role_and_user(db, site_id, "Conflict Role A", "conflicted1")
     async with db.begin():
@@ -144,7 +104,7 @@ async def test_sod_conflict_denies_gated_action_even_with_permission(client, see
         db.add(UserSiteRole(user_id=user.id, site_id=site_id, role_id=role_b.id))
 
         permission = (
-            await db.execute(select(Permission).where(Permission.code == "batch_step.start"))
+            await db.execute(select(Permission).where(Permission.code == "batch_execution.execute"))
         ).scalar_one()
         from app.modules.iam.models import RolePermission
 
@@ -163,15 +123,21 @@ async def test_sod_conflict_denies_gated_action_even_with_permission(client, see
         )
 
     conflicted_token = await login(client, "conflicted1")
-    batch_id, step1 = await _create_product_recipe_batch(client, admin_token, site_id, "B-POLICY-2")
 
     resp = await client.post(
-        f"/batches/{batch_id}/steps/{step1['batch_step_id']}/start",
+        "/batches/v1",
+        json=_create_body(site_id, product_version_id, recipe_version_id, "B-POLICY-2"),
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    batch_id = resp.json()["aggregate_id"]
+    ready_step = await _issue_start_and_get_ready_step(client, admin_token, batch_id)
+
+    resp = await client.post(
+        f"/batches/v1/{batch_id}/steps/{ready_step['step_id']}/start",
         json={
-            "idempotency_key": idem(),
-            "batch_id": batch_id,
-            "expected_version": 2,
-            "batch_step_id": step1["batch_step_id"],
+            "idempotency_key": idem(), "batch_id": batch_id, "step_id": ready_step["step_id"],
+            "expected_version": ready_step["version"],
         },
         headers=auth_headers(conflicted_token),
     )

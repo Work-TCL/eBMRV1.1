@@ -48,8 +48,9 @@ from app.modules.ddcp.models import (
 from app.modules.equipment import cleaning_commands, em_commands, sterilization_commands
 from app.modules.equipment import commands as equipment_commands
 from app.modules.equipment.models import EquipmentAsset
-from app.modules.iam.models import User
+from app.modules.iam.models import Role, User
 from app.modules.material.models import MaterialLot
+from app.modules.policy.service import effective_role_names
 from app.modules.product_master.models import ProductVersion
 from app.modules.recipe_master.models import RecipeStep, RecipeVersion
 from app.modules.qms.change_models import ChangeAffectedObject, ChangeControl
@@ -75,6 +76,7 @@ from app.mutation.errors import (
     ProfileReleaseBlockedError,
     ProfileSchemaInvalidError,
     ReworkRouteRequiredError,
+    RoleMissingError,
     SodConflictError,
     StaleVersionError,
     SterileComponentIneligibleError,
@@ -122,12 +124,25 @@ async def _write_receipt(
 
 
 async def _resolve_signature(
-    session: AsyncSession, *, record_type: str, action: str, actor_user_id: uuid.UUID,
+    session: AsyncSession, *, record_type: str, action: str, actor_user_id: uuid.UUID, site_id: uuid.UUID,
     record_version: int, record_hash: str, challenge_id: uuid.UUID | None, reauth_password: str | None,
 ) -> uuid.UUID | None:
     policy = await signature_service.resolve_signature_requirement(session, record_type=record_type, action=action)
     if not policy.signature_required:
         return None
+
+    # Client Topic 12 (SG-148, project-owner-directed): the signing role is named by the signature
+    # policy row itself (Document 106 shape), same bespoke role-check `qms.commands._resolve_signature`
+    # already does for `deviation_record` -- no independence requirement was asked for on any of the 4
+    # DDCP actions, so only the role check is reused here, not the independence half.
+    if policy.required_role_id is not None:
+        required_role_name = await session.scalar(select(Role.name).where(Role.id == policy.required_role_id))
+        if required_role_name not in await effective_role_names(session, actor_user_id, site_id):
+            raise RoleMissingError(
+                f"{record_type} '{action}' requires the signing role named by the signature policy",
+                action=f"{record_type}.{action}", required_role=required_role_name,
+            )
+
     if challenge_id is None or not reauth_password:
         raise MissingSignatureError(f"{record_type} '{action}' requires a signature", required_meaning=policy.meaning)
     actor = await session.get(User, actor_user_id)
@@ -298,7 +313,7 @@ async def release_injectable_profile_version(
 
     signature_id = await _resolve_signature(
         session, record_type="ddcp_profile_version", action="release", actor_user_id=actor_user_id,
-        record_version=profile.version, record_hash=_profile_hash(profile),
+        site_id=profile.site_id, record_version=profile.version, record_hash=_profile_hash(profile),
         challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,
     )
 
@@ -547,7 +562,8 @@ async def decide_constituent_handoff(
 
     signature_id = await _resolve_signature(
         session, record_type="constituent_handoff", action="decide", actor_user_id=actor_user_id,
-        record_version=handoff.version, record_hash=sha256_hex({"id": str(handoff.id), "state": handoff.state}),
+        site_id=handoff.site_id, record_version=handoff.version,
+        record_hash=sha256_hex({"id": str(handoff.id), "state": handoff.state}),
         challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,
     )
 
@@ -728,7 +744,7 @@ async def start_filling_stage(
 
     signature_id = await _resolve_signature(
         session, record_type="fill_operation", action="start", actor_user_id=actor_user_id,
-        record_version=0, record_hash=sha256_hex({"batch_id": str(cmd.batch_id)}),
+        site_id=batch.site_id, record_version=0, record_hash=sha256_hex({"batch_id": str(cmd.batch_id)}),
         challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,
     )
 
@@ -972,7 +988,8 @@ async def complete_filling_stage(
 
     signature_id = await _resolve_signature(
         session, record_type="fill_operation", action="complete", actor_user_id=actor_user_id,
-        record_version=fill_op.version, record_hash=sha256_hex({"id": str(fill_op.id), "state": fill_op.state}),
+        site_id=fill_op.site_id, record_version=fill_op.version,
+        record_hash=sha256_hex({"id": str(fill_op.id), "state": fill_op.state}),
         challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,
     )
 
@@ -1471,14 +1488,26 @@ async def get_pfs_batch_review_summary(session: AsyncSession, batch_id: uuid.UUI
         ],
         "defect_counts": defect_counts,
         "device_assembly_exceptions": [
-            {"id": str(a.id), "unit_identifier": a.unit_identifier, "assembly_step": a.assembly_step, "result": a.result}
+            {
+                "id": str(a.id), "unit_identifier": a.unit_identifier, "assembly_step": a.assembly_step, "result": a.result,
+                "performed_by": str(a.performed_by) if a.performed_by else None,
+                "performed_signature_id": str(a.performed_signature_id) if a.performed_signature_id else None,
+                "verified_by": str(a.verified_by) if a.verified_by else None,
+                "verified_signature_id": str(a.verified_signature_id) if a.verified_signature_id else None,
+            }
             for a in failed_assembly
         ],
         "device_test_exceptions": [
             {"id": str(t.id), "test_type": t.test_type, "result_state": t.result_state} for t in failed_tests
         ],
         "release_checkpoints": [
-            {"checkpoint_code": cp.checkpoint_code, "state": cp.state, "blocker_state": cp.blocker_state} for cp in checkpoints
+            {
+                "checkpoint_code": cp.checkpoint_code, "state": cp.state, "blocker_state": cp.blocker_state,
+                "decided_by": str(cp.decided_by) if cp.decided_by else None,
+                "decision_signature_id": str(cp.decision_signature_id) if cp.decision_signature_id else None,
+                "decided_at": cp.decided_at.isoformat() if cp.decided_at else None,
+            }
+            for cp in checkpoints
         ],
         "deviations": [
             {"id": str(d.id), "deviation_number": d.deviation_number, "state": d.state, "severity": d.severity} for d in deviations
@@ -1725,6 +1754,11 @@ async def get_batch_ddcp_sync_status(session: AsyncSession, batch_id: uuid.UUID)
                 "ddcp_action": m.ddcp_action,
                 "stable_step_code": m.stable_step_code,
                 "generic_step_state": steps_by_code[m.stable_step_code].state if m.stable_step_code in steps_by_code else None,
+                # SG-180 shortcut (2026-09-17, project-owner-directed): enough to call the *existing*
+                # signed batch_execution complete-step flow directly from this view -- not a new
+                # cross-module completion mechanism, just surfacing the ids that flow already needs.
+                "batch_step_id": str(steps_by_code[m.stable_step_code].id) if m.stable_step_code in steps_by_code else None,
+                "expected_version": steps_by_code[m.stable_step_code].version if m.stable_step_code in steps_by_code else None,
             }
             for m in mappings
         ],

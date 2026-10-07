@@ -8,13 +8,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.material_specification.commands import (
+    AddSpecificationCriterionCommand,
     CreateMaterialSpecDraftCommand,
     ReleaseMaterialSpecVersionCommand,
+    RemoveSpecificationCriterionCommand,
+    UpdateSpecificationCriterionCommand,
+    add_specification_criterion,
     create_draft,
     release_material_spec_version,
+    remove_specification_criterion,
+    update_specification_criterion,
 )
-from app.modules.material_specification.models import MaterialSpecificationVersion
-from app.modules.policy.service import evaluate_policy
+from app.modules.material_specification.models import MaterialSpecificationCriterion, MaterialSpecificationVersion
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.signature.service import create_challenge
 from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.hashing import sha256_hex
@@ -23,7 +29,20 @@ from app.mutation.schemas import MutationReceipt
 router = APIRouter(prefix="/material-specifications/v1", tags=["material_specification"])
 
 
-def _version_dict(version: MaterialSpecificationVersion) -> dict:
+def _criterion_dict(c: MaterialSpecificationCriterion) -> dict:
+    return {
+        "id": str(c.id),
+        "material_spec_version_id": str(c.material_spec_version_id),
+        "sequence": c.sequence,
+        "test_name": c.test_name,
+        "specification_text": c.specification_text,
+        "acceptance_criteria_text": c.acceptance_criteria_text,
+        "fulfillment_path": c.fulfillment_path,
+        "version": c.version,
+    }
+
+
+def _version_dict(version: MaterialSpecificationVersion, criteria: list[MaterialSpecificationCriterion] | None = None) -> dict:
     return {
         "material_spec_version_id": str(version.id),
         "material_spec_business_id": version.material_spec_business_id,
@@ -32,6 +51,10 @@ def _version_dict(version: MaterialSpecificationVersion) -> dict:
         "name": version.name,
         "lifecycle_state": version.lifecycle_state,
         "acceptance_criteria": version.acceptance_criteria,
+        # Client gap-analysis Phase 5: the structured rows that actually matter now -- `acceptance_criteria`
+        # above is kept only because it's still a response field some caller might read, but it has been
+        # unused/null since this change (see the model's own comment).
+        "criteria": [_criterion_dict(c) for c in criteria] if criteria is not None else None,
         "effective_from": version.effective_from.isoformat() if version.effective_from else None,
         "effective_to": version.effective_to.isoformat() if version.effective_to else None,
         "released_vault_object_id": str(version.released_vault_object_id) if version.released_vault_object_id else None,
@@ -52,17 +75,128 @@ async def post_create_draft(
         return await create_draft(session, cmd, actor.user_id)
 
 
-@router.get("/{material_spec_business_id}/versions")
-async def get_versions(
-    material_spec_business_id: str,
+# ---------------------------------------------------------------------------
+# Specification criteria -- client gap-analysis Phase 5 (2026-10-05). Same `material_spec.author`
+# permission as creating the draft itself (these only ever touch a draft, never a released version).
+# ---------------------------------------------------------------------------
+
+
+@router.post("/criteria", response_model=MutationReceipt)
+async def post_add_criterion(
+    cmd: AddSpecificationCriterionCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    async with session.begin():
+        version = await session.get(MaterialSpecificationVersion, cmd.material_spec_version_id)
+        if version is None:
+            raise NotFoundError("Material specification version not found")
+        await evaluate_policy(session, actor.user_id, action="material_spec.author", site_id=version.site_id)
+        return await add_specification_criterion(session, cmd, actor.user_id)
+
+
+@router.patch("/criteria/{criterion_id}", response_model=MutationReceipt)
+async def patch_criterion(
+    criterion_id: uuid.UUID,
+    cmd: UpdateSpecificationCriterionCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.criterion_id != criterion_id:
+        raise ValidationFailedError("criterion_id in path and body must match")
+    async with session.begin():
+        criterion = await session.get(MaterialSpecificationCriterion, criterion_id)
+        if criterion is None:
+            raise NotFoundError("Specification criterion not found")
+        version = await session.get(MaterialSpecificationVersion, criterion.material_spec_version_id)
+        await evaluate_policy(session, actor.user_id, action="material_spec.author", site_id=version.site_id)
+        return await update_specification_criterion(session, cmd, actor.user_id)
+
+
+@router.delete("/criteria/{criterion_id}", response_model=MutationReceipt)
+async def delete_criterion(
+    criterion_id: uuid.UUID,
+    cmd: RemoveSpecificationCriterionCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.criterion_id != criterion_id:
+        raise ValidationFailedError("criterion_id in path and body must match")
+    async with session.begin():
+        criterion = await session.get(MaterialSpecificationCriterion, criterion_id)
+        if criterion is None:
+            raise NotFoundError("Specification criterion not found")
+        version = await session.get(MaterialSpecificationVersion, criterion.material_spec_version_id)
+        await evaluate_policy(session, actor.user_id, action="material_spec.author", site_id=version.site_id)
+        return await remove_specification_criterion(session, cmd, actor.user_id)
+
+
+@router.get("/business-ids")
+async def get_business_ids(
+    site_id: uuid.UUID | None = None,
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> list[dict]:
-    await evaluate_policy(session, actor.user_id, action="material_spec.view", site_id=None)
+    """Real picker data for any field that references a Material Specification by its own Business ID
+    (e.g. recipe_master's per-step material_requirements) -- same SG-081 read-side precedent as
+    product_master's `GET /products/v1/business-ids`: a plain read-only GET listing does not conflict
+    with any future write/CRUD contract, it only replaces free-text Business-ID entry with a real picker.
+    Registered ahead of the single-segment `/{material_spec_version_id}` GET below so "business-ids" is
+    never parsed as a version id. Returns one row per distinct material_spec_business_id -- the highest
+    version_no for that id -- the caller still uses `GET /{business_id}/versions` for the full history.
+
+    SG-213 fix: `gxp_material_specification_version.site_id` is a per-row site, so this was gating on
+    "holds material_spec.view anywhere" and then returning every site's specs. resolve_site_scope turns
+    an omitted site_id into only the sites the actor actually holds the action at.
+    """
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="material_spec.view")
+    rows = (
+        (
+            await session.execute(
+                select(MaterialSpecificationVersion)
+                .where(MaterialSpecificationVersion.site_id.in_(site_scope))
+                .order_by(
+                    MaterialSpecificationVersion.material_spec_business_id,
+                    MaterialSpecificationVersion.version_no.desc(),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    latest: dict[str, MaterialSpecificationVersion] = {}
+    for row in rows:
+        latest.setdefault(row.material_spec_business_id, row)
+    return [
+        {
+            "material_spec_version_id": str(v.id),
+            "material_spec_business_id": v.material_spec_business_id,
+            "name": v.name,
+            "version_no": v.version_no,
+            "lifecycle_state": v.lifecycle_state,
+        }
+        for v in sorted(latest.values(), key=lambda v: v.material_spec_business_id)
+    ]
+
+
+@router.get("/{material_spec_business_id}/versions")
+async def get_versions(
+    material_spec_business_id: str,
+    site_id: uuid.UUID | None = None,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
+    # SG-213 fix: same resolve_site_scope treatment as get_business_ids above -- this is a list (every
+    # version row for a business id), not a single-record fetch, so it needs the site-scope filter, not
+    # a record.site_id check.
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="material_spec.view")
     versions = (
         await session.execute(
             select(MaterialSpecificationVersion)
-            .where(MaterialSpecificationVersion.material_spec_business_id == material_spec_business_id)
+            .where(
+                MaterialSpecificationVersion.material_spec_business_id == material_spec_business_id,
+                MaterialSpecificationVersion.site_id.in_(site_scope),
+            )
             .order_by(MaterialSpecificationVersion.version_no)
         )
     ).scalars().all()
@@ -75,11 +209,18 @@ async def get_version_detail(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="material_spec.view", site_id=None)
     version = await session.get(MaterialSpecificationVersion, material_spec_version_id)
     if version is None:
         raise NotFoundError("Material specification version not found")
-    return _version_dict(version)
+    await evaluate_policy(session, actor.user_id, action="material_spec.view", site_id=version.site_id)
+    criteria = (
+        await session.execute(
+            select(MaterialSpecificationCriterion)
+            .where(MaterialSpecificationCriterion.material_spec_version_id == version.id)
+            .order_by(MaterialSpecificationCriterion.sequence)
+        )
+    ).scalars().all()
+    return _version_dict(version, criteria)
 
 
 class VersionSignatureChallengeRequest(BaseModel):
@@ -100,9 +241,9 @@ async def post_version_signature_challenge(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    """SG-185: no Document 106 policy row exists yet for material_specification_version/release --
-    the challenge endpoint is real, but resolve_signature_requirement() inside release_material_spec_version
-    fails closed until a policy row is seeded."""
+    """SG-185 RESOLVED (2026-09-18): material_specification_version/release now has a real Document 106
+    signature policy row (scripts/seed.py SIGNATURE_POLICY_FLOOR) — "Released" by an independent QA
+    Releaser, same shape as product_version/release."""
     async with session.begin():
         version = await session.get(MaterialSpecificationVersion, material_spec_version_id)
         if version is None:
@@ -127,5 +268,8 @@ async def post_release_draft(
     if cmd.material_spec_version_id != material_spec_version_id:
         raise ValidationFailedError("material_spec_version_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="material_spec.release", site_id=None)
+        version = await session.get(MaterialSpecificationVersion, material_spec_version_id)
+        if version is None:
+            raise NotFoundError("Material specification version not found")
+        await evaluate_policy(session, actor.user_id, action="material_spec.release", site_id=version.site_id)
         return await release_material_spec_version(session, cmd, actor.user_id)

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.recipe_master.models import (
     STEP_TYPES,
+    EquipmentClass,
     RecipeEquipmentRequirement,
     RecipeEvidenceRequirement,
     RecipeFamily,
@@ -18,10 +19,17 @@ from app.modules.recipe_master.models import (
     RecipeSection,
     RecipeStep,
     RecipeStepDependency,
+    RecipeStepQcRequirement,
     RecipeVersion,
 )
 from app.modules.rules import service as rules_service
 from app.mutation.errors import NotFoundError
+
+
+async def list_equipment_classes(session: AsyncSession) -> list[EquipmentClass]:
+    """Known-limitations fix (docs/testing/demo-gujarati/07 §7.9 item 4): picker data for
+    equipment_class_id, backing commands.py::create_equipment_class."""
+    return (await session.execute(select(EquipmentClass).order_by(EquipmentClass.class_code))).scalars().all()
 
 
 async def get_version(session: AsyncSession, recipe_version_id: uuid.UUID) -> RecipeVersion:
@@ -31,7 +39,7 @@ async def get_version(session: AsyncSession, recipe_version_id: uuid.UUID) -> Re
     return version
 
 
-async def list_recipe_families(session: AsyncSession) -> list[dict]:
+async def list_recipe_families(session: AsyncSession, site_scope: list[uuid.UUID]) -> list[dict]:
     """Read-only listing for the Recipe Master page's top-level table -- one row per recipe family with
     its latest version's number and lifecycle state, plus a total version count. Document 10 declares no
     "list all recipes" operation in its own API list (docs/generated/06_API_CATALOGUE.yaml); same SG-081
@@ -39,8 +47,15 @@ async def list_recipe_families(session: AsyncSession) -> list[dict]:
     listing does not conflict with any future write/CRUD contract, it only replaces the free-text
     recipe_family_id entry with a real table. The caller still uses
     `GET /recipes/v2/{recipe_family_id}/versions` to resolve the specific version to open.
+
+    SG-213 fix: `gxp_recipe_family.site_id` is a non-nullable per-row site; `site_scope` is the caller's
+    resolve_site_scope() result, never an unfiltered cross-site read.
     """
-    families = (await session.execute(select(RecipeFamily).order_by(RecipeFamily.recipe_code))).scalars().all()
+    families = (
+        await session.execute(
+            select(RecipeFamily).where(RecipeFamily.site_id.in_(site_scope)).order_by(RecipeFamily.recipe_code)
+        )
+    ).scalars().all()
     versions = (await session.execute(select(RecipeVersion).order_by(RecipeVersion.version_no))).scalars().all()
     by_family: dict[uuid.UUID, list[RecipeVersion]] = defaultdict(list)
     for v in versions:
@@ -122,6 +137,13 @@ async def get_graph(session: AsyncSession, recipe_version_id: uuid.UUID) -> dict
             .scalars()
             .all()
         )
+    qc_requirements = []
+    if step_ids:
+        qc_requirements = (
+            (await session.execute(select(RecipeStepQcRequirement).where(RecipeStepQcRequirement.step_id.in_(step_ids))))
+            .scalars()
+            .all()
+        )
     return {
         "sections": sections,
         "steps": steps,
@@ -130,6 +152,7 @@ async def get_graph(session: AsyncSession, recipe_version_id: uuid.UUID) -> dict
         "evidence": evidence,
         "material_requirements": material_requirements,
         "equipment_requirements": equipment_requirements,
+        "qc_requirements": qc_requirements,
     }
 
 

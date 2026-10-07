@@ -28,6 +28,15 @@ export function newIdempotencyKey(): string {
  * holds a router. See its usage in `request()` below. */
 export const SESSION_EXPIRED_EVENT = "gxp:session-expired";
 
+/** Dispatched the moment the onboarding wizard is skipped (`POST /onboarding/dismiss` succeeds), before
+ * any navigation away from the wizard page -- every mounted `useOnboardingStatus()` instance (notably
+ * `AuthGuard`'s, which lives in the root layout and otherwise only re-fetches on its own schedule)
+ * listens for this and patches its local `dismissed_at` immediately. Without this, the redirect check
+ * that sends an admin back to /onboarding would still be holding the pre-dismiss snapshot for the one
+ * render right after `router.push("/home")`, and would bounce the admin straight back before its own
+ * next re-fetch had a chance to catch up. */
+export const ONBOARDING_DISMISSED_EVENT = "gxp:onboarding-dismissed";
+
 export class ApiError extends Error {
   code: string;
   details: Record<string, unknown>;
@@ -126,6 +135,33 @@ export async function downloadEvidence(evidenceId: string, purpose = "inspection
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+/** Same endpoint as `downloadEvidence`, but hands back the bytes as a blob URL instead of triggering a
+ * save-to-disk — for rendering inline (an `<img>`/`<iframe>` preview) rather than downloading. Callers own
+ * the returned `url` and must `URL.revokeObjectURL` it when done (e.g. on preview-modal close/unmount). */
+export async function fetchEvidenceBlob(
+  evidenceId: string,
+  purpose = "inspection"
+): Promise<{ url: string; blob: Blob }> {
+  const token = getToken();
+  const headers = new Headers();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const res = await fetch(
+    `${apiBase()}/evidence/v1/${encodeURIComponent(evidenceId)}/download?purpose=${encodeURIComponent(purpose)}`,
+    { headers }
+  );
+  if (!res.ok) {
+    let body: { code?: string; message?: string; details?: Record<string, unknown> } = {};
+    try {
+      body = await res.json();
+    } catch {
+      // non-JSON error body
+    }
+    throw new ApiError(res.status, body.code ?? "UNKNOWN_ERROR", body.message ?? res.statusText, body.details ?? {});
+  }
+  const blob = await res.blob();
+  return { url: URL.createObjectURL(blob), blob };
 }
 
 export const api = {
@@ -382,8 +418,15 @@ export interface Material {
   name: string;
   uom: string;
   status: string;
+  is_in_house: boolean;
+  default_storage_condition: string | null;
   version: number;
 }
+
+// Client requirement #4's controlled list -- mirrors app.modules.material.models.STORAGE_CONDITIONS.
+export const STORAGE_CONDITIONS = [
+  "ambient", "cold_storage", "freezer", "refrigerator", "controlled_temperature", "warehouse",
+] as const;
 
 export interface MaterialLot {
   id: string;
@@ -402,7 +445,13 @@ export interface MaterialLot {
   released_at: string | null;
   expiry_date: string | null;
   retest_date: string | null;
+  storage_location_id: string | null;
+  storage_condition: string | null;
   version: number;
+  is_exception_release: boolean;
+  exception_reason: string | null;
+  coa_reliance: boolean;
+  coa_reliance_reason: string | null;
 }
 
 export interface MaterialContainer {
@@ -444,6 +493,15 @@ export interface Me {
   user_id: string;
   username: string;
   roles_by_site: Record<string, string[]>;
+  // The user's actual resolved permission codes per site -- computed live on the backend from
+  // whatever roles the user currently holds and whatever those roles are currently granted (GET
+  // /auth/me, see app/modules/iam/service.py::get_permission_codes). Every UI gate in this file should
+  // check THIS, not roles_by_site: role names are ordinary user-editable data (a customer can rename,
+  // delete, or re-permission any role except Admin at any time via /admin/roles), so a gate hardcoded
+  // against a role name silently goes stale the moment someone edits that role. A gate built on a
+  // permission code can't drift the same way, because it's the same vocabulary evaluate_policy() itself
+  // checks server-side.
+  permissions_by_site: Record<string, string[]>;
 }
 
 export interface User {
@@ -453,6 +511,82 @@ export interface User {
   full_name: string;
   status: string;
   roles: string[];
+}
+
+// --- Bulk user onboarding (client gap-analysis Phase 1, 2026-10-05) -------------
+
+export interface BulkImportUserRow {
+  full_name: string;
+  email: string;
+  role_name: string;
+  site_code: string;
+}
+
+export interface BulkImportRowOutcome {
+  row_index: number;
+  email: string;
+  ok: boolean;
+  error: string | null;
+}
+
+export interface BulkImportCommitResult {
+  command_id: string;
+  correlation_id: string;
+  created_count: number;
+  emails_sent: number;
+}
+
+// Client gap-analysis Phase 7 (2026-10-05): same bulk-import shape as users (Phase 1), applied to
+// Equipment. equipment_class_code (not a raw id) is the one thing a spreadsheet realistically carries by
+// hand.
+export interface BulkImportEquipmentRow {
+  equipment_code?: string;
+  equipment_class_code: string;
+  manufacturer?: string;
+  model?: string;
+  serial_no?: string;
+  firmware_version?: string;
+  dedicated?: boolean;
+  is_computer_operated?: boolean;
+}
+
+export interface BulkImportEquipmentRowOutcome {
+  row_index: number;
+  equipment_code: string | null;
+  ok: boolean;
+  error: string | null;
+}
+
+export interface BulkImportEquipmentResult {
+  command_id: string;
+  correlation_id: string;
+  created: { row_index: number; asset_id: string; equipment_code: string }[];
+}
+
+// Client gap-analysis Phase 8 (2026-10-05): same bulk-import shape as users/equipment, applied to Product
+// Master. Always creates version 1 of a brand-new product (first-time bulk onboarding, not a
+// bulk-version-adder) -- product_business_id is never part of the row, auto-generated server-side.
+export interface BulkImportProductRow {
+  product_code?: string;
+  name: string;
+  manufacturing_profile_code: string;
+  product_family_code?: string;
+  combination_product_type?: string;
+  strength_value?: string;
+  strength_uom?: string;
+}
+
+export interface BulkImportProductRowOutcome {
+  row_index: number;
+  product_code: string | null;
+  ok: boolean;
+  error: string | null;
+}
+
+export interface BulkImportProductResult {
+  command_id: string;
+  correlation_id: string;
+  created: { row_index: number; product_version_id: string; product_business_id: string; product_code: string }[];
 }
 
 export interface Role {
@@ -466,6 +600,20 @@ export interface Organization {
   name: string;
 }
 
+// --- Admin onboarding wizard (client gap-analysis follow-up, 2026-10-06) -------------
+//
+// Company/sites/users/roles step status is derived server-side from audit_events (GET /onboarding) --
+// nothing here is locally computed. `dismissed_at` is the one genuinely-written piece of state (via
+// POST /onboarding/dismiss), set when the admin skips the wizard.
+export interface OnboardingStatus {
+  company_done: boolean;
+  sites_done: boolean;
+  users_done: boolean;
+  roles_done: boolean;
+  dismissed_at: string | null;
+  all_done: boolean;
+}
+
 export interface Permission {
   id: string;
   code: string;
@@ -474,184 +622,204 @@ export interface Permission {
   description: string | null;
 }
 
-/** True if `me` holds the Admin role at any site — the gate for /admin and its nav entry. */
+/** True if `me` holds the Admin role at any site — the gate for /admin and its nav entry.
+ *
+ * "Admin" is the one role name this file is still allowed to hardcode. Every other role in this system
+ * is data a customer creates, renames, re-permissions or deletes freely via /admin/roles; Admin is the
+ * platform's own fixed, non-editable, non-deletable break-glass superuser (enforced server-side in
+ * app/modules/iam/commands.py::update_role/delete_role/set_role_permissions), so a literal check against
+ * its name can never go stale the way a check against any other role name could. */
 export function isAdminAnywhere(me: Me | null): boolean {
   if (!me) return false;
   return Object.values(me.roles_by_site).some((roles) => roles.includes("Admin"));
 }
 
-// Mirrors the audit.review permission grants in scripts/seed.py — Admin plus every role that reviews
-// or releases regulated records. Kept here rather than derived from a permissions API call: /auth/me
-// already returns roles_by_site for free, and this list changes about as often as the role catalogue.
-const AUDIT_REVIEW_ROLES = ["Admin", "QA Reviewer", "QA Releaser", "QC Reviewer"];
-
-/** True if `me` holds any role the backend grants audit.review to, at any site — the gate for the
- * Audit ledger nav entry. The endpoints enforce this for real; this only decides whether to show the
- * link instead of a guaranteed 403. */
-export function canReviewAudit(me: Me | null): boolean {
+/** True if `me` holds `code` at any site. The primitive every capability helper below should be built
+ * on — see the `permissions_by_site` doc comment on `Me` above for why. */
+export function hasPermission(me: Me | null, code: string): boolean {
   if (!me) return false;
-  return Object.values(me.roles_by_site).some((roles) => roles.some((r) => AUDIT_REVIEW_ROLES.includes(r)));
+  return Object.values(me.permissions_by_site).some((perms) => perms.includes(code));
 }
 
-// Mirrors scripts/seed.py's vault.review grants (Document 06) — same reviewer set as audit.
-const VAULT_REVIEW_ROLES = ["Admin", "QA Reviewer", "QA Releaser", "QC Reviewer"];
-// vault.correct (Document 06) — tighter: only Admin and QA Releaser.
-const VAULT_CORRECT_ROLES = ["Admin", "QA Releaser"];
-// rules.author / rules.release (Document 08) — Admin only this pass, no dedicated persona yet.
-const RULES_AUTHOR_ROLES = ["Admin"];
-
-export function canReviewVault(me: Me | null): boolean {
+/** True if `me` holds any of `codes` at any site. For the handful of gates that legitimately span
+ * several independent permission codes (e.g. a console bundling multiple sub-features each with their
+ * own grant) — every code in the list should still be a real permission code, never a role name. */
+export function hasAnyPermission(me: Me | null, codes: readonly string[]): boolean {
   if (!me) return false;
-  return Object.values(me.roles_by_site).some((roles) => roles.some((r) => VAULT_REVIEW_ROLES.includes(r)));
+  return Object.values(me.permissions_by_site).some((perms) => perms.some((p) => codes.includes(p)));
 }
 
-export function canCorrectVault(me: Me | null): boolean {
-  if (!me) return false;
-  return Object.values(me.roles_by_site).some((roles) => roles.some((r) => VAULT_CORRECT_ROLES.includes(r)));
-}
+export const canReviewAudit = (me: Me | null) => hasPermission(me, "audit.review");
+export const canReviewVault = (me: Me | null) => hasPermission(me, "vault.review");
+export const canCorrectVault = (me: Me | null) => hasPermission(me, "vault.correct");
+// evidence.upload/.download share one grant (Document 72) — the /platform "Evidence operations"
+// (stage/finalize) section.
+export const canOperateEvidence = (me: Me | null) => hasPermission(me, "evidence.upload");
 
-export function canAuthorRules(me: Me | null): boolean {
-  if (!me) return false;
-  return Object.values(me.roles_by_site).some((roles) => roles.some((r) => RULES_AUTHOR_ROLES.includes(r)));
-}
+// The /security console bundles several genuinely independent permission domains (Documents 61-68) --
+// threat modelling, risk acceptance, IdP/session admin, secrets/certs, incident response, break-glass
+// access -- each held by a different one of the five security roles, with no single shared code. Gating
+// the console's visibility is therefore an OR across one representative "entry" code per domain, same
+// as any dashboard bundling independently-permissioned widgets.
+const SECURITY_ENTRY_CODES = [
+  "security_threat_model.create", "security_control_matrix.view", "security_exception.view",
+  "identity_provider.create", "secret.create", "security_incident.open", "vulnerability.register",
+  "privileged_access.request", "privileged_access.view", "privileged_session.open_support",
+];
+export const canOperateSecurity = (me: Me | null) => hasAnyPermission(me, SECURITY_ENTRY_CODES);
 
-// product.author (Document 09) — Process Engineer authors master data, Admin is break-glass.
-// product.release is a SEPARATE role (QA Releaser / Admin) so author ≠ releaser, and the
-// product_version/release signature policy adds person-level independence (Decision 2, 2026-09-08).
-// Matches scripts/seed.py ROLE_PERMISSIONS.
-const PRODUCT_AUTHOR_ROLES = ["Admin", "Process Engineer"];
-const PRODUCT_RELEASE_ROLES = ["Admin", "QA Releaser"];
-// product.view — everyone with any operational role, plus the Process Engineer.
-const PRODUCT_VIEW_ROLES = ["Admin", "Process Engineer", "Operator", "Supervisor", "QA Reviewer", "QA Releaser", "QC Reviewer"];
+// material_lot.release / .reject (Document 19 RCV-FR-026/027, Document 106 rows 44/45) -- SG-075
+// (2026-09-22): the only disposition path now. The legacy material_lot.disposition permission code is
+// left defined/granted (never deleted) but is inert -- no evaluate_policy() call checks it any more.
+export const canReleaseMaterialLotV2 = (me: Me | null) => hasPermission(me, "material_lot.release");
 
-export function canAuthorProduct(me: Me | null): boolean {
-  if (!me) return false;
-  return Object.values(me.roles_by_site).some((roles) => roles.some((r) => PRODUCT_AUTHOR_ROLES.includes(r)));
-}
+// material_receipt.create + material_lot.sampling_order (Document 19) -- always granted as one bundle
+// (Admin, Operator, Supervisor per scripts/seed.py ROLE_PERMISSIONS).
+export const canCreateMaterialReceipt = (me: Me | null) => hasPermission(me, "material_receipt.create");
+export const canCreateSamplingOrder = (me: Me | null) => hasPermission(me, "material_lot.sampling_order");
+// material_lot.collect_sample (Document 19) -- Admin + QC Reviewer only, a narrower population than
+// sampling_order above.
+export const canCollectSample = (me: Me | null) => hasPermission(me, "material_lot.collect_sample");
+// material_lot.retest (Document 19) -- Admin + QC Reviewer + QA Releaser.
+export const canRetestMaterialLot = (me: Me | null) => hasPermission(me, "material_lot.retest");
+export const canAuthorRules = (me: Me | null) => hasPermission(me, "rules.author");
+export const canReleaseRules = (me: Me | null) => hasPermission(me, "rules.release");
 
-export function canReleaseProduct(me: Me | null): boolean {
-  if (!me) return false;
-  return Object.values(me.roles_by_site).some((roles) => roles.some((r) => PRODUCT_RELEASE_ROLES.includes(r)));
-}
+// qc_method.author (Document 19) -- QC Reviewer, distinct from qc_test_order.start's Operator/
+// Supervisor/QC-analyst population.
+export const canAuthorQcMethod = (me: Me | null) => hasPermission(me, "qc_method.author");
 
-export function canViewProduct(me: Me | null): boolean {
-  if (!me) return false;
-  return Object.values(me.roles_by_site).some((roles) => roles.some((r) => PRODUCT_VIEW_ROLES.includes(r)));
-}
+// supplier.create / supplier_qualification.create (Document 18) share one grant.
+export const canCreateSupplier = (me: Me | null) => hasPermission(me, "supplier.create");
+// Edit of a still-draft supplier reuses the same permission as create (same authoring class).
+export const canUpdateSupplier = canCreateSupplier;
+// Client follow-up (2026-10-06): deletion is gated stricter than create/update, same tiering
+// material.delete already uses (platform.administer, not material.create/update) -- a harder-to-reverse
+// action, even though the command itself only ever touches a draft record.
+export const canDeleteSupplier = (me: Me | null) => hasPermission(me, "platform.administer");
+// material.create / .update (Document 15) share one grant.
+export const canCreateMaterial = (me: Me | null) => hasPermission(me, "material.create");
 
-// recipe.author (Document 10) — Process Engineer authors, Admin is break-glass. recipe.release is a
-// SEPARATE role (QA Releaser / Admin) so author ≠ releaser — matches scripts/seed.py ROLE_PERMISSIONS
-// and the recipe_version/release signature policy (QA Releaser, independent of author).
-const RECIPE_AUTHOR_ROLES = ["Admin", "Process Engineer"];
-const RECIPE_RELEASE_ROLES = ["Admin", "QA Releaser"];
-// recipe.view — everyone with any operational role, plus the Process Engineer.
-const RECIPE_VIEW_ROLES = ["Admin", "Process Engineer", "Operator", "Supervisor", "QA Reviewer", "QA Releaser", "QC Reviewer"];
+// material_spec.author / .release (Document 19) -- Process Engineer authors, QA Releaser releases.
+export const canAuthorMaterialSpec = (me: Me | null) => hasPermission(me, "material_spec.author");
+export const canReleaseMaterialSpec = (me: Me | null) => hasPermission(me, "material_spec.release");
 
-export function canAuthorRecipe(me: Me | null): boolean {
-  if (!me) return false;
-  return Object.values(me.roles_by_site).some((roles) => roles.some((r) => RECIPE_AUTHOR_ROLES.includes(r)));
-}
+export const canAuthorProduct = (me: Me | null) => hasPermission(me, "product.author");
+export const canReleaseProduct = (me: Me | null) => hasPermission(me, "product.release");
+export const canSuspendProduct = (me: Me | null) => hasPermission(me, "product.suspend");
+export const canViewProduct = (me: Me | null) => hasPermission(me, "product.view");
 
-export function canReleaseRecipe(me: Me | null): boolean {
-  if (!me) return false;
-  return Object.values(me.roles_by_site).some((roles) => roles.some((r) => RECIPE_RELEASE_ROLES.includes(r)));
-}
+export const canAuthorRecipe = (me: Me | null) => hasPermission(me, "recipe.author");
+export const canReleaseRecipe = (me: Me | null) => hasPermission(me, "recipe.release");
+export const canSuspendRecipe = (me: Me | null) => hasPermission(me, "recipe.suspend");
+export const canViewRecipe = (me: Me | null) => hasPermission(me, "recipe.view");
 
-export function canViewRecipe(me: Me | null): boolean {
-  if (!me) return false;
-  return Object.values(me.roles_by_site).some((roles) => roles.some((r) => RECIPE_VIEW_ROLES.includes(r)));
-}
-
-// --- Role primitives ---------------------------------------------------------------------------
-//
-// The capability helpers above each re-implement the same "does `me` hold one of these roles at any
-// site" test. Everything added below shares this primitive instead. As with those, the backend's
-// policy engine is what actually enforces access (app/modules/policy/service.py); these only decide
-// whether to render a control rather than show the user a guaranteed 403.
-
-export function holdsAnyRole(me: Me | null, roles: readonly string[]): boolean {
-  if (!me) return false;
-  return Object.values(me.roles_by_site).some((held) => held.some((r) => roles.includes(r)));
-}
-
-/** Every role this deployment seeds with an operational grant — the breadth used for read-only views. */
-const ALL_OPERATIONAL_ROLES = [
-  "Admin", "Operator", "Supervisor", "QA Reviewer", "QA Releaser", "QC Reviewer",
-] as const;
 
 // --- WP-05 QMS capabilities ---------------------------------------------------------------------
 //
-// Mirrors the grants in services/gxp-api/scripts/seed.py: QMS_VIEW_CODES goes to all six operational
-// roles; the write codes split by who investigates versus who approves and closes (SOD-006/SOD-007 --
-// an investigator must not approve their own conclusion).
+// Every QMS record type (deviation/CAPA/NCR/change/complaint/risk/SCAR/internal audit/field action/
+// document/training/quality metric) has its own create/work/approve permission codes -- scripts/seed.py
+// grants them to genuinely different role combinations per record type (e.g. ncr.create's role set is
+// not complaint.create's), so there is no single correct "QMS write" or "QMS view" permission to check
+// generically. Each list/detail page below checks its OWN record type's exact codes directly via
+// hasPermission -- see each page's own PERMISSION_FOR_TRANSITION-style map. This replaces four
+// generic helpers this file used to export (canRaiseQualityEvent / canInvestigateQms / canApproveQms /
+// canViewQms, each an approximation shared across every QMS page) -- an audit (2026-09-18) found that
+// approximation wrong for several record types (e.g. NCR/complaint/CAPA/deviation create had different
+// real role sets than the shared "any operational role" helper assumed), which is exactly the failure
+// mode a shared coarse permission check produces once the underlying grants diverge per record type.
 
-// Document 18 (supplier_quality): create_supplier/create_supplier_qualification carry no
-// evaluate_policy() check in the backend at all -- any authenticated user may call them; only
-// supplier_qualification.approve is actually RBAC+signature-gated (canApproveSupplier below). The
-// create button used to reuse canApproveSupplier, which hid it from every non-Admin/QA-Releaser role
-// even though the backend would have accepted the call -- this brings the UI gate back in line with
-// the real backend boundary instead of a narrower one nobody decided on.
-export const canCreateSupplier = (me: Me | null) => holdsAnyRole(me, ALL_OPERATIONAL_ROLES);
+export const canAuthorDocument = (me: Me | null) => hasPermission(me, "document.create");
+export const canReleaseDocument = (me: Me | null) => hasPermission(me, "document.release");
 
-export const canViewQms = (me: Me | null) => holdsAnyRole(me, ALL_OPERATIONAL_ROLES);
+export const canAssignTraining = (me: Me | null) => hasPermission(me, "training.assignment.create");
+export const canQualifyTraining = (me: Me | null) => hasPermission(me, "training.waiver.create");
+// Distinct from canQualifyTraining (training.waiver.create, "Grant waiver"): assessing a training
+// assignment is gated server-side by its own permission (qms/training_router.py's assess endpoint), and
+// granting a qualification outright (POST /training/v1/qualifications) by yet another -- neither implied
+// by holding the waiver-grant permission.
+export const canAssessTraining = (me: Me | null) => hasPermission(me, "training.assignment.assess");
+export const canCompleteTraining = (me: Me | null) => hasPermission(me, "training.assignment.complete");
+export const canCreateQualification = (me: Me | null) => hasPermission(me, "training.qualification.create");
 
-/** Raising a quality event is deliberately broad — anyone on the floor can report a problem. */
-export const canRaiseQualityEvent = (me: Me | null) => holdsAnyRole(me, ALL_OPERATIONAL_ROLES);
-
-/** Triage, containment, investigation, impact — the "work the record" grants. */
-export const canInvestigateQms = (me: Me | null) =>
-  holdsAnyRole(me, ["Admin", "QA Reviewer", "Supervisor"]);
-
-/** Disposition, approval, closure, effectiveness — held apart from investigation by design. */
-export const canApproveQms = (me: Me | null) => holdsAnyRole(me, ["Admin", "QA Releaser"]);
-
-/** Document control: drafting versus releasing/making effective (SOD-005). */
-export const canAuthorDocument = (me: Me | null) => holdsAnyRole(me, ["Admin", "QA Reviewer"]);
-export const canReleaseDocument = (me: Me | null) => holdsAnyRole(me, ["Admin", "QA Releaser"]);
-
-/** Training: assignment versus assessment/qualification (SOD-015 forbids self-qualification). */
-export const canAssignTraining = (me: Me | null) => holdsAnyRole(me, ["Admin", "Supervisor", "QA Reviewer"]);
-export const canQualifyTraining = (me: Me | null) => holdsAnyRole(me, ["Admin", "QA Releaser"]);
+// evidence.manifest / .legal_hold / .integrity_check (Document 72) share one grant, narrower than
+// canOperateEvidence (evidence.upload, above).
+export const canManageEvidenceIntegrity = (me: Me | null) => hasPermission(me, "evidence.manifest");
 
 // --- Equipment, release, QA review, packaging, supplier ------------------------------------------
 
-export const canViewEquipment = (me: Me | null) => holdsAnyRole(me, ALL_OPERATIONAL_ROLES);
-export const canCreateEquipment = (me: Me | null) => holdsAnyRole(me, ["Admin", "Equipment Administrator"]);
-export const canCalibrateEquipment = (me: Me | null) =>
-  holdsAnyRole(me, ["Admin", "Calibration Technician"]);
-export const canMaintainEquipment = (me: Me | null) =>
-  holdsAnyRole(me, ["Admin", "Maintenance Technician"]);
-export const canHoldEquipment = (me: Me | null) =>
-  holdsAnyRole(me, ["Admin", "Operator", "QA Reviewer", "QA Releaser"]);
-export const canReturnEquipmentToService = (me: Me | null) =>
-  holdsAnyRole(me, ["Admin", "QA Reviewer", "Engineering Manager"]);
+// list_assets/get_asset (Document 38) carry no evaluate_policy() call -- any authenticated user may view
+// equipment, so this is a login check, not a permission check (there is no equipment_asset.view code in
+// the catalogue). Until the Phase-1 gap-audit fix (2026-09-22) these endpoints had no actor dependency at
+// all -- not even login was required; `me !== null` now genuinely reflects the backend's own floor.
+export const canViewEquipment = (me: Me | null) => me !== null;
+export const canCreateEquipment = (me: Me | null) => hasPermission(me, "equipment_asset.create");
+export const canCalibrateEquipment = (me: Me | null) => hasPermission(me, "equipment_asset.calibrate");
+// Client gap-analysis Phase 4 (2026-10-05): deliberately a distinct permission from calibrate above --
+// the whole point is SoD between whoever performs a calibration and whoever approves it.
+export const canApproveEquipmentCalibration = (me: Me | null) =>
+  hasPermission(me, "equipment_asset.approve_calibration");
+export const canMaintainEquipment = (me: Me | null) => hasPermission(me, "equipment_asset.maintain");
+export const canHoldEquipment = (me: Me | null) => hasPermission(me, "equipment_asset.hold");
+export const canReturnEquipmentToService = (me: Me | null) => hasPermission(me, "equipment_asset.return_to_service");
+export const canReserveEquipment = (me: Me | null) => hasPermission(me, "equipment_asset.reserve");
+export const canRetireEquipment = (me: Me | null) => hasPermission(me, "equipment_asset.retire");
+export const canRelocateEquipment = (me: Me | null) => hasPermission(me, "equipment_asset.relocate");
 
-// OOS/OOT (Document 25) — investigation work is broad; extended-investigation is QA Reviewer;
-// disposition + close are QA Releaser (per scripts/seed.py).
-export const canInvestigateOos = (me: Me | null) =>
-  holdsAnyRole(me, ["Admin", "QC Reviewer", "QA Reviewer"]);
-export const canExtendOos = (me: Me | null) => holdsAnyRole(me, ["Admin", "QA Reviewer"]);
-export const canDispositionOos = (me: Me | null) => holdsAnyRole(me, ["Admin", "QA Releaser"]);
+// OOS/OOT (Document 25). canInvestigateOos gates 5 buttons (lab investigation / classify lab cause /
+// retest plan / resample plan / impact) that scripts/seed.py grants as one identical bundle to
+// Admin + QA Reviewer + QC Reviewer -- oos_record.lab_investigation is representative of that whole
+// bundle. canDispositionOos likewise covers both "Approve disposition" (oos_record.disposition) and
+// "Close OOS" (oos_record.close), an identical Admin + QA Releaser grant.
+export const canInvestigateOos = (me: Me | null) => hasPermission(me, "oos_record.lab_investigation");
+export const canExtendOos = (me: Me | null) => hasPermission(me, "oos_record.extended_investigation");
+export const canDispositionOos = (me: Me | null) => hasPermission(me, "oos_record.disposition");
 
-// yield/reconciliation (Document 17) — evaluate: Operator/Supervisor/Admin; verify: QA Reviewer/Admin.
-export const canEvaluateYield = (me: Me | null) => holdsAnyRole(me, ["Admin", "Operator", "Supervisor"]);
-export const canVerifyReconciliation = (me: Me | null) => holdsAnyRole(me, ["Admin", "QA Reviewer"]);
+// yield/reconciliation (Document 17).
+export const canEvaluateYield = (me: Me | null) => hasPermission(me, "yield_calculation.evaluate");
+export const canVerifyReconciliation = (me: Me | null) => hasPermission(me, "reconciliation.verify");
 
-export const canViewRelease = (me: Me | null) => holdsAnyRole(me, ALL_OPERATIONAL_ROLES);
-export const canEvaluateRelease = (me: Me | null) =>
-  holdsAnyRole(me, ["Admin", "QA Reviewer", "QA Releaser"]);
-export const canDecideRelease = (me: Me | null) => holdsAnyRole(me, ["Admin", "QA Releaser"]);
+// Machine integration (Document 47, SPEC-EDGE-005) bundles several independently-permissioned domains
+// into one console -- same SECURITY_ENTRY_CODES shape as canOperateSecurity above, not one shared role.
+// Each helper maps 1:1 onto the evaluate_policy() action its own endpoint checks
+// (app/modules/machine_integration/router.py), not a role name, for the reason isAdminAnywhere's own doc
+// comment gives. Found 2026-09-28: the page and its Sidebar entry were gated on Admin only, structurally
+// blocking Equipment Administrator (machine_command.submit), QA Releaser (signal_mapping.release),
+// Integration Administrator (machine_replay.create) and QA Reviewer (machine_evidence.review_view) from a
+// console the backend already lets them partly operate -- same bug class as canOperateEvidence/
+// canOperateSecurity above (SG-204).
+export const canOpenBatchContext = (me: Me | null) => hasPermission(me, "batch_context.open");
+export const canReleaseSignalMapping = (me: Me | null) => hasPermission(me, "signal_mapping.release");
+export const canSubmitMachineCommand = (me: Me | null) => hasPermission(me, "machine_command.submit");
+export const canReplayMachineEvidence = (me: Me | null) => hasPermission(me, "machine_replay.create");
+export const canReviewMachineEvidence = (me: Me | null) => hasPermission(me, "machine_evidence.review_view");
+const MACHINE_INTEGRATION_ENTRY_CODES = [
+  "batch_context.open", "signal_mapping.release", "machine_command.submit",
+  "machine_replay.create", "machine_evidence.review_view",
+];
+export const canOperateMachineIntegration = (me: Me | null) => hasAnyPermission(me, MACHINE_INTEGRATION_ENTRY_CODES);
 
-export const canViewQaReview = (me: Me | null) => holdsAnyRole(me, ALL_OPERATIONAL_ROLES);
-export const canExecuteQaReview = (me: Me | null) => holdsAnyRole(me, ["Admin", "QA Reviewer"]);
+// Edge gateways (Document 43, SPEC-EDGE-001) -- same bug, same fix shape. Document 106 row 119 deliberately
+// splits enroll (Admin) from certificate rotation (QA Releaser, independent of the enrolling actor), so
+// even the literal "Admin" role alone does not hold both -- isAdminAnywhere was never sufficient here.
+export const canEnrollEdgeGateway = (me: Me | null) => hasPermission(me, "edge_gateway.enroll");
+export const canRotateEdgeGatewayCertificate = (me: Me | null) => hasPermission(me, "edge_gateway.certificate_rotation");
+const EDGE_GATEWAY_ENTRY_CODES = ["edge_gateway.enroll", "edge_gateway.certificate_rotation"];
+export const canOperateEdgeGateways = (me: Me | null) => hasAnyPermission(me, EDGE_GATEWAY_ENTRY_CODES);
 
-export const canViewGenealogy = (me: Me | null) => holdsAnyRole(me, ALL_OPERATIONAL_ROLES);
-export const canViewDevices = (me: Me | null) => holdsAnyRole(me, ALL_OPERATIONAL_ROLES);
-// device.create (Document 12) — Admin + Supervisor per scripts/seed.py.
-export const canCreateDevice = (me: Me | null) => holdsAnyRole(me, ["Admin", "Supervisor"]);
-export const canExecutePackaging = (me: Me | null) =>
-  holdsAnyRole(me, ["Admin", "Operator", "Supervisor"]);
-export const canApproveSupplier = (me: Me | null) => holdsAnyRole(me, ["Admin", "QA Releaser"]);
+export const canViewRelease = (me: Me | null) => hasPermission(me, "release.view");
+export const canEvaluateRelease = (me: Me | null) => hasPermission(me, "release.evaluate");
+export const canDecideRelease = (me: Me | null) => hasPermission(me, "release.release");
+
+export const canViewQaReview = (me: Me | null) => hasPermission(me, "qa_review.view");
+export const canExecuteQaReview = (me: Me | null) => hasPermission(me, "qa_review.execute");
+
+export const canViewGenealogy = (me: Me | null) => hasPermission(me, "genealogy.view");
+export const canViewDevices = (me: Me | null) => hasPermission(me, "device.view");
+export const canCreateDevice = (me: Me | null) => hasPermission(me, "device.create");
+export const canExecuteDevice = (me: Me | null) => hasPermission(me, "device.execute");
+export const canExecutePackaging = (me: Me | null) => hasPermission(me, "packaging.execute");
+export const canApproveSupplier = (me: Me | null) => hasPermission(me, "supplier_qualification.approve");
 
 // --- Shared QMS record shapes --------------------------------------------------------------------
 //
@@ -677,9 +845,14 @@ export interface Deviation extends QmsRecordBase {
   source_id: string;
   source_version: number | null;
   severity: string;
-  owner_subject_id: string;
+  // Nullable since the auto-deviation-on-out-of-range fix: a system-opened deviation starts unassigned.
+  owner_subject_id: string | null;
   investigator_subject_id: string | null;
   planned: boolean;
+  // Client Topic 11 (SG-061): a planned deviation cannot be used (any forward-pipeline transition)
+  // until an authorized Quality/QA person pre-approves it.
+  preapproved_by_user_id: string | null;
+  preapproved_at: string | null;
   disposition_code: string | null;
   capa_required: boolean | null;
   change_control_required: boolean;
@@ -712,6 +885,30 @@ export interface CapaAction {
   verified_at: string | null;
   version: number;
   created_at: string;
+}
+
+// GET /quality/oos/v1 and /quality/oot/v1 (app/modules/qc/router.py::list_oos_records /
+// list_oot_records) — Document 25, not a QmsRecordBase shape (no quality_event_id/created_at; uses
+// opened_at, and OotRecord has no site_id column at all).
+export interface Oos {
+  id: string;
+  oos_number: string;
+  batch_id: string | null;
+  material_lot_id: string | null;
+  state: string;
+  severity: string | null;
+  final_classification: string | null;
+  opened_at: string;
+  closed_at: string | null;
+}
+
+export interface Oot {
+  id: string;
+  source_result_id: string;
+  state: string;
+  investigation_owner_user_id: string | null;
+  opened_at: string;
+  closed_at: string | null;
 }
 
 export interface Nonconformance extends QmsRecordBase {
@@ -848,6 +1045,7 @@ export interface EquipmentAsset {
   manufacturer: string | null;
   model: string | null;
   serial_no: string | null;
+  location_id: string | null;
   state: string;
   qualification_status: string | null;
   calibration_status: string | null;
@@ -860,6 +1058,8 @@ export interface EquipmentAsset {
   hold_source: string | null;
   dedicated: boolean | null;
   firmware_version: string | null;
+  is_computer_operated: boolean;
+  recalibration_required: boolean;
   version: number;
 }
 

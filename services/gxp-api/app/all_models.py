@@ -3,8 +3,8 @@
 from app.core.db import Base
 from app.modules.ai_governance import models as ai_governance_models  # noqa: F401
 from app.modules.audit import models as audit_models  # noqa: F401
-from app.modules.batch import models as batch_models  # noqa: F401
 from app.modules.batch_execution import models as batch_execution_models  # noqa: F401
+from app.modules.codegen import models as codegen_models  # noqa: F401
 from app.modules.dataops import models as dataops_models  # noqa: F401
 from app.modules.ddcp import models as ddcp_models  # noqa: F401
 from app.modules.deployment import models as deployment_models  # noqa: F401
@@ -26,11 +26,11 @@ from app.modules.machine_integration import models as machine_integration_models
 from app.modules.material import models as material_models  # noqa: F401
 from app.modules.material_specification import models as material_specification_models  # noqa: F401
 from app.modules.mutation import models as mutation_models  # noqa: F401
+from app.modules.notifications import models as notifications_models  # noqa: F401
 from app.modules.packaging import models as packaging_models  # noqa: F401
 from app.modules.postmarket import models as postmarket_models  # noqa: F401
 from app.modules.postmarket import obligation_models as postmarket_obligation_models  # noqa: F401
 from app.modules.postmarket import reportability_models as postmarket_reportability_models  # noqa: F401
-from app.modules.product import models as product_models  # noqa: F401
 from app.modules.product_master import models as product_master_models  # noqa: F401
 from app.modules.qa_review import models as qa_review_models  # noqa: F401
 from app.modules.qc import models as qc_models  # noqa: F401
@@ -47,7 +47,6 @@ from app.modules.qms import risk_models as qms_risk_models  # noqa: F401
 from app.modules.qms import scar_models as qms_scar_models  # noqa: F401
 from app.modules.qms import training_models as qms_training_models  # noqa: F401
 from app.modules.readmodels import models as readmodels_models  # noqa: F401
-from app.modules.recipe import models as recipe_models  # noqa: F401
 from app.modules.recipe_master import models as recipe_master_models  # noqa: F401
 from app.modules.release import models as release_models  # noqa: F401
 from app.modules.rules import models as rules_models  # noqa: F401

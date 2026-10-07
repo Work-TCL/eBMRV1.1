@@ -7,22 +7,34 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.core.security import AuthenticatedActor, get_current_actor
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.product_master import service as product_master_service
 from app.modules.product_master.commands import (
+    BulkImportProductCommand,
+    BulkImportProductResult,
+    BulkImportProductRow,
+    BulkImportProductRowValidation,
     CreateProductDraftCommand,
+    CreateProductFamilyCommand,
+    ObsoleteProductVersionCommand,
     ReinstateProductVersionCommand,
     ReleaseProductVersionCommand,
     SubmitProductDraftCommand,
+    SupersedeProductVersionCommand,
     SuspendProductVersionCommand,
     UpdateProductDraftCommand,
     ValidateCompletenessCommand,
+    bulk_import_products,
     create_draft,
+    create_product_family,
+    obsolete_product_version,
     reinstate_product_version,
     release_product_version,
     submit_draft,
+    supersede_product_version,
     suspend_product_version,
     update_draft,
+    validate_bulk_import_product_rows,
     validate_completeness_command,
 )
 from app.modules.product_master.models import ConstituentCompatibilityVersion, ProductVersion
@@ -43,6 +55,7 @@ def _version_dict(version) -> dict:
         "name": version.name,
         "product_family_id": str(version.product_family_id) if version.product_family_id else None,
         "lifecycle_state": version.lifecycle_state,
+        "superseded_by_version_id": str(version.superseded_by_version_id) if version.superseded_by_version_id else None,
         "manufacturing_profile_code": version.manufacturing_profile_code,
         "combination_product_type": version.combination_product_type,
         "pmoa_reference": version.pmoa_reference,
@@ -52,6 +65,7 @@ def _version_dict(version) -> dict:
         "udi_applicable": version.udi_applicable,
         "strength_value": str(version.strength_value) if version.strength_value is not None else None,
         "strength_uom": version.strength_uom,
+        "strength_uom_id": str(version.strength_uom_id) if version.strength_uom_id else None,
         "device_model_code": version.device_model_code,
         "effective_from": version.effective_from.isoformat() if version.effective_from else None,
         "effective_to": version.effective_to.isoformat() if version.effective_to else None,
@@ -101,6 +115,36 @@ async def post_create_draft(
         return await create_draft(session, cmd, actor.user_id)
 
 
+class BulkImportProductPreviewRequest(BaseModel):
+    rows: list[BulkImportProductRow]
+
+
+@router.post("/drafts/bulk-import/preview")
+async def post_bulk_import_products_preview(
+    body: BulkImportProductPreviewRequest,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[BulkImportProductRowValidation]:
+    """Read-only -- validates every row (unknown manufacturing_profile_code/product_family_code,
+    duplicate/existing product_code) and reports per-row errors without creating anything, same shape as
+    the user/equipment bulk-import preview."""
+    await evaluate_policy(session, actor.user_id, action="product.author", site_id=None)
+    return await validate_bulk_import_product_rows(session, body.rows)
+
+
+@router.post("/drafts/bulk-import/commit", response_model=BulkImportProductResult)
+async def post_bulk_import_products_commit(
+    cmd: BulkImportProductCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> BulkImportProductResult:
+    """All-or-nothing: if any row fails validation the whole batch is rejected with the per-row reasons
+    and nothing is created."""
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="product.author", site_id=cmd.site_id)
+        return await bulk_import_products(session, cmd, actor.user_id)
+
+
 @router.put("/drafts/{product_version_id}", response_model=MutationReceipt)
 async def put_update_draft(
     product_version_id: uuid.UUID,
@@ -111,7 +155,8 @@ async def put_update_draft(
     if cmd.product_version_id != product_version_id:
         raise ValidationFailedError("product_version_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="product.author", site_id=None)
+        version = await product_master_service.get_version(session, product_version_id)
+        await evaluate_policy(session, actor.user_id, action="product.author", site_id=version.site_id)
         return await update_draft(session, cmd, actor.user_id)
 
 
@@ -125,7 +170,8 @@ async def post_submit_draft(
     if cmd.product_version_id != product_version_id:
         raise ValidationFailedError("product_version_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="product.author", site_id=None)
+        version = await product_master_service.get_version(session, product_version_id)
+        await evaluate_policy(session, actor.user_id, action="product.author", site_id=version.site_id)
         return await submit_draft(session, cmd, actor.user_id)
 
 
@@ -139,7 +185,15 @@ def _version_record_hash(version: ProductVersion) -> str:
     return sha256_hex({"id": str(version.id), "version": version.version})
 
 
-_VERSION_CHALLENGE_MEANINGS = {"release": "Released", "suspend": "Performed", "reinstate": "Approved"}
+_VERSION_CHALLENGE_MEANINGS = {
+    "release": "Released",
+    "suspend": "Performed",
+    "reinstate": "Approved",
+    # Known-limitations fix (docs/testing/demo-gujarati/06 §6.8 item 1): no Document 106 row exists for
+    # either; meaning matches the closest section 8 "cancel/abort/void" family (see SG-208).
+    "obsolete": "Approved",
+    "supersede": "Approved",
+}
 
 
 @router.post("/{product_version_id}/signature-challenges")
@@ -177,7 +231,8 @@ async def post_release_draft(
     if cmd.product_version_id != product_version_id:
         raise ValidationFailedError("product_version_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="product.release", site_id=None)
+        version = await product_master_service.get_version(session, product_version_id)
+        await evaluate_policy(session, actor.user_id, action="product.release", site_id=version.site_id)
         return await release_product_version(session, cmd, actor.user_id)
 
 
@@ -191,7 +246,8 @@ async def post_suspend(
     if cmd.product_version_id != product_version_id:
         raise ValidationFailedError("product_version_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="product.suspend", site_id=None)
+        version = await product_master_service.get_version(session, product_version_id)
+        await evaluate_policy(session, actor.user_id, action="product.suspend", site_id=version.site_id)
         return await suspend_product_version(session, cmd, actor.user_id)
 
 
@@ -205,20 +261,60 @@ async def post_reinstate(
     if cmd.product_version_id != product_version_id:
         raise ValidationFailedError("product_version_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="product.suspend", site_id=None)
+        version = await product_master_service.get_version(session, product_version_id)
+        await evaluate_policy(session, actor.user_id, action="product.suspend", site_id=version.site_id)
         return await reinstate_product_version(session, cmd, actor.user_id)
+
+
+@router.post("/{product_version_id}/obsolete", response_model=MutationReceipt)
+async def post_obsolete(
+    product_version_id: uuid.UUID,
+    cmd: ObsoleteProductVersionCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    """Known-limitations fix (docs/testing/demo-gujarati/06 §6.8 item 1). Reuses `product.suspend`
+    (same RBAC floor as suspend/reinstate -- Admin + QA Releaser)."""
+    if cmd.product_version_id != product_version_id:
+        raise ValidationFailedError("product_version_id in path and body must match")
+    async with session.begin():
+        version = await product_master_service.get_version(session, product_version_id)
+        await evaluate_policy(session, actor.user_id, action="product.suspend", site_id=version.site_id)
+        return await obsolete_product_version(session, cmd, actor.user_id)
+
+
+@router.post("/{product_version_id}/supersede", response_model=MutationReceipt)
+async def post_supersede(
+    product_version_id: uuid.UUID,
+    cmd: SupersedeProductVersionCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    """Known-limitations fix (docs/testing/demo-gujarati/06 §6.8 item 1). `superseding_version_id` must
+    reference another RELEASED version of the same product; enforced in supersede_product_version()."""
+    if cmd.product_version_id != product_version_id:
+        raise ValidationFailedError("product_version_id in path and body must match")
+    async with session.begin():
+        version = await product_master_service.get_version(session, product_version_id)
+        await evaluate_policy(session, actor.user_id, action="product.suspend", site_id=version.site_id)
+        return await supersede_product_version(session, cmd, actor.user_id)
 
 
 @router.get("/business-ids")
 async def get_business_ids(
+    site_id: uuid.UUID | None = None,
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> list[dict]:
     """Real picker data for any "Constituent's Business ID"-shaped field (product_master/service.py::
     list_product_business_ids) -- registered ahead of the single-segment `/{product_version_id}` GET and
-    the `/{product_business_id}/versions` GET below so "business-ids" is never parsed as either."""
-    await evaluate_policy(session, actor.user_id, action="product.view", site_id=None)
-    versions = await product_master_service.list_product_business_ids(session)
+    the `/{product_business_id}/versions` GET below so "business-ids" is never parsed as either.
+
+    SG-213 fix: `gxp_product_version.site_id` is a non-nullable per-row site, so this was gating on
+    "holds product.view anywhere" and then returning every site's products. resolve_site_scope turns an
+    omitted site_id into only the sites the actor actually holds the action at."""
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="product.view")
+    versions = await product_master_service.list_product_business_ids(session, site_scope)
     return [
         {
             # 2026-09-07: added for the page's own "Products" list (frontend/src/app/product-master/
@@ -243,7 +339,7 @@ async def get_sterile_profiles(
     """Real picker data for the Sterile process profile ID field on the draft/edit forms -- registered
     ahead of the single-segment `/{product_version_id}` GET below so "sterile-profiles" is never parsed
     as a product_version_id."""
-    await evaluate_policy(session, actor.user_id, action="product.view", site_id=None)
+    await evaluate_policy(session, actor.user_id, action="product.view", site_id=site_id)
     profiles = await product_master_service.list_sterile_profiles(session, site_id)
     return [
         {
@@ -257,14 +353,57 @@ async def get_sterile_profiles(
     ]
 
 
-@router.get("/{product_business_id}/versions")
-async def get_versions(
-    product_business_id: str,
+def _family_dict(f) -> dict:
+    return {
+        "id": str(f.id),
+        "family_code": f.family_code,
+        "name": f.name,
+        "profile_code": f.profile_code,
+        "status": f.status,
+    }
+
+
+@router.get("/families")
+async def get_families(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> list[dict]:
+    """Known-limitations fix (docs/testing/demo-gujarati/06 §6.8 item 2) -- registered ahead of the
+    single-segment `/{product_version_id}` GET below so "families" is never parsed as one.
+
+    SG-213 reviewed: gxp_product_family has no site_id column (models.py) -- it is a global controlled
+    vocabulary (family_code/name/profile_code), not a per-site record. site_id=None is correct."""
     await evaluate_policy(session, actor.user_id, action="product.view", site_id=None)
-    versions = await product_master_service.list_versions_for_business_id(session, product_business_id)
+    families = await product_master_service.list_product_families(session)
+    return [_family_dict(f) for f in families]
+
+
+@router.post("/families", response_model=MutationReceipt)
+async def post_create_family(
+    cmd: CreateProductFamilyCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    async with session.begin():
+        # SG-213 reviewed: gxp_product_family has no site_id column and CreateProductFamilyCommand has
+        # no site_id field -- same global-vocabulary reasoning as get_families above. site_id=None is
+        # correct.
+        await evaluate_policy(session, actor.user_id, action="product.author", site_id=None)
+        return await create_product_family(session, cmd, actor.user_id)
+
+
+@router.get("/{product_business_id}/versions")
+async def get_versions(
+    product_business_id: str,
+    site_id: uuid.UUID | None = None,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
+    # SG-213 fix: same resolve_site_scope treatment as get_business_ids above -- this is a list (every
+    # version row for a business id), not a single-record fetch, so it needs the site-scope filter, not
+    # a record.site_id check.
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="product.view")
+    versions = await product_master_service.list_versions_for_business_id(session, product_business_id, site_scope)
     return [_version_dict(v) for v in versions]
 
 
@@ -274,8 +413,8 @@ async def get_version_detail(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="product.view", site_id=None)
     version = await product_master_service.get_version(session, product_version_id)
+    await evaluate_policy(session, actor.user_id, action="product.view", site_id=version.site_id)
     constituents = await product_master_service.get_constituents(session, product_version_id)
     body = _version_dict(version)
     body["constituents"] = [_constituent_dict(c) for c in constituents]
@@ -292,7 +431,8 @@ async def post_validate_completeness(
     if cmd.product_version_id != product_version_id:
         raise ValidationFailedError("product_version_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="product.author", site_id=None)
+        version = await product_master_service.get_version(session, product_version_id)
+        await evaluate_policy(session, actor.user_id, action="product.author", site_id=version.site_id)
         return await validate_completeness_command(session, cmd, actor.user_id)
 
 
@@ -302,7 +442,8 @@ async def get_compatibility(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> list[dict]:
-    await evaluate_policy(session, actor.user_id, action="product.view", site_id=None)
+    version = await product_master_service.get_version(session, product_version_id)
+    await evaluate_policy(session, actor.user_id, action="product.view", site_id=version.site_id)
     rows = (
         (
             await session.execute(
@@ -327,8 +468,8 @@ async def get_issue_eligibility(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="product.view", site_id=None)
     version = await product_master_service.get_version(session, product_version_id)
+    await evaluate_policy(session, actor.user_id, action="product.view", site_id=version.site_id)
     constituents = await product_master_service.get_constituents(session, product_version_id)
     findings = product_master_service.validate_completeness(version, constituents)
     return product_master_service.check_issue_eligibility(version, findings)

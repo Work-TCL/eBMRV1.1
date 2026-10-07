@@ -85,8 +85,11 @@ async def post_evaluate(
 ) -> MutationReceipt:
     if cmd.scope_type != scope_type or cmd.scope_id != target_id:
         raise ValidationFailedError("scope_type/target_id in path and body must match")
+    if scope_type != "batch":
+        raise ValidationFailedError("Only scope_type 'batch' is supported this pass", scope_type=scope_type)
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="release.evaluate", site_id=None)
+        batch = await release_service.get_batch(session, target_id)
+        await evaluate_policy(session, actor.user_id, action="release.evaluate", site_id=batch.site_id)
         return await evaluate_release_scope(session, cmd, actor.user_id)
 
 
@@ -96,8 +99,8 @@ async def get_eligibility(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="release.view", site_id=None)
     scope = await release_service.get_scope(session, scope_id)
+    await evaluate_policy(session, actor.user_id, action="release.view", site_id=scope.site_id)
     evaluation = await release_service.get_current_evaluation(session, scope)
     return {"scope": _scope_dict(scope), "evaluation": _evaluation_dict(evaluation) if evaluation else None}
 
@@ -118,8 +121,8 @@ async def post_signature_challenge(
     if permission is None or meaning is None:
         raise ValidationFailedError("Unknown or unsigned action", action=body.action)
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action=permission, site_id=None)
         scope = await release_service.get_scope(session, scope_id)
+        await evaluate_policy(session, actor.user_id, action=permission, site_id=scope.site_id)
         challenge = await create_challenge(
             session, user_id=actor.user_id, record_type="release_scope", record_id=scope.id,
             record_version=scope.version, record_hash=sha256_hex({"id": str(scope.id), "version": scope.version}),
@@ -138,7 +141,8 @@ async def post_release(
     if cmd.scope_id != scope_id:
         raise ValidationFailedError("scope_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="release.release", site_id=None)
+        scope = await release_service.get_scope(session, scope_id)
+        await evaluate_policy(session, actor.user_id, action="release.release", site_id=scope.site_id)
         return await release_scope_decision(session, cmd, actor.user_id)
 
 
@@ -152,7 +156,8 @@ async def post_hold(
     if cmd.scope_id != scope_id:
         raise ValidationFailedError("scope_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="release.hold", site_id=None)
+        scope = await release_service.get_scope(session, scope_id)
+        await evaluate_policy(session, actor.user_id, action="release.hold", site_id=scope.site_id)
         return await hold_scope(session, cmd, actor.user_id)
 
 
@@ -166,7 +171,8 @@ async def post_reject(
     if cmd.scope_id != scope_id:
         raise ValidationFailedError("scope_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="release.reject", site_id=None)
+        scope = await release_service.get_scope(session, scope_id)
+        await evaluate_policy(session, actor.user_id, action="release.reject", site_id=scope.site_id)
         return await reject_scope(session, cmd, actor.user_id)
 
 
@@ -178,8 +184,8 @@ async def get_package(
 ) -> dict:
     """REL-FR-009/028 (partial): the release package itself (evaluation + decisions); DDCP-specific
     constituent/compatibility detail (Document 15 §8) is not built -- see SG-056."""
-    await evaluate_policy(session, actor.user_id, action="release.view", site_id=None)
     scope = await release_service.get_scope(session, scope_id)
+    await evaluate_policy(session, actor.user_id, action="release.view", site_id=scope.site_id)
     evaluation = await release_service.get_current_evaluation(session, scope)
     decisions = await release_service.get_decisions(session, scope_id)
     return {
@@ -208,6 +214,15 @@ async def get_scope_by_target(
     scope()`, which correctly refuses to re-evaluate a `released`/`rejected` scope
     (InvalidTransitionError) -- meaning a batch that had already been released or rejected became
     permanently unviewable from this page, with no way back in at all."""
-    await evaluate_policy(session, actor.user_id, action="release.view", site_id=None)
     scope = await release_service.get_scope_for_target(session, scope_type, target_id)
+    if scope is not None:
+        site_id = scope.site_id
+    elif scope_type == "batch":
+        # No scope evaluated yet -- resolve the target's site directly, same "only scope_type 'batch' is
+        # supported" assumption evaluate_release_scope() itself already enforces (commands.py).
+        batch = await release_service.get_batch(session, target_id)
+        site_id = batch.site_id
+    else:
+        raise ValidationFailedError("Only scope_type 'batch' is supported this pass", scope_type=scope_type)
+    await evaluate_policy(session, actor.user_id, action="release.view", site_id=site_id)
     return _scope_dict(scope) if scope is not None else None

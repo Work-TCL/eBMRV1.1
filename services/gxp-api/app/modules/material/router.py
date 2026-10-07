@@ -13,6 +13,7 @@ from app.modules.batch_execution.models import Batch
 from app.modules.iam.models import User
 from app.modules.material.commands import (
     ApproveInventoryAdjustmentRequestCommand,
+    ApproveReservationOverrideCommand,
     CancelDispensingCommand,
     CollectSampleCommand,
     CompleteDispensingCommand,
@@ -27,27 +28,33 @@ from app.modules.material.commands import (
     CreateSamplingOrderCommand,
     CreateWarehouseLocationCommand,
     DeleteMaterialCommand,
-    DispositionMaterialLotCommand,
+    DispositionHeldReceiptCommand,
     EvaluateMaterialReconciliationCommand,
     ExamineReceiptCommand,
     ExecuteDestructionCommand,
+    LockLocationCommand,
     MergeContainersCommand,
+    OverrideDispensingOrderTargetCommand,
     ReceiveMaterialLotCommand,
     RecordConsumptionCommand,
     RecordManualReadingCommand,
     RecordMaterialLossCommand,
     RecordReadingCommand,
     RecordReturnCommand,
+    RejectInventoryAdjustmentRequestCommand,
     RejectMaterialLotCommand,
+    RejectReservationOverrideCommand,
     ReleaseInventoryReservationCommand,
     ReleaseMaterialLotCommand,
     RetestMaterialLotCommand,
     SelectDispensingSourceCommand,
     SplitContainerCommand,
     StartDispensingCommand,
+    UnlockLocationCommand,
     UpdateMaterialCommand,
     VerifyDispensingCommand,
     approve_inventory_adjustment_request,
+    approve_reservation_override,
     cancel_dispensing,
     collect_sample,
     complete_dispensing,
@@ -64,7 +71,7 @@ from app.modules.material.commands import (
     delete_material,
     destruction_record_hash,
     dispensing_order_record_hash,
-    disposition_material_lot,
+    disposition_held_receipt,
     evaluate_material_reconciliation,
     examine_receipt,
     execute_destruction,
@@ -74,15 +81,20 @@ from app.modules.material.commands import (
     get_quality_status,
     get_release_readiness,
     inventory_adjustment_request_record_hash,
+    lock_location,
     lot_record_hash,
     merge_containers,
+    override_dispensing_order_target,
+    receipt_record_hash,
     receive_material_lot,
     record_consumption,
     record_manual_reading,
     record_material_loss,
     record_reading,
     record_return,
+    reject_inventory_adjustment_request,
     reject_material_lot,
+    reject_reservation_override,
     release_inventory_reservation,
     release_material_lot,
     reservation_record_hash,
@@ -90,6 +102,7 @@ from app.modules.material.commands import (
     select_dispensing_source,
     split_container,
     start_dispensing,
+    unlock_location,
     update_material,
     verify_dispensing,
 )
@@ -107,10 +120,10 @@ from app.modules.material.models import (
     SamplingOrder,
     WarehouseLocation,
 )
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.signature.service import create_challenge
 from app.modules.supplier_quality.models import Supplier
-from app.mutation.errors import NotFoundError, ValidationFailedError
+from app.mutation.errors import NotFoundError, RoleMissingError, ValidationFailedError
 from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/materials", tags=["material"])
@@ -188,14 +201,26 @@ async def post_create_material(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
+        # 2026-09-18, project-owner-directed: create_material() had no evaluate_policy() call at all —
+        # same "master-data technical author" role class as material_spec.author/product.author.
+        await evaluate_policy(session, actor.user_id, action="material.create", site_id=cmd.site_id)
         return await create_material(session, cmd, actor.user_id)
 
 
 @router.get("")
 async def list_materials(
-    session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params)
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+    params: PageParams = Depends(page_params),
+    site_id: uuid.UUID | None = None,
 ) -> dict:
-    stmt = select(Material)
+    # Client Topic 15 fix (2026-10-02, project-owner-directed): this endpoint had no `actor` dependency
+    # and no site filter at all -- any caller, authenticated or not, could list every Material master
+    # row across every site. `material.view` is a new permission code (seed.py), granted the same
+    # roles as `material.create`/`material.update` plus the broad "view" roleset (Operator, Supervisor,
+    # QA Reviewer, QA Releaser, QC Reviewer) this codebase already uses for product.view/recipe.view.
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="material.view")
+    stmt = select(Material).where(Material.site_id.in_(site_scope))
     if params.q:
         needle = f"%{params.q}%"
         stmt = stmt.where(or_(Material.code.ilike(needle), Material.name.ilike(needle)))
@@ -212,6 +237,8 @@ async def list_materials(
                 "name": m.name,
                 "uom": m.uom,
                 "status": m.status,
+                "is_in_house": m.is_in_house,
+                "default_storage_condition": m.default_storage_condition,
                 "version": m.version,
             }
             for (m,) in rows
@@ -229,6 +256,10 @@ async def patch_material(
     if cmd.material_id != material_id:
         raise ValidationFailedError("material_id in path and body must match")
     async with session.begin():
+        material = await session.get(Material, material_id)
+        if material is None:
+            raise NotFoundError("Material not found")
+        await evaluate_policy(session, actor.user_id, action="material.update", site_id=material.site_id)
         return await update_material(session, cmd, actor.user_id)
 
 
@@ -256,12 +287,21 @@ async def post_receive_lot(
     if cmd.material_id != material_id:
         raise ValidationFailedError("material_id in path and body must match")
     async with session.begin():
+        # 2026-09-19, docs/testing/demo-gujarati/03 gap: this legacy direct-lot-creation path (still
+        # actively used by frontend/src/app/material-lots/page.tsx, unlike the retired /batches scaffold)
+        # had no evaluate_policy() call at all -- any authenticated user, any role, could receive a lot.
+        # Reuses `material_receipt.create`, the permission the real Document 19 receipt flow
+        # (POST /materials/v1/receipts) already gates the equivalent action with, rather than inventing a
+        # new code. That flow is unsigned too (receipt/receiving is RBAC-only in this codebase; e-signature
+        # applies to QC disposition/release, not raw receipt) -- so no signature ceremony is added here either.
+        await evaluate_policy(session, actor.user_id, action="material_receipt.create", site_id=cmd.site_id)
         return await receive_material_lot(session, cmd, actor.user_id)
 
 
 def _lot_dict(lot: MaterialLot, material_code: str, material_name: str) -> dict:
     return {
         "id": str(lot.id),
+        "site_id": str(lot.site_id),
         "material_id": str(lot.material_id),
         "material_code": material_code,
         "material_name": material_name,
@@ -272,12 +312,24 @@ def _lot_dict(lot: MaterialLot, material_code: str, material_name: str) -> dict:
         "received_quantity": str(lot.received_quantity),
         "available_quantity": str(lot.available_quantity),
         "uom": lot.uom,
+        "uom_id": str(lot.uom_id) if lot.uom_id else None,
         "status": lot.status,
+        "received_by_user_id": str(lot.received_by_user_id),
         "received_at": lot.received_at.isoformat() if lot.received_at else None,
         "released_at": lot.released_at.isoformat() if lot.released_at else None,
+        "release_signature_id": str(lot.release_signature_id) if lot.release_signature_id else None,
         "expiry_date": lot.expiry_date.isoformat() if lot.expiry_date else None,
         "retest_date": lot.retest_date.isoformat() if lot.retest_date else None,
+        "storage_location_id": str(lot.storage_location_id) if lot.storage_location_id else None,
+        "storage_condition": lot.storage_condition,
+        "material_spec_version_id": str(lot.material_spec_version_id) if lot.material_spec_version_id else None,
+        "receipt_id": str(lot.receipt_id) if lot.receipt_id else None,
+        "manufacture_date": lot.manufacture_date.isoformat() if lot.manufacture_date else None,
         "version": lot.version,
+        "is_exception_release": lot.is_exception_release,
+        "exception_reason": lot.exception_reason,
+        "coa_reliance": lot.coa_reliance,
+        "coa_reliance_reason": lot.coa_reliance_reason,
     }
 
 
@@ -286,7 +338,12 @@ async def list_material_lots(
     session: AsyncSession = Depends(get_session),
     params: PageParams = Depends(page_params),
     status: str | None = None,
+    actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
+    # Authenticated, not yet RBAC-scoped -- no material_lot.view permission code exists yet in the
+    # catalogue, and deciding which roles should hold one is a real authorization design question, not
+    # guessed here (same posture ddcp/router.py's read-only endpoints already document explicitly).
+    del actor
     stmt = select(MaterialLot, Material.code, Material.name).join(Material, Material.id == MaterialLot.material_id)
     if params.q:
         needle = f"%{params.q}%"
@@ -310,7 +367,13 @@ async def list_material_lots(
 
 
 @lots_router.get("/{lot_id}")
-async def get_material_lot(lot_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_material_lot(
+    lot_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    # See list_material_lots() above -- same posture: authenticated, not yet RBAC-scoped.
+    del actor
     result = await session.execute(
         select(MaterialLot, Material.code, Material.name)
         .join(Material, Material.id == MaterialLot.material_id)
@@ -326,11 +389,20 @@ async def get_material_lot(lot_id: uuid.UUID, session: AsyncSession = Depends(ge
 def _container_dict(c: MaterialContainer) -> dict:
     return {
         "id": str(c.id),
+        "material_lot_id": str(c.material_lot_id),
         "container_code": c.container_code,
+        "received_quantity": str(c.received_quantity),
         "current_quantity": str(c.current_quantity),
         "uom": c.uom,
+        "uom_id": str(c.uom_id) if c.uom_id else None,
+        "location_zone": c.location_zone,
         "container_status": c.container_status,
         "quality_status_override": c.quality_status_override,
+        "sampled": c.sampled,
+        "seal_status": c.seal_status,
+        "parent_container_id": str(c.parent_container_id) if c.parent_container_id else None,
+        "source_container_ids": c.source_container_ids,
+        "version": c.version,
     }
 
 
@@ -355,10 +427,10 @@ async def list_lot_containers(lot_id: uuid.UUID, session: AsyncSession = Depends
 
 
 class LotSignatureChallengeRequest(BaseModel):
-    action: str  # "disposition" (legacy, Document 18) | "release" | "reject" (Document 19, RCV-FR-026/027)
+    action: str  # "release" | "reject" (Document 19, RCV-FR-026/027)
 
 
-_LOT_CHALLENGE_MEANINGS = {"disposition": "Disposition", **_QUALITY_DISPOSITION_MEANING}
+_LOT_CHALLENGE_MEANINGS = _QUALITY_DISPOSITION_MEANING
 
 
 @lots_router.post("/{lot_id}/signature-challenges")
@@ -389,22 +461,6 @@ async def post_lot_signature_challenge(
             "meaning": challenge.meaning,
             "expires_at": challenge.expires_at.isoformat(),
         }
-
-
-@lots_router.post("/{lot_id}/disposition", response_model=MutationReceipt)
-async def post_disposition_lot(
-    lot_id: uuid.UUID,
-    cmd: DispositionMaterialLotCommand,
-    session: AsyncSession = Depends(get_session),
-    actor: AuthenticatedActor = Depends(get_current_actor),
-) -> MutationReceipt:
-    if cmd.lot_id != lot_id:
-        raise ValidationFailedError("lot_id in path and body must match")
-    async with session.begin():
-        lot = await session.get(MaterialLot, lot_id)
-        if lot is None:
-            raise NotFoundError("Material lot not found")
-        return await disposition_material_lot(session, cmd, actor.user_id, lot.site_id)
 
 
 # ---------------------------------------------------------------------------
@@ -453,16 +509,34 @@ def _receipt_dict(
         "received_net_quantity": str(receipt_row.received_net_quantity) if receipt_row.received_net_quantity else None,
         "accepted_quantity": str(receipt_row.accepted_quantity) if receipt_row.accepted_quantity else None,
         "uom": receipt_row.uom,
+        "uom_id": str(receipt_row.uom_id) if receipt_row.uom_id else None,
         "manufacture_date": receipt_row.manufacture_date.isoformat() if receipt_row.manufacture_date else None,
         "expiry_date": receipt_row.expiry_date.isoformat() if receipt_row.expiry_date else None,
         "retest_date": receipt_row.retest_date.isoformat() if receipt_row.retest_date else None,
         "shipment_condition_status": receipt_row.shipment_condition_status,
+        "coa_vault_object_id": str(receipt_row.coa_vault_object_id) if receipt_row.coa_vault_object_id else None,
         "coa_document_hash": receipt_row.coa_document_hash,
+        "receiver_subject_id": str(receipt_row.receiver_subject_id),
         "state": receipt_row.state,
+        "labeling_ok": receipt_row.labeling_ok,
+        "damage_observed": receipt_row.damage_observed,
+        "shipping_damage_observed": receipt_row.shipping_damage_observed,
+        "container_damage_observed": receipt_row.container_damage_observed,
+        "seal_broken": receipt_row.seal_broken,
+        "contamination_observed": receipt_row.contamination_observed,
+        "examination_notes": receipt_row.examination_notes,
+        "examined_by_user_id": str(receipt_row.examined_by_user_id) if receipt_row.examined_by_user_id else None,
+        "examined_at": receipt_row.examined_at.isoformat() if receipt_row.examined_at else None,
         "discrepancy_type": receipt_row.discrepancy_type,
         "discrepancy_reason": receipt_row.discrepancy_reason,
         "received_at": receipt_row.received_at.isoformat() if receipt_row.received_at else None,
         "version": receipt_row.version,
+        "disposition_decision": receipt_row.disposition_decision,
+        "disposition_severity": receipt_row.disposition_severity,
+        "disposition_reason": receipt_row.disposition_reason,
+        "disposition_deviation_id": str(receipt_row.disposition_deviation_id) if receipt_row.disposition_deviation_id else None,
+        "disposition_decided_by_user_id": str(receipt_row.disposition_decided_by_user_id) if receipt_row.disposition_decided_by_user_id else None,
+        "disposition_decided_at": receipt_row.disposition_decided_at.isoformat() if receipt_row.disposition_decided_at else None,
     }
 
 
@@ -498,11 +572,21 @@ def _receipt_select():
 # of Document 19 §5's 9 declared *mutating* operations, so it carries no signature/authority implication;
 # same GET-alongside-the-mutating-set precedent as `list_material_lots` below and `get_migration_legacy_trace`
 # in the validation module.
+#
+# Client Topic 4/15 fix (2026-10-02, project-owner-directed): unlike `list_material_lots`/
+# `get_material_lot` below (deliberately authenticated-but-not-yet-RBAC-scoped, documented there), this
+# endpoint and `get_receipt` had no `actor` dependency or evaluate_policy() call at all -- a genuinely
+# unauthenticated read, found while adding the held-receipt disposition action. `material_receipt.view`
+# closes it the same way Topic 15's sweep closed every other such gap.
 @v1_router.get("/receipts")
 async def list_material_receipts(
-    session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params)
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+    params: PageParams = Depends(page_params),
+    site_id: uuid.UUID | None = None,
 ) -> dict:
-    stmt = _receipt_select()
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="material_receipt.view")
+    stmt = _receipt_select().where(MaterialReceipt.site_id.in_(site_scope))
     if params.q:
         needle = f"%{params.q}%"
         stmt = stmt.where(
@@ -525,13 +609,18 @@ async def list_material_receipts(
 
 
 @v1_router.get("/receipts/{receipt_id}")
-async def get_receipt(receipt_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_receipt(
+    receipt_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     row = (
         await session.execute(_receipt_select().where(MaterialReceipt.id == receipt_id))
     ).first()
     if row is None:
         raise NotFoundError("Material receipt not found")
     receipt_row, material_code, material_name, supplier_code, supplier_name, manufacturer_code, manufacturer_name = row
+    await evaluate_policy(session, actor.user_id, action="material_receipt.view", site_id=receipt_row.site_id)
     return _receipt_dict(
         receipt_row, material_code, material_name, supplier_code, supplier_name, manufacturer_code, manufacturer_name
     )
@@ -552,6 +641,58 @@ async def post_examine_receipt(
             raise NotFoundError("Material receipt not found")
         await evaluate_policy(session, actor.user_id, action="material_receipt.examine", site_id=receipt_row.site_id)
         return await examine_receipt(session, cmd, actor.user_id)
+
+
+class ReceiptSignatureChallengeRequest(BaseModel):
+    action: str = "disposition"
+
+
+@v1_router.post("/receipts/{receipt_id}/signature-challenges")
+async def post_receipt_signature_challenge(
+    receipt_id: uuid.UUID,
+    body: ReceiptSignatureChallengeRequest,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    async with session.begin():
+        receipt_row = await session.get(MaterialReceipt, receipt_id)
+        if receipt_row is None:
+            raise NotFoundError("Material receipt not found")
+        if body.action != "disposition":
+            raise ValidationFailedError("Unknown action", action=body.action)
+        challenge = await create_challenge(
+            session,
+            user_id=actor.user_id,
+            record_type="material_receipt",
+            record_id=receipt_row.id,
+            record_version=receipt_row.version,
+            record_hash=receipt_record_hash(receipt_row),
+            meaning="Approved",
+        )
+        return {
+            "challenge_id": str(challenge.id),
+            "meaning": challenge.meaning,
+            "expires_at": challenge.expires_at.isoformat(),
+        }
+
+
+# Client Topic 4 (2026-10-02, project-owner-directed): disposition a receipt on discrepancy_hold --
+# accept (creates the lot, exception-flagged)/reject/request-replacement. See the module docstring on
+# `disposition_held_receipt` (commands.py) for the severity/deviation/signature rules.
+@v1_router.post("/receipts/{receipt_id}/disposition", response_model=MutationReceipt)
+async def post_disposition_held_receipt(
+    receipt_id: uuid.UUID,
+    cmd: DispositionHeldReceiptCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.receipt_id != receipt_id:
+        raise ValidationFailedError("receipt_id in path and body must match")
+    async with session.begin():
+        receipt_row = await session.get(MaterialReceipt, receipt_id)
+        if receipt_row is None:
+            raise NotFoundError("Material receipt not found")
+        return await disposition_held_receipt(session, cmd, actor.user_id, receipt_row.site_id)
 
 
 @v1_router.post("/lots/{lot_id}/sampling-orders", response_model=MutationReceipt)
@@ -678,11 +819,27 @@ def _warehouse_location_dict(loc: WarehouseLocation) -> dict:
         "location_code": loc.location_code,
         "zone_type": loc.zone_type,
         "status": loc.status,
+        "version": loc.version,
+        # Client Topic 7 Q14 (SG-084): temporary count lock.
+        "locked": loc.locked,
+        "lock_reason": loc.lock_reason,
+        "locked_by_user_id": str(loc.locked_by_user_id) if loc.locked_by_user_id else None,
+        "locked_at": loc.locked_at.isoformat() if loc.locked_at else None,
     }
 
 
+# Client Topic 15 fix (2026-10-02, project-owner-directed): this endpoint had no `actor` dependency
+# and no evaluate_policy() call at all -- a genuinely unauthenticated read, not merely an unscoped
+# one (contrast the equipment/cleaning/em "same treatment as material lot detail" convention, which
+# is still an *authenticated* actor just without a permission/site check). `site_id` is already a
+# required param here, so adding the capability+site check below closes this completely.
 @inventory_v1_router.get("/warehouse-locations")
-async def list_warehouse_locations(site_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def list_warehouse_locations(
+    site_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    await evaluate_policy(session, actor.user_id, action="warehouse_location.view", site_id=site_id)
     rows = (
         await session.execute(
             select(WarehouseLocation)
@@ -704,11 +861,51 @@ async def post_create_warehouse_location(
         return await create_warehouse_location(session, cmd, actor.user_id)
 
 
+# Client Topic 7 Q14 (SG-084, project-owner-directed): lock/unlock a location during a physical count so
+# stock cannot move in/out of it -- same unsigned/RBAC-gated, Admin+Supervisor-only shape as
+# warehouse_location.create/update/retire above (no Document 106 row; the client asked for traceability,
+# not a Part-11 approval).
+@inventory_v1_router.post("/warehouse-locations/{location_id}/lock", response_model=MutationReceipt)
+async def post_lock_location(
+    location_id: uuid.UUID,
+    cmd: LockLocationCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    async with session.begin():
+        location = await session.get(WarehouseLocation, location_id)
+        if location is None:
+            raise NotFoundError("Warehouse location not found")
+        await evaluate_policy(session, actor.user_id, action="warehouse_location.lock", site_id=location.site_id)
+        return await lock_location(session, location_id, cmd, actor.user_id)
+
+
+@inventory_v1_router.post("/warehouse-locations/{location_id}/unlock", response_model=MutationReceipt)
+async def post_unlock_location(
+    location_id: uuid.UUID,
+    cmd: UnlockLocationCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    async with session.begin():
+        location = await session.get(WarehouseLocation, location_id)
+        if location is None:
+            raise NotFoundError("Warehouse location not found")
+        await evaluate_policy(session, actor.user_id, action="warehouse_location.lock", site_id=location.site_id)
+        return await unlock_location(session, location_id, cmd, actor.user_id)
+
+
+# Client Topic 15 fix (2026-10-02, project-owner-directed): same "no actor dependency at all" gap as
+# list_warehouse_locations above.
 @inventory_v1_router.get("/availability")
 async def get_availability(
-    material_id: uuid.UUID, site_id: uuid.UUID, session: AsyncSession = Depends(get_session)
+    material_id: uuid.UUID,
+    site_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="inventory_availability.view", site_id=site_id)
         return {"items": await get_inventory_availability(session, material_id=material_id, site_id=site_id)}
 
 
@@ -721,6 +918,14 @@ async def post_create_reservation(
     async with session.begin():
         await evaluate_policy(session, actor.user_id, action="inventory_reservation.create", site_id=cmd.site_id)
         return await create_inventory_reservation(session, cmd, actor.user_id)
+
+
+_RESERVATION_CHALLENGE_MEANINGS = {
+    "release": "Released",
+    # Client Topic 8 (SG-083): QA Releaser approval/rejection of a non-FEFO lot override.
+    "approve_override": "Approved",
+    "reject_override": "Rejected",
+}
 
 
 class ReservationSignatureChallengeRequest(BaseModel):
@@ -738,7 +943,8 @@ async def post_reservation_signature_challenge(
         reservation = await session.get(InventoryReservation, reservation_id)
         if reservation is None:
             raise NotFoundError("Inventory reservation not found")
-        if body.action != "release":
+        meaning = _RESERVATION_CHALLENGE_MEANINGS.get(body.action)
+        if meaning is None:
             raise ValidationFailedError("Unknown action", action=body.action)
         challenge = await create_challenge(
             session,
@@ -747,7 +953,7 @@ async def post_reservation_signature_challenge(
             record_id=reservation.id,
             record_version=reservation.version,
             record_hash=reservation_record_hash(reservation),
-            meaning="Released",
+            meaning=meaning,
         )
         return {
             "challenge_id": str(challenge.id),
@@ -770,6 +976,114 @@ async def post_release_reservation(
         if reservation is None:
             raise NotFoundError("Inventory reservation not found")
         return await release_inventory_reservation(session, cmd, actor.user_id, reservation.site_id)
+
+
+@inventory_v1_router.post("/reservations/{reservation_id}/approve-override", response_model=MutationReceipt)
+async def post_approve_reservation_override(
+    reservation_id: uuid.UUID,
+    cmd: ApproveReservationOverrideCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    async with session.begin():
+        reservation = await session.get(InventoryReservation, reservation_id)
+        if reservation is None:
+            raise NotFoundError("Inventory reservation not found")
+        return await approve_reservation_override(session, reservation_id, cmd, actor.user_id, reservation.site_id)
+
+
+@inventory_v1_router.post("/reservations/{reservation_id}/reject-override", response_model=MutationReceipt)
+async def post_reject_reservation_override(
+    reservation_id: uuid.UUID,
+    cmd: RejectReservationOverrideCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    async with session.begin():
+        reservation = await session.get(InventoryReservation, reservation_id)
+        if reservation is None:
+            raise NotFoundError("Inventory reservation not found")
+        return await reject_reservation_override(session, reservation_id, cmd, actor.user_id, reservation.site_id)
+
+
+RESERVATION_SORTABLE = {"created_at": InventoryReservation.created_at, "status": InventoryReservation.status}
+
+
+def _reservation_dict(
+    r: InventoryReservation, internal_lot: str | None, material_code: str, location_code: str | None, requested_by: str
+) -> dict:
+    return {
+        "id": str(r.id),
+        "batch_id": str(r.batch_id),
+        "material_id": str(r.material_id),
+        "material_code": material_code,
+        "material_lot_id": str(r.material_lot_id) if r.material_lot_id else None,
+        "internal_lot": internal_lot,
+        "container_id": str(r.container_id) if r.container_id else None,
+        "location_id": str(r.location_id) if r.location_id else None,
+        "location_code": location_code,
+        "quantity": str(r.quantity),
+        "uom": r.uom,
+        "status": r.status,
+        "fefo_overridden": r.fefo_overridden,
+        "override_reason": r.override_reason,
+        "fefo_default_lot_id": str(r.fefo_default_lot_id) if r.fefo_default_lot_id else None,
+        "requested_by": requested_by,
+        "requested_by_user_id": str(r.requested_by_user_id),
+        "override_approved_by_user_id": str(r.override_approved_by_user_id) if r.override_approved_by_user_id else None,
+        "override_approved_at": r.override_approved_at.isoformat() if r.override_approved_at else None,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+        "version": r.version,
+    }
+
+
+# Client Topic 8 (SG-083): a browsable queue so a QA Releaser can discover and approve/reject a pending
+# FEFO override without going to the database -- same "read alongside the mutating set, no signature/
+# authority implication of its own" precedent as list_adjustment_requests above, built with the
+# actor/site-scope check that endpoint was itself just found missing.
+@inventory_v1_router.get("/reservations")
+async def list_reservations(
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+    params: PageParams = Depends(page_params),
+    status: str | None = None,
+    fefo_overridden: bool | None = None,
+    site_id: uuid.UUID | None = None,
+) -> dict:
+    # QA Releaser holds inventory_reservation.approve_override but not .create -- the requester and the
+    # approver need the same read, so either grant admits this queue.
+    try:
+        site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="inventory_reservation.create")
+    except RoleMissingError:
+        site_scope = await resolve_site_scope(
+            session, actor.user_id, site_id, action="inventory_reservation.approve_override"
+        )
+    stmt = (
+        select(
+            InventoryReservation, MaterialLot.internal_lot, Material.code,
+            WarehouseLocation.location_code, User.username,
+        )
+        .join(Material, Material.id == InventoryReservation.material_id)
+        .outerjoin(MaterialLot, MaterialLot.id == InventoryReservation.material_lot_id)
+        .outerjoin(WarehouseLocation, WarehouseLocation.id == InventoryReservation.location_id)
+        .join(User, User.id == InventoryReservation.requested_by_user_id)
+        .where(InventoryReservation.site_id.in_(site_scope))
+    )
+    if status:
+        stmt = stmt.where(InventoryReservation.status == status)
+    if fefo_overridden is not None:
+        stmt = stmt.where(InventoryReservation.fefo_overridden == fefo_overridden)
+    if params.q:
+        needle = f"%{params.q}%"
+        stmt = stmt.where(or_(MaterialLot.internal_lot.ilike(needle), Material.code.ilike(needle)))
+
+    rows, envelope = await paginate(
+        session, stmt, params, sortable=RESERVATION_SORTABLE, default_sort=InventoryReservation.created_at
+    )
+    return {
+        **envelope,
+        "items": [_reservation_dict(r, lot, code, loc, user) for r, lot, code, loc, user in rows],
+    }
 
 
 @inventory_v1_router.post("/transfers", response_model=MutationReceipt)
@@ -922,14 +1236,37 @@ def _dispensing_dict(order: DispensingOrder) -> dict:
         "id": str(order.id),
         "site_id": str(order.site_id),
         "batch_id": str(order.batch_id),
+        "batch_step_id": str(order.batch_step_id) if order.batch_step_id else None,
         "material_id": str(order.material_id),
+        "material_spec_version_id": str(order.material_spec_version_id) if order.material_spec_version_id else None,
         "target_qty": str(order.target_qty),
         "target_uom": order.target_uom,
+        "target_uom_id": str(order.target_uom_id) if order.target_uom_id else None,
         "tolerance_low": str(order.tolerance_low),
         "tolerance_high": str(order.tolerance_high),
+        "target_from_recipe": order.target_from_recipe,
+        "override_reason": order.override_reason,
+        "overridden_by_user_id": str(order.overridden_by_user_id) if order.overridden_by_user_id else None,
+        "overridden_at": order.overridden_at.isoformat() if order.overridden_at else None,
         "state": order.state,
+        "performed_by_user_id": str(order.performed_by_user_id) if order.performed_by_user_id else None,
+        "requested_by_user_id": str(order.requested_by_user_id),
         "version": order.version,
     }
+
+
+@dispensing_v1_router.post("/orders/{order_id}/override-target", response_model=MutationReceipt)
+async def post_override_target(
+    order_id: uuid.UUID,
+    cmd: OverrideDispensingOrderTargetCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    async with session.begin():
+        order = await session.get(DispensingOrder, order_id)
+        if order is None:
+            raise NotFoundError("Dispensing order not found")
+        return await override_dispensing_order_target(session, order_id, cmd, actor.user_id, order.site_id)
 
 
 @dispensing_v1_router.get("/orders/{order_id}")
@@ -1149,6 +1486,15 @@ class AdjustmentSignatureChallengeRequest(BaseModel):
     action: str = "approve"
 
 
+# Was hardcoded to meaning="Approved" regardless of body.action -- harmless while only "approve" existed,
+# but adding reject (Rejected meaning) would otherwise have signed a rejection decision with sign()'s own
+# challenge.meaning carried onto the immutable Signature row reading "Approved" (SignatureChallenge/sign()
+# in app/modules/signature/service.py -- meaning is set at challenge creation, not decision time). Same
+# per-action permission/meaning dict shape release/router.py's own signature-challenges endpoint uses.
+_ADJUSTMENT_CHALLENGE_PERMISSIONS = {"approve": "inventory_adjustment_request.approve", "reject": "inventory_adjustment_request.reject"}
+_ADJUSTMENT_CHALLENGE_MEANINGS = {"approve": "Approved", "reject": "Rejected"}
+
+
 @inventory_v1_router.post("/adjustments/{request_id}/signature-challenges")
 async def post_adjustment_signature_challenge(
     request_id: uuid.UUID,
@@ -1156,10 +1502,15 @@ async def post_adjustment_signature_challenge(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
+    permission = _ADJUSTMENT_CHALLENGE_PERMISSIONS.get(body.action)
+    meaning = _ADJUSTMENT_CHALLENGE_MEANINGS.get(body.action)
+    if permission is None or meaning is None:
+        raise ValidationFailedError("Unknown or unsigned action", action=body.action)
     async with session.begin():
         request = await session.get(InventoryAdjustmentRequest, request_id)
         if request is None:
             raise NotFoundError("Inventory adjustment request not found")
+        await evaluate_policy(session, actor.user_id, action=permission, site_id=request.site_id)
         challenge = await create_challenge(
             session,
             user_id=actor.user_id,
@@ -1167,7 +1518,7 @@ async def post_adjustment_signature_challenge(
             record_id=request.id,
             record_version=request.version,
             record_hash=inventory_adjustment_request_record_hash(request),
-            meaning="Approved",
+            meaning=meaning,
         )
         return {
             "challenge_id": str(challenge.id),
@@ -1190,6 +1541,20 @@ async def post_approve_adjustment_request(
         return await approve_inventory_adjustment_request(session, request_id, cmd, actor.user_id, request.site_id)
 
 
+@inventory_v1_router.post("/adjustments/{request_id}/reject", response_model=MutationReceipt)
+async def post_reject_adjustment_request(
+    request_id: uuid.UUID,
+    cmd: RejectInventoryAdjustmentRequestCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    async with session.begin():
+        request = await session.get(InventoryAdjustmentRequest, request_id)
+        if request is None:
+            raise NotFoundError("Inventory adjustment request not found")
+        return await reject_inventory_adjustment_request(session, request_id, cmd, actor.user_id, request.site_id)
+
+
 ADJUSTMENT_SORTABLE = {"created_at": InventoryAdjustmentRequest.created_at, "status": InventoryAdjustmentRequest.status}
 
 
@@ -1208,8 +1573,14 @@ def _adjustment_dict(
         "observed_quantity": str(r.observed_quantity),
         "variance": str(r.variance),
         "reason": r.reason,
+        "evidence": r.evidence,
         "status": r.status,
+        "signature_id": str(r.signature_id) if r.signature_id else None,
+        "resulting_transaction_id": str(r.resulting_transaction_id) if r.resulting_transaction_id else None,
         "requested_by": requested_by,
+        "requested_by_user_id": str(r.requested_by_user_id),
+        "approved_by_user_id": str(r.approved_by_user_id) if r.approved_by_user_id else None,
+        "approved_at": r.approved_at.isoformat() if r.approved_at else None,
         "created_at": r.created_at.isoformat() if r.created_at else None,
         "version": r.version,
     }
@@ -1222,9 +1593,17 @@ def _adjustment_dict(
 @inventory_v1_router.get("/adjustments")
 async def list_adjustment_requests(
     session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
     params: PageParams = Depends(page_params),
     status: str | None = None,
+    site_id: uuid.UUID | None = None,
 ) -> dict:
+    # Client Topic 15 class fix (found while building the Topic 8 FEFO-override queue below, same
+    # unauthenticated/unscoped-read defect the earlier security sweep fixed elsewhere in this router):
+    # this endpoint had no actor dependency or evaluate_policy() call at all. inventory_adjustment_
+    # request.create is held by every role that can also see this queue (Operator/Supervisor who can
+    # raise one, QA Releaser who can approve/reject).
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="inventory_adjustment_request.create")
     stmt = (
         select(
             InventoryAdjustmentRequest, MaterialLot.internal_lot, Material.code,
@@ -1234,6 +1613,7 @@ async def list_adjustment_requests(
         .join(Material, Material.id == MaterialLot.material_id)
         .join(WarehouseLocation, WarehouseLocation.id == InventoryAdjustmentRequest.location_id)
         .join(User, User.id == InventoryAdjustmentRequest.requested_by_user_id)
+        .where(InventoryAdjustmentRequest.site_id.in_(site_scope))
     )
     if status:
         stmt = stmt.where(InventoryAdjustmentRequest.status == status)

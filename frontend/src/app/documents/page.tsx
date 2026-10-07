@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   api,
   ApiError,
@@ -8,11 +8,14 @@ import {
   canReleaseDocument,
   formatDate,
   newIdempotencyKey,
+  pagedFetcher,
 } from "@/lib/api";
-import { useMe, useSiteId } from "@/lib/hooks";
+import { useMe, useRequirePermission, useSiteId } from "@/lib/hooks";
+import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -24,6 +27,23 @@ import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 import { WorkflowStatePill } from "@/components/ui/StatePill";
 import { useCommand } from "@/components/qms/QmsDetailShell";
+
+// Matches document_router.py's _document_dict (GET /documents/v1) -- one row per controlled document
+// master, distinct from the version rows looked up per-code below.
+interface DocumentSummary {
+  id: string;
+  site_id: string;
+  document_code: string;
+  document_type: string;
+  owner_subject_id: string;
+  is_external: boolean;
+  external_source: string | null;
+  external_revision: string | null;
+  status: string;
+  created_at: string;
+}
+
+const fetchDocuments = pagedFetcher<DocumentSummary>("/documents/v1");
 
 // Matches app/modules/qms/document_router.py's version dict.
 interface DocumentVersion {
@@ -53,17 +73,20 @@ const DOCUMENT_TYPES = ["sop", "policy", "specification", "work_instruction", "f
 
 type Action = "submit" | "release" | "make_effective" | "obsolete" | "controlled_copy";
 
-// SG-138: no Document 106 policy row for controlled_document_version.release.
+// Document 106 row for controlled_document_version/release (resolved, seed.py) — "Released" by an
+// independent QA Releaser. Backend challenge endpoint: POST /documents/v1/drafts/{id}/signature-challenges
+// (document_router.py, DOCUMENT_VERSION_SIGNATURE_ACTIONS = ("release",)).
 const SIGNATURE_GATED: Action[] = ["release"];
 
 export default function DocumentsPage() {
-  const { me } = useMe();
+  const { me } = useRequirePermission("document.view");
   const [documentCode, setDocumentCode] = useState("");
   const [versions, setVersions] = useState<DocumentVersion[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draftOpen, setDraftOpen] = useState(false);
   const [pending, setPending] = useState<{ version: DocumentVersion; action: Action } | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
 
   async function lookup(code = documentCode) {
     if (!code.trim()) return;
@@ -78,6 +101,46 @@ export default function DocumentsPage() {
       setLoading(false);
     }
   }
+
+  // Deep link from the Workflow Actions bell (`?document_code=<code>`) -- runs the same lookup a manual
+  // search would, landing straight on that document's version list. Reads window.location directly
+  // rather than next/navigation's useSearchParams(), same as recipe-master's own `?openFamily=` deep
+  // link, to avoid opting this page into a Suspense boundary it has no other reason to need.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const linkedCode = params.get("document_code");
+    if (linkedCode) {
+      // One-time hydration from the URL at mount, same precedented shape as
+      // lib/hooks.ts::useApiResource's own initial-load setState.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setDocumentCode(linkedCode);
+      lookup(linkedCode);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const documentColumns: DataTableColumn<DocumentSummary>[] = [
+    {
+      key: "document_code",
+      header: "Code",
+      sortable: true,
+      render: (d) => <span className="font-semibold tabular">{d.document_code}</span>,
+    },
+    { key: "document_type", header: "Type", sortable: true },
+    { key: "status", header: "Status", sortable: true },
+    {
+      key: "external",
+      header: "External",
+      sortable: false,
+      render: (d) => <span className="fs-2 text-muted">{d.is_external ? d.external_source ?? "Yes" : "No"}</span>,
+    },
+    {
+      key: "created_at",
+      header: "Created",
+      sortable: true,
+      render: (d) => <span className="tabular fs-2">{formatDate(d.created_at)}</span>,
+    },
+  ];
 
   function actionsFor(v: DocumentVersion): Action[] {
     switch (v.state) {
@@ -108,10 +171,25 @@ export default function DocumentsPage() {
         }
       />
 
-      <p className="hint mb-4">
-        Document versions are looked up one at a time by document code, rather than browsed as a site-wide
-        list.
-      </p>
+      <Card className="mb-4">
+        <CardHeader title="All documents" />
+        <DataTable
+          columns={documentColumns}
+          fetchPage={fetchDocuments}
+          rowKey={(d) => d.id}
+          searchPlaceholder="Search by document code…"
+          emptyIcon="file-text"
+          emptyMessage="No documents yet - create a draft to get started."
+          defaultSort={{ by: "created_at", dir: "desc" }}
+          reloadToken={reloadToken}
+          onRowClick={(d) => {
+            setDocumentCode(d.document_code);
+            lookup(d.document_code);
+          }}
+        />
+      </Card>
+
+      <p className="hint mb-4">Or look up a specific document&apos;s versions by code below.</p>
 
       <form
         onSubmit={(e) => {
@@ -216,6 +294,7 @@ export default function DocumentsPage() {
             setDraftOpen(false);
             setDocumentCode(code);
             lookup(code);
+            setReloadToken((n) => n + 1);
           }}
         />
       )}
@@ -228,6 +307,7 @@ export default function DocumentsPage() {
           onDone={() => {
             setPending(null);
             lookup();
+            setReloadToken((n) => n + 1);
           }}
         />
       )}
@@ -362,15 +442,6 @@ function ActionModal({
             ...base,
             reviewers: [{ subject_id: reviewer, role: "reviewer" }],
           });
-        case "release":
-          return api.post(`/documents/v1/drafts/${version.id}/release`, {
-            ...base,
-            review_completed: true,
-            effective_from: effectiveFrom ? new Date(effectiveFrom).toISOString() : null,
-            periodic_review_due: periodicReview ? new Date(periodicReview).toISOString() : null,
-            training_impact: { required: trainingRequired },
-            acknowledgment_required: acknowledgmentRequired,
-          });
         case "make_effective":
           return api.post(`/documents/v1/versions/${version.id}/make-effective`, {
             ...base,
@@ -388,27 +459,30 @@ function ActionModal({
             recipient,
             location: location || null,
           });
+        default:
+          // "release" is signature-gated and never reaches this form — see the early return below
+          // that renders <SignatureCeremony> for it instead.
+          throw new Error(`${action} does not submit through the plain form`);
       }
     });
   }
 
-  return (
-    <Modal open onClose={onClose} title={`${ACTION_LABEL[action]} - ${version.document_code} ${version.version_label}`}>
-      <form onSubmit={submit}>
-        {SIGNATURE_GATED.includes(action) && (
-          <Banner tone="warn" title="This transition requires an electronic signature">
-            This action needs a signature policy that hasn&apos;t been configured for this deployment yet, so it will be
-            correctly refused rather than proceeding without one.
-          </Banner>
-        )}
-
-        {action === "submit" && (
-          <Field label="Reviewer (user ID)" required hint="SOD-005: the author should not approve their own document.">
-            <Input value={reviewer} onChange={(e) => setReviewer(e.target.value)} required autoFocus />
-          </Field>
-        )}
-
-        {action === "release" && (
+  // Document 106 row (controlled_document_version/release): "Released" by an independent QA Releaser,
+  // via the shared Part 11 ceremony (challenge -> password re-entry -> signed mutation) — same pattern
+  // as the deviations/CAPA detail pages' close.
+  if (action === "release") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`/documents/v1/drafts/${version.id}/signature-challenges`}
+        action="release"
+        title={`Release - ${version.document_code} ${version.version_label}`}
+        summary="Releases this document version. This is a released quality decision - signer must be independent of the record's author."
+        submitLabel="Sign & release"
+        submitVariant="success"
+        extraFields={
           <>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Effective from">
@@ -431,6 +505,32 @@ function ActionModal({
               Read-and-understood acknowledgment required
             </label>
           </>
+        }
+        onSign={(p) =>
+          api.post(`/documents/v1/drafts/${version.id}/release`, {
+            idempotency_key: p.idempotency_key,
+            document_version_id: version.id,
+            expected_version: version.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+            review_completed: true,
+            effective_from: effectiveFrom ? new Date(effectiveFrom).toISOString() : null,
+            periodic_review_due: periodicReview ? new Date(periodicReview).toISOString() : null,
+            training_impact: { required: trainingRequired },
+            acknowledgment_required: acknowledgmentRequired,
+          })
+        }
+      />
+    );
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`${ACTION_LABEL[action]} - ${version.document_code} ${version.version_label}`}>
+      <form onSubmit={submit}>
+        {action === "submit" && (
+          <Field label="Reviewer (user ID)" required hint="SOD-005: the author should not approve their own document.">
+            <Input value={reviewer} onChange={(e) => setReviewer(e.target.value)} required autoFocus />
+          </Field>
         )}
 
         {action === "make_effective" && (

@@ -126,6 +126,12 @@ export interface DdcpOp {
    * the operator to copy it from the previous op's result banner. Session-local only (ExecutionCard
    * state) — there is no backend list endpoint for these sub-resources to source it from instead. */
   producesRecordKind?: string;
+  /** Client Topic 12 (SG-148, project-owner-directed): this op now requires a real Part 11 signature
+   * (`POST {family.prefix}/signature-challenges`, body `{record_type, action, record_id?, batch_id?}`).
+   * `idField` names the field in this op's own `fields` carrying the existing record's id (e.g.
+   * `handoff_id`, `fill_operation_id`) — omit for the one case where the signed record doesn't exist yet
+   * (`fill_operation`/`start`), where `batchIdField` (always `"batch_id"` today) is sent instead. */
+  signedAction?: { recordType: string; action: string; idField?: string; batchIdField?: string };
 }
 
 export interface DdcpFamily {
@@ -218,6 +224,7 @@ const pfs: DdcpFamily = {
       label: "Accept or reject a constituent handoff",
  about: "Decide a pending handoff accepting checks the source is released and (optionally) meets the profile's requirement for this component.",
       group: "Constituent handoffs",
+      signedAction: { recordType: "constituent_handoff", action: "decide", idField: "handoff_id" },
       fields: [
  { name: "handoff_id", label: "Handoff ID", type: "recordSelect", recordKind: "pfs_handoff", pickerKind: "handoff", required: true, hint: "Picked from handoffs recorded earlier this session or enter one manually." },
  { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1", hint: "The handoff's current version auto-filled when picked above from a record this session already knows about; prevents overwriting someone else's change." },
@@ -233,6 +240,7 @@ const pfs: DdcpFamily = {
  about: "Begin filling the batch's constituent handoffs must already be accepted and ready.",
       group: "Fill operations",
       producesRecordKind: "pfs_fill_operation",
+      signedAction: { recordType: "fill_operation", action: "start", batchIdField: "batch_id" },
       fields: [
         { name: "batch_id", label: "Batch", type: "batchSelect", required: true },
         { name: "profile_version_id", label: "Released profile", type: "profileSelect", required: true, hint: "The RELEASED profile version this fill run follows." },
@@ -282,6 +290,7 @@ const pfs: DdcpFamily = {
       label: "Complete a fill operation",
  about: "Finish filling at least one FILLED count must already be recorded and no hold left open.",
       group: "Fill operations",
+      signedAction: { recordType: "fill_operation", action: "complete", idField: "fill_operation_id" },
       fields: [
  { name: "fill_operation_id", label: "Fill operation ID", type: "recordSelect", recordKind: "pfs_fill_operation", pickerKind: "fill operation", required: true, hint: "Picked from fill operations started earlier this session or enter one manually." },
  { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1", hint: "Auto-filled when picked above from a record this session already knows about re-check it if an earlier action on this same record failed, or you entered the ID manually." },

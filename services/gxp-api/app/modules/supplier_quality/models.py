@@ -19,6 +19,8 @@ class Supplier(Base):
     carries SUP-FR-002's supplier-vs-manufacturer distinction; Document 18 defines no separate manufacturer
     table. No `tenant_id` (ADR-0006, single-organization platform -- same deviation as every other additive
     module). No `site_id`: a supplier is an org-wide legal identity; its sites are `SupplierSite` rows.
+    `role_type` additionally allows "service_provider" (Client gap-analysis Phase 6) for a
+    calibration/repair/test-lab vendor that is neither a material supplier nor a manufacturer.
     """
 
     __tablename__ = "supplier"
@@ -27,7 +29,7 @@ class Supplier(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     supplier_code: Mapped[str] = mapped_column(String(120), nullable=False)
     legal_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    role_type: Mapped[str] = mapped_column(String(40), nullable=False)  # supplier | manufacturer | both
+    role_type: Mapped[str] = mapped_column(String(40), nullable=False)  # supplier | manufacturer | both | service_provider
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="draft")
     country: Mapped[str | None] = mapped_column(String(80))
     external_mappings: Mapped[dict | None] = mapped_column(JSONB)
@@ -97,6 +99,31 @@ class SupplierQualification(Base):
     )
     approval_signatures: Mapped[dict | None] = mapped_column(JSONB)
     version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class SupplierQualificationScopeItem(Base):
+    """Client gap-analysis Phase 3 (2026-10-05): structured scope -- which specific materials this
+    qualification covers, FK'd to the real `materials.materials` row instead of the free-text label/value
+    pairs `SupplierQualification.scope` (JSONB, kept for any notes that don't map to a specific material).
+    This is also the MAT-003 "Approved Supplier List" material-to-approved-supplier relationship named in
+    the architecture rules extract -- not a bespoke UI-only table. Immutable-after-creation, same lifecycle
+    as `scope` itself today (set once in `create_supplier_qualification`, no edit path exists for either)."""
+
+    __tablename__ = "supplier_qualification_scope_item"
+    __table_args__ = (
+        UniqueConstraint("supplier_qualification_id", "material_id"),
+        Index("ix_supplier_qualification_scope_item_qual", "supplier_qualification_id"),
+        {"schema": "ebmr"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    supplier_qualification_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ebmr.supplier_qualification.id"), nullable=False
+    )
+    material_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("materials.materials.id"), nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 

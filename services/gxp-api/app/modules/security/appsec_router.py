@@ -18,6 +18,10 @@ from app.mutation.schemas import MutationReceipt
 
 router = APIRouter(prefix="/security/v1", tags=["security-appsec"])
 
+# SG-213 reviewed: all 3 evaluate_policy calls below use site_id=None intentionally.
+# api_security_policy/outbound_destination/webhook_profile carry no site_id column -- Document 64
+# never lists a site field on any of its 3 tables (see appsec_models.py module docstring).
+
 
 @router.post("/outbound-destinations", response_model=MutationReceipt)
 async def post_register_outbound_destination(

@@ -10,10 +10,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
 
+from app.core.config import settings
 from app.core.db import SessionLocal, assert_single_organization
 from app.modules.ai_governance.router import router as ai_governance_router
 from app.modules.audit.router import router as audit_router
-from app.modules.batch.router import router as batch_router
 from app.modules.batch_execution.router import router as batch_execution_router
 from app.modules.dataops.router import router as dataops_router
 from app.modules.ddcp.coated_device_router import router as coated_device_router
@@ -25,6 +25,7 @@ from app.modules.disaster_recovery.router import router as disaster_recovery_rou
 from app.modules.edge.router import router as edge_router
 from app.modules.equipment.aseptic_router import router as aseptic_router
 from app.modules.equipment.cleaning_router import line_clearance_router
+from app.modules.dashboard.router import router as dashboard_router
 from app.modules.equipment.cleaning_router import router as cleaning_router
 from app.modules.equipment.em_router import router as em_router
 from app.modules.equipment.router import router as equipment_router
@@ -37,6 +38,7 @@ from app.modules.eventbus import outbox as eventbus_outbox
 from app.modules.evidence.router import router as evidence_router
 from app.modules.genealogy.router import router as genealogy_router
 from app.modules.iam.router import (
+    onboarding_router,
     organization_router,
     permissions_router,
     policy_router,
@@ -55,11 +57,11 @@ from app.modules.material.router import router as material_router
 from app.modules.material.router import sampling_orders_router as material_sampling_orders_router
 from app.modules.material.router import v1_router as material_v1_router
 from app.modules.material_specification.router import router as material_specification_router
+from app.modules.notifications import consumer as notifications_consumer
 from app.modules.packaging.router import router as packaging_router
 from app.modules.postmarket.obligation_router import router as postmarket_obligation_router
 from app.modules.postmarket.reportability_router import router as postmarket_reportability_router
 from app.modules.postmarket.router import router as postmarket_router
-from app.modules.product.router import router as product_router
 from app.modules.product_master.router import router as product_master_router
 from app.modules.qa_review.router import router as qa_review_router
 from app.modules.qc.router import oos_router
@@ -79,7 +81,6 @@ from app.modules.qms.training_router import training_router
 from app.modules.readmodels import projector as readmodels_projector
 from app.modules.readmodels.router import platform_router as readmodels_platform_router
 from app.modules.readmodels.router import reports_router, search_router
-from app.modules.recipe.router import router as recipe_router
 from app.modules.recipe_master.router import router as recipe_master_router
 from app.modules.release.router import router as release_router
 from app.modules.rules.router import router as rules_router
@@ -102,6 +103,7 @@ from app.modules.yield_reconciliation.router import router as yield_reconciliati
 from app.mutation.errors import DependencyUnavailableError, GxPError
 
 logger = logging.getLogger("gxp_api.outbox")
+startup_logger = logging.getLogger("gxp_api.startup")
 
 
 async def outbox_publisher_loop() -> None:
@@ -152,6 +154,12 @@ async def lifespan(app: FastAPI):
     erp_consumer_stop = asyncio.Event()
     erp_consumer_task = asyncio.create_task(erp_consumer.run(stop_event=erp_consumer_stop))
 
+    # Workflow Handoff Notifications (project-owner-directed): the third real at-least-once consumer,
+    # same fail-open posture as the two above -- one task fans out to one durable pull consumer per
+    # registered aggregate type (app/modules/notifications/registry.py).
+    notifications_consumer_stop = asyncio.Event()
+    notifications_consumer_task = asyncio.create_task(notifications_consumer.run(stop_event=notifications_consumer_stop))
+
     # WP-11 Stage 2 (ADR-0011): connect to Temporal and start its worker, same fail-open posture as
     # NATS above -- AG-10 makes Temporal orchestration, never regulatory truth, so its unavailability
     # must not block the regulated API from starting or serving requests.
@@ -170,6 +178,8 @@ async def lifespan(app: FastAPI):
     await readmodels_consumer_task
     erp_consumer_stop.set()
     await erp_consumer_task
+    notifications_consumer_stop.set()
+    await notifications_consumer_task
     await eventbus_jetstream.close()
     worker_stop_event.set()
     if worker_task is not None:
@@ -179,16 +189,30 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="eBMR GxP Core", version="0.1.0", lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    # Dev-only: the frontend can be reached via localhost, a LAN IP, or a public IP/hostname
-    # depending on how this box is accessed, so match any origin on its port rather than one
-    # fixed hostname. Tighten this to an explicit allowlist before any non-dev deployment.
-    allow_origin_regex=r"^https?://[^/]+:4101$",
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+if settings.cors_allowed_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[o.strip() for o in settings.cors_allowed_origins.split(",") if o.strip()],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    startup_logger.warning(
+        "GXP_CORS_ALLOWED_ORIGINS is not set -- falling back to a dev-only CORS policy that accepts any "
+        "hostname on port 4101 (allow_credentials=True). Set GXP_CORS_ALLOWED_ORIGINS to a comma-"
+        "separated explicit origin allowlist before any non-dev deployment."
+    )
+    app.add_middleware(
+        CORSMiddleware,
+        # Dev-only: the frontend can be reached via localhost, a LAN IP, or a public IP/hostname
+        # depending on how this box is accessed, so match any origin on its port rather than one
+        # fixed hostname. Tighten this to an explicit allowlist before any non-dev deployment.
+        allow_origin_regex=r"^https?://[^/]+:4101$",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 # Document 64 (SPEC-SEC-004) APPSEC-FR-026: browser-hardening response headers on every response.
@@ -302,20 +326,14 @@ async def healthz() -> dict:
 
 
 app.include_router(iam_router)
+app.include_router(onboarding_router)
 app.include_router(organization_router)
 app.include_router(sites_router)
 app.include_router(users_router)
 app.include_router(roles_router)
 app.include_router(permissions_router)
 app.include_router(policy_router)
-app.include_router(product_router)
-app.include_router(recipe_router)
-# batch_execution_router (prefix /batches/v1) must be registered before batch_router (prefix /batches) --
-# Starlette matches routes in registration order across the whole app, and legacy's GET /batches/{batch_id}
-# would otherwise shadow this module's exact GET /batches/v1 (batch_id="v1" fails UUID parsing instead of
-# falling through to the next route).
 app.include_router(batch_execution_router)
-app.include_router(batch_router)
 app.include_router(material_router)
 app.include_router(material_lots_router)
 app.include_router(material_v1_router)
@@ -356,6 +374,7 @@ app.include_router(qc_router)
 app.include_router(oos_router)
 app.include_router(lims_integration_router)
 app.include_router(equipment_router)
+app.include_router(dashboard_router)
 app.include_router(cleaning_router)
 app.include_router(line_clearance_router)
 app.include_router(em_router)

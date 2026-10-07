@@ -1,18 +1,19 @@
 "use client";
 
-import { useState } from "react";
-import { api, holdsAnyRole, newIdempotencyKey, type Me, type MutationReceipt } from "@/lib/api";
-import { useApiResource, useMe, useSiteId } from "@/lib/hooks";
+import { useEffect, useState } from "react";
+import { api, hasPermission, newIdempotencyKey, pagedFetcher, type Me, type MutationReceipt } from "@/lib/api";
+import { useApiResource, useMe, useSiteId, type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
 import { useCommand } from "@/components/shared/RecordDetailShell";
 import { Fact, IdFact, OpsRecordPage, type OpsRecordConfig } from "@/components/shared/OpsRecordPage";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeader } from "@/components/ui/Card";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { Field } from "@/components/ui/Field";
 import { Icon } from "@/components/ui/Icon";
 import { Input } from "@/components/ui/Input";
 import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
-import { StatePill, type DesignState } from "@/components/ui/StatePill";
+import { StatePill, WorkflowStatePill, type DesignState } from "@/components/ui/StatePill";
 import { Table, EmptyState } from "@/components/ui/Table";
 
 const PROFILE_STATE: Record<string, { state: DesignState; label: string }> = {
@@ -24,6 +25,16 @@ interface AsepticOperation {
   id: string;
   site_id: string;
   area_id: string;
+  // Resolved server-side (aseptic_router._resolve_operation_refs) so the UI never has to show a raw id —
+  // null only when the referenced record itself couldn't be resolved.
+  area_code: string | null;
+  batch_id: string | null;
+  batch_number: string | null;
+  batch_product_name: string | null;
+  batch_product_code: string | null;
+  profile_version_id: string;
+  profile_number: string | null;
+  profile_version_no: number | null;
   state: string;
   media_fill_reference: Record<string, unknown> | null;
   qc_test_order_id: string | null;
@@ -32,8 +43,15 @@ interface AsepticOperation {
   version: number;
 }
 
-const canOperate = (me: Me | null) =>
-  holdsAnyRole(me, ["Admin", "Aseptic Operator", "Aseptic Supervisor", "Operator", "Supervisor"]);
+// aseptic_operation.create / .intervention / .event / .complete (Document 40) — Admin + Aseptic Operator
+// only per scripts/seed.py. aseptic_operation.start is a SEPARATE, deliberate SoD split: Admin + Aseptic
+// Supervisor only (the operator who performs the run must not also be the one who authorizes its start).
+// Audit finding 2026-09-18: this single canOperate previously covered all five transitions with one
+// over-broad role list (including Operator/Supervisor, who hold none of these grants, and Aseptic
+// Operator on "start", which the backend deliberately denies them), breaking the documented split at the
+// UI level even though the backend still enforces it correctly.
+const canOperate = (me: Me | null) => hasPermission(me, "aseptic_operation.create");
+const canStart = (me: Me | null) => hasPermission(me, "aseptic_operation.start");
 
 // Document 40's own 7-op API list has no create/release operation for the sterile process *profile*
 // itself (only the *operation* that executes against one) — POST /aseptic/v1/profiles was added
@@ -41,7 +59,7 @@ const canOperate = (me: Me | null) =>
 // (frontend/src/app/product-master/page.tsx) has more than the one seeded ASP-PROC-001 row to choose
 // from. Admin + Aseptic Supervisor only (scripts/seed.py aseptic_profile_version.create) — same
 // "who defines the profile vs who executes against it" split as the rest of this page.
-const canCreateProfile = (me: Me | null) => holdsAnyRole(me, ["Admin", "Aseptic Supervisor"]);
+const canCreateProfile = (me: Me | null) => hasPermission(me, "aseptic_profile_version.create");
 
 const AREA_CLASSIFICATIONS = ["ISO_5", "ISO_6", "ISO_7", "ISO_8", "Unclassified"];
 
@@ -246,7 +264,46 @@ function ProfileListCard({
   );
 }
 
-const config: OpsRecordConfig<AsepticOperation> = {
+// GET /sterilization/v1/items/eligible?site_id=... — real picker data for "Sterile input references",
+// shared with DDCP's own "Sterilization/depyrogenation reference" (the endpoint's own docstring names
+// that as its first caller). Plain array, not the paginated envelope `listAll` expects
+// (`get_eligible_items` returns `list[dict]` directly). Lists exactly the two kinds the module's own
+// polymorphic `get_item_status()` would report as ready — a `SterilizationLoadItem` at `sterile_status
+// eligible`, or a `SterileFilterUse` at `state completed` (that second half is currently always empty in
+// practice — `SterileFilterUse.state` never actually reaches literal `"completed"` in this codebase, a
+// pre-existing quirk documented in `docs/testing/Sterilization_Aseptic_Comprehensive_Test_Manual_
+// Gujarati.md` §14 #7 — load items are the real, working path). Local to this page only, not promoted to
+// `useEntityOptions()`, since no other page needs it yet.
+function useEligibleSterileItems(siteId: string | null): { options: EntityOption[]; status: EntityOptionsStatus } {
+  const [options, setOptions] = useState<EntityOption[]>([]);
+  const [status, setStatus] = useState<EntityOptionsStatus>("loading");
+
+  useEffect(() => {
+    if (!siteId) return;
+    let cancelled = false;
+    api
+      .get<{ id: string; kind: string; label: string }[]>(`/sterilization/v1/items/eligible?site_id=${siteId}`)
+      .then((rows) => {
+        if (cancelled) return;
+        setOptions(rows.map((r) => ({ value: r.id, label: r.label })));
+        setStatus(rows.length ? "ready" : "empty");
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [siteId]);
+
+  return { options, status };
+}
+
+function buildConfig(
+  sterileItemOptions: EntityOption[],
+  sterileItemOptionsStatus: EntityOptionsStatus,
+): OpsRecordConfig<AsepticOperation> {
+  return {
   title: "Aseptic operations",
   subtitle: "Aseptic processing operations: setup, live execution, interventions and completion.",
   idLabel: "Aseptic operation ID",
@@ -266,7 +323,13 @@ const config: OpsRecordConfig<AsepticOperation> = {
         type: "repeat",
         itemLabel: "Sterile input",
         hint: "The sterile components (filters, containers, …) this operation depends on - each must already be eligible.",
-        subFields: [{ name: "item_id", label: "Sterile item ID", required: true }],
+        subFields: [
+          {
+            name: "item_id", label: "Sterile item ID", required: true,
+            type: "customSelect", options: sterileItemOptions, optionsStatus: sterileItemOptionsStatus,
+            optionsNoun: "sterile input",
+          },
+        ],
       },
       { name: "media_fill_reference", label: "Media fill reference", type: "kv", hint: "Set these when this operation is a media fill run." },
     ],
@@ -289,7 +352,15 @@ const config: OpsRecordConfig<AsepticOperation> = {
         {r.requires_deviation ? <StatePill state="failed" icon="alert-triangle">Yes</StatePill> : "No"}
       </Fact>
       <Fact label="Record version">{r.version}</Fact>
-      <IdFact label="Area" value={r.area_id} />
+      <Fact label="Area">{r.area_code ?? r.area_id}</Fact>
+      <Fact label="Aseptic profile">
+        {r.profile_number ? `${r.profile_number} v${r.profile_version_no}` : r.profile_version_id}
+      </Fact>
+      {r.batch_id && (
+        <Fact label="Batch">
+          {r.batch_number ? `${r.batch_number} - ${r.batch_product_name} (${r.batch_product_code})` : r.batch_id}
+        </Fact>
+      )}
       <IdFact label="QC test order" value={r.qc_test_order_id} />
       <IdFact label="QC result" value={r.qc_result_id} />
     </>
@@ -301,7 +372,7 @@ const config: OpsRecordConfig<AsepticOperation> = {
       signed: true,
       challengeAction: "start",
       variant: "primary",
-      can: canOperate,
+      can: canStart,
       summary: "Starts the aseptic operation. Area, personnel and sterile-input checks must already pass.",
       buildBody: (r) => ({ operation_id: r.id, expected_version: r.version }),
     },
@@ -384,11 +455,78 @@ const config: OpsRecordConfig<AsepticOperation> = {
       }),
     },
   ],
-};
+  };
+}
+
+// Same shape as sterilization_router/page.tsx's own `cycleColumns`/`CycleListCard` — a dedicated "Open"
+// button alongside the row's own `onRowClick` since a row that merely looks clickable is easy to miss.
+function operationColumns(onOpen: (id: string) => void): DataTableColumn<AsepticOperation>[] {
+  return [
+    {
+      key: "id",
+      header: "Aseptic operation",
+      sortable: true,
+      render: (r) => <span className="fs-2">Aseptic op {r.id.slice(0, 8)}…</span>,
+    },
+    { key: "area_code", header: "Area", render: (r) => <span className="fs-2">{r.area_code ?? r.area_id}</span> },
+    {
+      key: "profile_number",
+      header: "Aseptic profile",
+      render: (r) => <span className="fs-2">{r.profile_number ? `${r.profile_number} v${r.profile_version_no}` : r.profile_version_id}</span>,
+    },
+    { key: "state", header: "State", sortable: true, render: (r) => <WorkflowStatePill state={r.state} /> },
+    {
+      key: "requires_deviation",
+      header: "Requires deviation",
+      render: (r) => (r.requires_deviation ? <StatePill state="failed" icon="alert-triangle">Yes</StatePill> : "No"),
+    },
+    {
+      key: "open",
+      header: "",
+      align: "right",
+      render: (r) => (
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpen(r.id);
+          }}
+        >
+          Open
+        </Button>
+      ),
+    },
+  ];
+}
+
+function OperationListCard({ siteId, reloadToken, onOpen }: { siteId: string | null; reloadToken: number; onOpen: (id: string) => void }) {
+  const fetchOperations = pagedFetcher<AsepticOperation>("/aseptic/v1/operations", () => ({ site_id: siteId ?? "" }));
+  return (
+    <Card pad className="mb-4">
+      <CardHeader title="Aseptic operations" meta="" />
+      {siteId ? (
+        <DataTable
+          columns={operationColumns(onOpen)}
+          fetchPage={fetchOperations}
+          rowKey={(r) => r.id}
+          searchPlaceholder="Search state…"
+          emptyMessage={<>No aseptic operations yet - use &quot;Create aseptic operation&quot; above to add one.</>}
+          defaultSort={{ by: "created_at", dir: "desc" }}
+          onRowClick={(r) => onOpen(r.id)}
+          reloadToken={reloadToken}
+        />
+      ) : (
+        <p className="hint mt-2">Loading…</p>
+      )}
+    </Card>
+  );
+}
 
 export default function AsepticPage() {
   const { me } = useMe();
   const { siteId } = useSiteId();
+  const [reloadToken, setReloadToken] = useState(0);
   const [newProfileOpen, setNewProfileOpen] = useState(false);
   const [supersedeTarget, setSupersedeTarget] = useState<AsepticProfile | null>(null);
   const {
@@ -396,12 +534,16 @@ export default function AsepticPage() {
     loading: profilesLoading,
     reload: reloadProfiles,
   } = useApiResource<AsepticProfile[]>(siteId ? `/aseptic/v1/profiles?site_id=${siteId}` : null);
+  const sterileItems = useEligibleSterileItems(siteId);
+  const config = buildConfig(sterileItems.options, sterileItems.status);
 
   return (
     <>
       <OpsRecordPage
         config={config}
         collapseCreate
+        detailInModal
+        hideLookup
         headerAction={
           canCreateProfile(me) ? (
             <Button variant="secondary" onClick={() => setNewProfileOpen(true)}>
@@ -409,14 +551,18 @@ export default function AsepticPage() {
             </Button>
           ) : undefined
         }
-        afterHeader={
-          <ProfileListCard
-            profiles={profiles}
-            loading={profilesLoading}
-            canManage={canCreateProfile(me)}
-            onSupersede={setSupersedeTarget}
-          />
-        }
+        afterHeader={(openRecord) => (
+          <>
+            <ProfileListCard
+              profiles={profiles}
+              loading={profilesLoading}
+              canManage={canCreateProfile(me)}
+              onSupersede={setSupersedeTarget}
+            />
+            <OperationListCard siteId={siteId} reloadToken={reloadToken} onOpen={openRecord} />
+          </>
+        )}
+        onCreated={() => setReloadToken((n) => n + 1)}
       />
       {newProfileOpen && (
         <NewProfileModal

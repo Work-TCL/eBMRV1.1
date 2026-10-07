@@ -11,12 +11,30 @@ from sqlalchemy import select
 
 from app.modules.equipment.sterilization_models import SterilizationLoadItem
 from tests.conftest import auth_headers, idem, login
+from tests.test_batch_execution import _create_body, _released_pair
+
+
+async def _create_equipment_class(client):
+    # equipment_class_id is now required/validated at creation (bug fix) -- a real class row is needed.
+    pe_token = await login(client, "process.engineer")
+    resp = await client.post(
+        "/recipes/v2/equipment-classes",
+        json={"idempotency_key": idem(), "class_code": f"CLASS-{uuid.uuid4().hex[:12]}", "name": "Test class"},
+        headers=auth_headers(pe_token),
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()["aggregate_id"]
 
 
 async def _create_and_qualify_equipment(client, site_id, code="EQP-ASP-1"):
     admin_token = await login(client, "equipment.admin")
+    equipment_class_id = await _create_equipment_class(client)
     resp = await client.post(
-        "/equipment/v1/assets", json={"idempotency_key": idem(), "site_id": str(site_id), "equipment_code": code},
+        "/equipment/v1/assets",
+        json={
+            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id, "is_computer_operated": False,
+            "equipment_code": code,
+        },
         headers=auth_headers(admin_token),
     )
     assert resp.status_code == 200, resp.text
@@ -134,7 +152,7 @@ async def test_full_operation_lifecycle_ready_area_starts_and_completes(client, 
     # Cross-module payoff: this composes real Document 41 EM readiness, the Document 39 line-clearance
     # helper added this pass, real Document 38 equipment eligibility and real Document 42 sterile-item
     # status -- not stubs.
-    readiness = (await client.get(f"/aseptic/v1/operations/{operation_id}/readiness")).json()
+    readiness = (await client.get(f"/aseptic/v1/operations/{operation_id}/readiness", headers=auth_headers(supervisor_token))).json()
     assert readiness["ready"] is True, readiness
     assert readiness["em_readiness"]["status"] == "READY"
     assert readiness["line_clearance"]["cleared"] is True
@@ -150,7 +168,7 @@ async def test_full_operation_lifecycle_ready_area_starts_and_completes(client, 
         headers=auth_headers(supervisor_token),
     )
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/aseptic/v1/operations/{operation_id}")).json()
+    detail = (await client.get(f"/aseptic/v1/operations/{operation_id}", headers=auth_headers(supervisor_token))).json()
     assert detail["state"] == "EXECUTION"
 
     resp = await client.post(
@@ -176,10 +194,10 @@ async def test_full_operation_lifecycle_ready_area_starts_and_completes(client, 
         headers=auth_headers(op_token),
     )
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/aseptic/v1/operations/{operation_id}")).json()
+    detail = (await client.get(f"/aseptic/v1/operations/{operation_id}", headers=auth_headers(supervisor_token))).json()
     assert detail["state"] == "ASEPTIC_COMPLETE"
 
-    summary = (await client.get(f"/aseptic/v1/operations/{operation_id}/review-summary")).json()
+    summary = (await client.get(f"/aseptic/v1/operations/{operation_id}/review-summary", headers=auth_headers(supervisor_token))).json()
     assert summary["state"] == "ASEPTIC_COMPLETE"
     assert summary["requires_deviation"] is False
     assert summary["unplanned_intervention_count"] == 0
@@ -195,8 +213,13 @@ async def test_start_with_unready_area_rejected(client, seeded):
     supervisor_token = await login(client, "aseptic.supervisor")
 
     admin_token = await login(client, "equipment.admin")
+    equipment_class_id = await _create_equipment_class(client)
     resp = await client.post(
-        "/equipment/v1/assets", json={"idempotency_key": idem(), "site_id": str(site_id), "equipment_code": "EQP-ASP-UNQUAL"},
+        "/equipment/v1/assets",
+        json={
+            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id, "is_computer_operated": False,
+            "equipment_code": "EQP-ASP-UNQUAL",
+        },
         headers=auth_headers(admin_token),
     )
     equipment_id = resp.json()["aggregate_id"]
@@ -212,7 +235,7 @@ async def test_start_with_unready_area_rejected(client, seeded):
     assert resp.status_code == 200, resp.text
     operation_id = resp.json()["aggregate_id"]
 
-    readiness = (await client.get(f"/aseptic/v1/operations/{operation_id}/readiness")).json()
+    readiness = (await client.get(f"/aseptic/v1/operations/{operation_id}/readiness", headers=auth_headers(admin_token))).json()
     assert readiness["ready"] is False
     assert readiness["equipment_checks"][0]["eligible"] is False
 
@@ -259,7 +282,7 @@ async def test_unplanned_intervention_holds_operation(client, seeded):
         headers=auth_headers(op_token),
     )
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/aseptic/v1/operations/{operation_id}")).json()
+    detail = (await client.get(f"/aseptic/v1/operations/{operation_id}", headers=auth_headers(op_token))).json()
     assert detail["state"] == "HOLD"
     assert detail["requires_deviation"] is True
 
@@ -297,7 +320,7 @@ async def test_critical_event_holds_operation(client, seeded):
         headers=auth_headers(op_token),
     )
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/aseptic/v1/operations/{operation_id}")).json()
+    detail = (await client.get(f"/aseptic/v1/operations/{operation_id}", headers=auth_headers(op_token))).json()
     assert detail["state"] == "HOLD"
     assert detail["requires_deviation"] is True
 
@@ -470,7 +493,7 @@ async def test_media_fill_reference_captured_at_creation(client, seeded):
     )
     assert resp.status_code == 200, resp.text
     operation_id = resp.json()["aggregate_id"]
-    detail = (await client.get(f"/aseptic/v1/operations/{operation_id}")).json()
+    detail = (await client.get(f"/aseptic/v1/operations/{operation_id}", headers=auth_headers(op_token))).json()
     assert detail["media_fill_reference"] == media_fill_reference
 
 
@@ -568,7 +591,7 @@ async def test_complete_captures_qc_test_order_linkage(client, seeded, db):
         headers=auth_headers(op_token),
     )
     assert resp.status_code == 200, resp.text
-    detail = (await client.get(f"/aseptic/v1/operations/{operation_id}")).json()
+    detail = (await client.get(f"/aseptic/v1/operations/{operation_id}", headers=auth_headers(op_token))).json()
     assert detail["qc_test_order_id"] == str(order_id)
 
 
@@ -754,3 +777,79 @@ async def test_supersede_rejects_stale_version(client, seeded):
     )
     assert resp.status_code == 409
     assert resp.json()["code"] == "STALE_VERSION"
+
+
+async def test_list_operations_paginated_and_resolves_labels(client, seeded, db):
+    """`/aseptic`'s new "Aseptic operations" datatable -- GET /aseptic/v1/operations must return every
+    operation for the site in the shared paginated envelope, with area/profile labels resolved so the UI
+    never shows a raw id."""
+    site_id = seeded["site_id"]
+    area_id = seeded["areas"]["AREA-GRADE-A"].id
+    profile_id = str(seeded["aseptic_profile"].id)
+    op_token = await login(client, "aseptic.operator")
+
+    equipment_id, item_id = await _create_eligible_sterile_load_item(client, db, site_id, str(seeded["sterilization_profile"].id))
+    operation_id = await _create_operation(client, site_id, area_id, profile_id, equipment_id, item_id, op_token)
+
+    resp = await client.get(f"/aseptic/v1/operations?site_id={site_id}", headers=auth_headers(op_token))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert "items" in body and "total" in body
+    row = next(r for r in body["items"] if r["id"] == operation_id)
+    assert row["state"] == "PREPARATION"
+    assert row["area_code"] == "AREA-GRADE-A"
+    assert row["profile_number"] == seeded["aseptic_profile"].profile_number
+
+    other_site_resp = await client.get(f"/aseptic/v1/operations?site_id={uuid.uuid4()}", headers=auth_headers(op_token))
+    assert other_site_resp.status_code == 200
+    assert other_site_resp.json()["items"] == []
+
+
+async def test_list_operations_filters_by_batch_id(client, seeded, db):
+    # Batch Workspace: batch_id is a real column on AsepticOperation but had no filtered read before --
+    # confirms the new optional query param actually scopes the result set. create_operation() doesn't
+    # validate sterile_input_refs/equipment_ids against a real eligible item at creation time (only the
+    # profile version is checked), so this doesn't need the full eligible-sterile-item setup other tests
+    # in this file use.
+    site_id = seeded["site_id"]
+    area_id = seeded["areas"]["AREA-GRADE-A"].id
+    profile_id = str(seeded["aseptic_profile"].id)
+    op_token = await login(client, "aseptic.operator")
+
+    resp = await client.post(
+        "/aseptic/v1/operations",
+        json={
+            "idempotency_key": idem(), "site_id": str(site_id), "area_id": str(area_id),
+            "profile_version_id": profile_id, "equipment_ids": [], "sterile_input_refs": [], "batch_id": None,
+        },
+        headers=auth_headers(op_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    # The `seeded[...]` attribute reads above implicitly autobegin a transaction on `db` (SQLAlchemy
+    # 2.0 autobegin, triggered by an attribute refresh) -- close it before `_released_pair`'s own
+    # `db.begin()`, same fix test_batch_record.py's own tests already needed for this exact shape.
+    await db.commit()
+    admin_token, product_version_id, recipe_version_id = await _released_pair(db, client, seeded, "aspwsfilter")
+    batch_resp = await client.post(
+        "/batches/v1",
+        json=_create_body(site_id, product_version_id, recipe_version_id, "BAT-ASP-WS-FILTER"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = batch_resp.json()["aggregate_id"]
+    resp = await client.post(
+        "/aseptic/v1/operations",
+        json={
+            "idempotency_key": idem(), "site_id": str(site_id), "area_id": str(area_id),
+            "profile_version_id": profile_id, "equipment_ids": [], "sterile_input_refs": [],
+            "batch_id": str(batch_id),
+        },
+        headers=auth_headers(op_token),
+    )
+    assert resp.status_code == 200, resp.text
+    scoped_operation_id = resp.json()["aggregate_id"]
+
+    filtered = (
+        await client.get(f"/aseptic/v1/operations?site_id={site_id}&batch_id={batch_id}", headers=auth_headers(op_token))
+    ).json()
+    assert [r["id"] for r in filtered["items"]] == [scoped_operation_id]

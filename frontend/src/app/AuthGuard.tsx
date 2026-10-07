@@ -1,14 +1,43 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { isLoggedIn, SESSION_EXPIRED_EVENT } from "@/lib/api";
+import { isLoggedIn, isAdminAnywhere, SESSION_EXPIRED_EVENT } from "@/lib/api";
+import { useMe, useOnboardingStatus } from "@/lib/hooks";
 import { AppShell } from "@/components/layout/AppShell";
+
+/** Sends a signed-in Admin to the onboarding wizard until all four steps are done or the admin has
+ * explicitly skipped it (client gap-analysis follow-up, 2026-10-06) -- mounted only once AuthGuard has
+ * already confirmed the user is logged in and off the login route, so `useMe()`/`useOnboardingStatus()`
+ * never fire an extra request on the login page itself. */
+function OnboardingGate({ children }: { children: ReactNode }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const { me, loading: meLoading } = useMe();
+  const { status, loading: statusLoading } = useOnboardingStatus();
+
+  useEffect(() => {
+    // Every "Set up"/"Review" link the wizard and the home-page checklist render points at
+    // /admin/company, /admin/sites, /admin/users or /admin/roles(/[id]) -- exempting the whole /admin
+    // subtree (not just /onboarding itself) is what actually lets those links work. Without it, this
+    // same redirect fired again the instant the admin landed on /admin/company, bouncing them straight
+    // back to /onboarding before they could do anything -- the wizard could send you to a step but
+    // never let you complete it.
+    if (meLoading || statusLoading || pathname === "/onboarding" || pathname.startsWith("/admin")) return;
+    if (isAdminAnywhere(me) && status && !status.all_done && !status.dismissed_at) {
+      router.replace("/onboarding");
+    }
+  }, [me, meLoading, status, statusLoading, pathname, router]);
+
+  return <>{children}</>;
+}
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const isLoginRoute = pathname === "/login";
+  // /accept-invite (client gap-analysis Phase 1, 2026-10-05) is reached from an emailed link by someone
+  // who, by definition, has no session yet -- same public-route treatment as /login.
+  const isLoginRoute = pathname === "/login" || pathname === "/accept-invite";
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -39,5 +68,9 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   if (!ready && !isLoginRoute) return null;
   if (isLoginRoute) return <>{children}</>;
-  return <AppShell>{children}</AppShell>;
+  return (
+    <OnboardingGate>
+      <AppShell>{children}</AppShell>
+    </OnboardingGate>
+  );
 }

@@ -38,6 +38,7 @@ export const ICONS: Record<string, string> = {
   "pen-line": '<path d="M4 20h4L18.5 9.5a2.1 2.1 0 0 0-3-3L5 17v3z"/><line x1="14" y1="7" x2="17" y2="10"/>',
   camera: '<path d="M3.5 8.5h3.2l1.6-2.5h7.4l1.6 2.5h3.2v10h-17z"/><circle cx="12" cy="13.5" r="3.5"/>',
   download: '<line x1="12" y1="4" x2="12" y2="15"/><polyline points="7.5,10.5 12,15 16.5,10.5"/><path d="M4.5 18v2h15v-2"/>',
+  upload: '<line x1="12" y1="15" x2="12" y2="4"/><polyline points="7.5,8.5 12,4 16.5,8.5"/><path d="M4.5 18v2h15v-2"/>',
   "file-plus-2": '<path d="M6 3.5h7l5 5V20a.5.5 0 0 1-.5.5h-11A.5.5 0 0 1 6 20z"/><polyline points="13,3.5 13,9 18.5,9"/><line x1="12" y1="12" x2="12" y2="17"/><line x1="9.5" y1="14.5" x2="14.5" y2="14.5"/>',
   "shield-check": '<path d="M12 3.5 19 6v6c0 4.5-3 7-7 8.5C8 19 5 16.5 5 12V6z"/><polyline points="9,12 11,14 15,9.5"/>',
   history: '<circle cx="12" cy="13" r="7.5"/><polyline points="12,9 12,13 15,15"/><polyline points="5,4.5 5,8 8.5,8"/><path d="M5.3 8a7.5 7.5 0 0 1 13 1.3"/>',
@@ -56,6 +57,10 @@ export const ICONS: Record<string, string> = {
   clipboard: '<rect x="6" y="5" width="12" height="16" rx="1.5"/><rect x="9" y="3" width="6" height="3.5" rx="1"/>',
   flag: '<line x1="6" y1="3.5" x2="6" y2="20.5"/><path d="M6 4.5h11l-2.5 3.5L17 11.5H6z"/>',
   gauge: '<circle cx="12" cy="13" r="7.5"/><line x1="12" y1="13" x2="15.5" y2="9.5"/><line x1="8" y1="6.5" x2="8.9" y2="7.2"/><line x1="12" y1="5.3" x2="12" y2="6.3"/><line x1="16" y1="6.5" x2="15.1" y2="7.2"/>',
+  tool: '<path d="M14.5 6.5a4 4 0 0 0-5.3 4.6L4 16.3V20h3.7l5.2-5.2a4 4 0 0 0 4.6-5.3l-2.8 2.8-2.2-2.2z"/>',
+  shield: '<path d="M12 3.5 19 6v6c0 4.5-3 7-7 8.5C8 19 5 16.5 5 12V6z"/>',
+  list: '<line x1="9" y1="6.5" x2="20" y2="6.5"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="17.5" x2="20" y2="17.5"/><line x1="4" y1="6.5" x2="4.01" y2="6.5"/><line x1="4" y1="12" x2="4.01" y2="12"/><line x1="4" y1="17.5" x2="4.01" y2="17.5"/>',
+  eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
 };
 
 export type IconName = keyof typeof ICONS;

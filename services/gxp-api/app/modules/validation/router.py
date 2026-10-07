@@ -35,8 +35,10 @@ from app.modules.validation.models import (
     DrQualificationExecution,
     FunctionRiskAssessment,
     InfrastructureFingerprint,
+    InfrastructureQualificationProfile,
     InterfaceValidationProfile,
     IqExecution,
+    IqProtocol,
     OqExecution,
     Part11ScopeAssessment,
     PerformanceRun,
@@ -62,6 +64,18 @@ async def _actor_site(actor: AuthenticatedActor) -> uuid.UUID | None:
     return getattr(actor, "site_id", None)
 
 
+# SG-213 fix: every `evaluate_policy(..., site_id=...)` call below now consults the *record's own*
+# stored `site_id` for single-record actions (fetch first, then check), not a blanket `None`. Most
+# WP-12 entities (Documents 80-82, 84, 88-94, 96) have no `site_id` column at all -- confirmed against
+# `models.py` -- so `site_id=None` on those stays correct as the only value that could ever be right,
+# not an unreviewed leftover. Three entities (`ValidationMasterPlan`, `IqProtocol`,
+# `InfrastructureQualificationProfile`) and their execution/fingerprint children genuinely are
+# site-scoped and are fixed to fetch-then-check below. Note: `AuthenticatedActor` carries no `site_id`
+# of its own (`_actor_site()` is always `None` today), so a bare CREATE of one of those three entities
+# still has no site to check against or stamp -- that gap is pre-existing and outside this fix's scope
+# (see report).
+
+
 # =====================================================================================================
 # Document 79 -- Validation Master Plan & CSA Strategy
 # =====================================================================================================
@@ -73,7 +87,15 @@ async def post_master_plans(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="validation.plan.manage", site_id=None)
+        # An update (plan_id set) must check the existing plan's own site; a create has no site_id in
+        # the command and the actor carries none either (see module-level SG-213 note above).
+        site_id = None
+        if cmd.plan_id is not None:
+            plan = await session.get(ValidationMasterPlan, cmd.plan_id)
+            if plan is None:
+                raise NotFoundError("Validation master plan not found")
+            site_id = plan.site_id
+        await evaluate_policy(session, actor.user_id, action="validation.plan.manage", site_id=site_id)
         return await commands_plan.create_or_update_master_plan(session, cmd, actor.user_id, await _actor_site(actor))
 
 
@@ -84,7 +106,10 @@ async def post_master_plan_release(
 ) -> MutationReceipt:
     cmd.plan_id = plan_id
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="validation.plan.release", site_id=None)
+        plan = await session.get(ValidationMasterPlan, plan_id)
+        if plan is None:
+            raise NotFoundError("Validation master plan not found")
+        await evaluate_policy(session, actor.user_id, action="validation.plan.release", site_id=plan.site_id)
         return await commands_plan.release_master_plan(session, cmd, actor.user_id, await _actor_site(actor))
 
 
@@ -108,7 +133,10 @@ async def get_release_gate(
     plan_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="validation.gate.view", site_id=None)
+        plan = await session.get(ValidationMasterPlan, plan_id)
+        if plan is None:
+            raise NotFoundError("Validation master plan not found")
+        await evaluate_policy(session, actor.user_id, action="validation.gate.view", site_id=plan.site_id)
         return await commands_plan.get_release_gate(session, plan_id)
 
 
@@ -117,7 +145,8 @@ async def get_package(
     scope: str, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="validation.package.view", site_id=None)
+        plan, _ = await commands_plan._package_plan_and_deliverables(session, scope)
+        await evaluate_policy(session, actor.user_id, action="validation.package.view", site_id=plan.site_id)
         return await commands_plan.get_package(session, scope)
 
 
@@ -129,7 +158,8 @@ async def get_package_export(
     """VAL-FR-023: CSV (default) or PDF export of the vendor/customer validation package (SG-169
     resolved 2026-09-01 -- ReportLab, see work-packages/WP-12/14_DEPENDENCY_JUSTIFICATION_SG169.md)."""
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="validation.package.view", site_id=None)
+        plan, _ = await commands_plan._package_plan_and_deliverables(session, scope)
+        await evaluate_policy(session, actor.user_id, action="validation.package.view", site_id=plan.site_id)
         if format == "pdf":
             pdf_bytes = await commands_plan.export_package_pdf(session, scope)
             return Response(
@@ -377,6 +407,8 @@ async def post_iq_protocols(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
+        # IqProtocol.site_id has no input source on create (command carries none, actor carries none) --
+        # see module-level SG-213 note.
         await evaluate_policy(session, actor.user_id, action="validation.iq.manage", site_id=None)
         return await commands_iq.create_iq_protocol(session, cmd, actor.user_id, await _actor_site(actor))
 
@@ -387,7 +419,10 @@ async def post_iq_executions(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="validation.iq.manage", site_id=None)
+        protocol = await session.get(IqProtocol, cmd.protocol_id)
+        if protocol is None:
+            raise NotFoundError("IQ protocol not found")
+        await evaluate_policy(session, actor.user_id, action="validation.iq.manage", site_id=protocol.site_id)
         return await commands_iq.start_iq_execution(session, cmd, actor.user_id, await _actor_site(actor))
 
 
@@ -398,7 +433,13 @@ async def post_iq_executions_complete(
 ) -> MutationReceipt:
     cmd.execution_id = execution_id
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="validation.iq.complete", site_id=None)
+        execution = await session.get(IqExecution, execution_id)
+        if execution is None:
+            raise NotFoundError("IQ execution not found")
+        protocol = await session.get(IqProtocol, execution.protocol_id)
+        if protocol is None:
+            raise NotFoundError("IQ protocol not found")
+        await evaluate_policy(session, actor.user_id, action="validation.iq.complete", site_id=protocol.site_id)
         return await commands_iq.complete_iq_execution(session, cmd, actor.user_id, await _actor_site(actor))
 
 
@@ -409,7 +450,13 @@ async def post_iq_executions_approve(
 ) -> MutationReceipt:
     cmd.execution_id = execution_id
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="validation.iq.approve", site_id=None)
+        execution = await session.get(IqExecution, execution_id)
+        if execution is None:
+            raise NotFoundError("IQ execution not found")
+        protocol = await session.get(IqProtocol, execution.protocol_id)
+        if protocol is None:
+            raise NotFoundError("IQ protocol not found")
+        await evaluate_policy(session, actor.user_id, action="validation.iq.approve", site_id=protocol.site_id)
         return await commands_iq.approve_iq_execution(session, cmd, actor.user_id, await _actor_site(actor))
 
 
@@ -499,6 +546,8 @@ async def post_infrastructure_profiles(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
+        # InfrastructureQualificationProfile.site_id has no input source on create (command carries
+        # none, actor carries none) -- see module-level SG-213 note.
         await evaluate_policy(session, actor.user_id, action="validation.infrastructure.manage", site_id=None)
         return await commands_infra.create_infrastructure_profile(session, cmd, actor.user_id, await _actor_site(actor))
 
@@ -509,7 +558,10 @@ async def post_infrastructure_fingerprints(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="validation.infrastructure.manage", site_id=None)
+        profile = await session.get(InfrastructureQualificationProfile, cmd.profile_id)
+        if profile is None:
+            raise NotFoundError("Infrastructure qualification profile not found")
+        await evaluate_policy(session, actor.user_id, action="validation.infrastructure.manage", site_id=profile.site_id)
         return await commands_infra.capture_infrastructure_fingerprint(session, cmd, actor.user_id, await _actor_site(actor))
 
 
@@ -519,7 +571,13 @@ async def post_infrastructure_tests(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="validation.infrastructure.manage", site_id=None)
+        fingerprint = await session.get(InfrastructureFingerprint, cmd.fingerprint_id)
+        if fingerprint is None:
+            raise NotFoundError("Infrastructure fingerprint not found")
+        profile = await session.get(InfrastructureQualificationProfile, fingerprint.profile_id)
+        if profile is None:
+            raise NotFoundError("Infrastructure qualification profile not found")
+        await evaluate_policy(session, actor.user_id, action="validation.infrastructure.manage", site_id=profile.site_id)
         return await commands_infra.run_infrastructure_control_tests(session, cmd, actor.user_id, await _actor_site(actor))
 
 
@@ -530,7 +588,13 @@ async def post_infrastructure_approve(
 ) -> MutationReceipt:
     cmd.fingerprint_id = fingerprint_id
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="validation.infrastructure.approve", site_id=None)
+        fingerprint = await session.get(InfrastructureFingerprint, fingerprint_id)
+        if fingerprint is None:
+            raise NotFoundError("Infrastructure fingerprint not found")
+        profile = await session.get(InfrastructureQualificationProfile, fingerprint.profile_id)
+        if profile is None:
+            raise NotFoundError("Infrastructure qualification profile not found")
+        await evaluate_policy(session, actor.user_id, action="validation.infrastructure.approve", site_id=profile.site_id)
         return await commands_infra.approve_infrastructure_fingerprint(session, cmd, actor.user_id, await _actor_site(actor))
 
 

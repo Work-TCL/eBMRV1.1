@@ -1,8 +1,16 @@
 "use client";
 
-import { useState } from "react";
-import { api } from "@/lib/api";
-import { useRequireAdmin } from "@/lib/hooks";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  api,
+  canOpenBatchContext,
+  canReleaseSignalMapping,
+  canReplayMachineEvidence,
+  canReviewMachineEvidence,
+  canSubmitMachineCommand,
+} from "@/lib/api";
+import { useMe, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Banner } from "@/components/ui/Banner";
@@ -14,9 +22,28 @@ import { JsonPanel } from "@/components/ui/JsonPanel";
 import { FormConsole } from "@/components/shared/FormConsole";
 import { SignedJsonForm } from "@/components/shared/SignedJsonForm";
 
+/** This console bundles five independently-permissioned domains (batch context: Operator/Supervisor;
+ * signal mapping release: QA Releaser; machine command submission: Equipment Administrator; evidence
+ * replay: Integration Administrator; evidence review: QA Reviewer) -- gating the whole page on Admin
+ * alone (found 2026-09-28) structurally blocked every one of those real permission holders. Gate is now
+ * "any one of the five", then each section below shows only for its own specific holder — same shape as
+ * platform/page.tsx's isAdmin/canEvidence split (2026-09-17 fix, same SG-204 bug class). */
 export default function MachineIntegrationPage() {
-  const { isAdmin } = useRequireAdmin();
-  if (!isAdmin) return null;
+  const { me, loading } = useMe();
+  const router = useRouter();
+  const { siteId } = useSiteId();
+  const canBatchContext = canOpenBatchContext(me);
+  const canSignalMapping = canReleaseSignalMapping(me);
+  const canMachineCommand = canSubmitMachineCommand(me);
+  const canReplay = canReplayMachineEvidence(me);
+  const canReviewEvidence = canReviewMachineEvidence(me);
+  const canOperate = canBatchContext || canSignalMapping || canMachineCommand || canReplay || canReviewEvidence;
+
+  useEffect(() => {
+    if (!loading && !canOperate) router.replace("/batch-execution");
+  }, [me, loading, canOperate, router]);
+
+  if (!canOperate) return null;
 
   return (
     <div>
@@ -32,8 +59,9 @@ export default function MachineIntegrationPage() {
         credential, not a signed-in user session - nothing this admin console can call for them.
       </Banner>
 
-      <ReadCard />
+      <ReadCard canReviewEvidence={canReviewEvidence} />
 
+      {canBatchContext && (
       <FormConsole
         title="Batch context operations"
         root="/machine-integration/v1"
@@ -58,7 +86,9 @@ export default function MachineIntegrationPage() {
           },
         ]}
       />
+      )}
 
+      {canSignalMapping && (
       <SignedJsonForm
         title="Signal mapping release - signed"
         subtitle="A signal mapping must be released before it can back live evidence."
@@ -78,7 +108,9 @@ export default function MachineIntegrationPage() {
           },
         ]}
       />
+      )}
 
+      {canMachineCommand && (
       <SignedJsonForm
         title="Machine command submission - signed"
         subtitle="Only an already-released command profile for this operation code authorizes the command."
@@ -101,7 +133,9 @@ export default function MachineIntegrationPage() {
           },
         ]}
       />
+      )}
 
+      {canReplay && (
       <SignedJsonForm
         title="Historical evidence replay - signed"
         subtitle="Re-processes already-accepted observation events through the routing pipeline (backfill or replay)."
@@ -114,7 +148,7 @@ export default function MachineIntegrationPage() {
             label: "Replay historical evidence",
             mirrorBodyInChallenge: true,
             fields: [
-              { name: "site_id", label: "Site ID", required: true, pathOnly: true },
+              { name: "site_id", label: "Site ID", required: true, pathOnly: true, hint: `This deployment's site ID: ${siteId ?? "loading…"}` },
               { name: "event_ids", label: "Event IDs", type: "stringList", required: true, itemLabel: "Event ID" },
               { name: "mode", label: "Mode", type: "select", required: true, options: [
                 { value: "BACKFILL", label: "Backfill" }, { value: "REPLAY", label: "Replay" }] },
@@ -123,6 +157,7 @@ export default function MachineIntegrationPage() {
           },
         ]}
       />
+      )}
     </div>
   );
 }
@@ -131,7 +166,7 @@ export default function MachineIntegrationPage() {
  * `ReplayHistoricalEvidenceCommand` (it's a separate function argument server-side) — same shape
  * `FormConsole.FormField.pathOnly` already documents. */
 
-function ReadCard() {
+function ReadCard({ canReviewEvidence }: { canReviewEvidence: boolean }) {
   const [requestId, setRequestId] = useState("");
   const [manifestId, setManifestId] = useState("");
   const [siteId, setSiteId] = useState("");
@@ -178,7 +213,8 @@ function ReadCard() {
         </Button>
         <Button
           variant="secondary"
-          disabled={busy}
+          disabled={busy || !canReviewEvidence}
+          title={canReviewEvidence ? undefined : "Requires QA evidence review authority (machine_evidence.review_view)"}
           onClick={() => {
             const q = new URLSearchParams();
             if (siteId.trim()) q.set("site_id", siteId.trim());
@@ -190,7 +226,8 @@ function ReadCard() {
         </Button>
         <Button
           variant="secondary"
-          disabled={busy || !manifestId.trim()}
+          disabled={busy || !manifestId.trim() || !canReviewEvidence}
+          title={canReviewEvidence ? undefined : "Requires QA evidence review authority (machine_evidence.review_view)"}
           onClick={() =>
             run(
               "Cycle evidence manifest export",

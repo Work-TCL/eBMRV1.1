@@ -233,6 +233,16 @@ class PlannedDeviationExpiredError(GxPError):
     status_code = 409
 
 
+class PlannedDeviationNotPreapprovedError(GxPError):
+    code = "PLANNED_DEVIATION_NOT_PREAPPROVED"
+    status_code = 409
+
+
+class PlannedDeviationNotYetEffectiveError(GxPError):
+    code = "PLANNED_DEVIATION_NOT_YET_EFFECTIVE"
+    status_code = 409
+
+
 class QaClosureRequiredError(GxPError):
     code = "QA_CLOSURE_REQUIRED"
     status_code = 409
@@ -512,6 +522,11 @@ class BalanceIneligibleError(GxPError):
     status_code = 409
 
 
+class LocationLockedError(GxPError):
+    code = "LOCATION_LOCKED"
+    status_code = 409
+
+
 class ReadingUnstableError(GxPError):
     code = "READING_UNSTABLE"
     status_code = 409
@@ -775,8 +790,37 @@ class CalibrationOotImpactRequiredError(GxPError):
     status_code = 409
 
 
+class CalibrationApprovalPendingError(GxPError):
+    """Client gap-analysis Phase 4 (2026-10-05): the most recent calibration has a recorded result but
+    has not yet been reviewed/approved by someone independent of the performer (SoD) -- a separate gate
+    from CALIBRATION_OOT_IMPACT_REQUIRED/CALIBRATION_EXPIRED above."""
+
+    code = "CALIBRATION_APPROVAL_PENDING"
+    status_code = 409
+
+
+class RecalibrationRequiredError(GxPError):
+    """Client gap-analysis Phase 7 (2026-10-05): a breakdown maintenance event defaults to requiring
+    recalibration before the equipment is eligible for use again, unless the work order was flagged
+    non-critical. Cleared only when a new calibration is recorded AND approved (same two-step bar as
+    CALIBRATION_APPROVAL_PENDING above) -- the verified maintenance work order alone is not enough."""
+
+    code = "RECALIBRATION_REQUIRED"
+    status_code = 409
+
+
 class EquipmentClassMismatchError(GxPError):
     code = "EQUIPMENT_CLASS_MISMATCH"
+    status_code = 422
+
+
+# Known-limitations fix (docs/testing/demo-gujarati/08 §8.8, batch-step-start equipment enforcement):
+# raised when a step declares an equipment requirement (recipe_master.RecipeEquipmentRequirement, frozen
+# onto batch_execution.BatchStepEquipmentRequirement at issue) but no supplied equipment_asset_id
+# satisfies it -- distinct from EquipmentClassMismatchError (a supplied asset of the wrong class) and from
+# the Document 38 currency errors above (a supplied asset of the right class that fails eligibility).
+class EquipmentRequirementNotMetError(GxPError):
+    code = "EQUIPMENT_REQUIREMENT_NOT_MET"
     status_code = 422
 
 
@@ -2060,3 +2104,11 @@ class AIRegulatedDecisionBoundaryError(GxPError):
 
     code = "AI_REGULATED_DECISION_BOUNDARY"
     status_code = 403
+
+
+class EquipmentReservationConflictError(GxPError):
+    """Client Topic 14 (SG-112, project-owner-directed), EQP-FR-016: the requested reservation window
+    overlaps an existing reservation for the same equipment asset."""
+
+    code = "EQUIPMENT_RESERVATION_CONFLICT"
+    status_code = 409

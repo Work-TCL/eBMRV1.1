@@ -1,8 +1,8 @@
 # Build Status
 
-_Generated 2026-09-15 — do not hand-edit._
+_Generated 2026-09-29 — do not hand-edit._
 
-**Overall:** 100/103 modules started · 0 released · 849/2965 requirements verified · 2658/9150 test cases executed
+**Overall:** 100/103 modules started · 0 released · 853/2965 requirements verified · 2666/9153 test cases executed
 
 ## Work packages
 
@@ -33,24 +33,24 @@ _Generated 2026-09-15 — do not hand-edit._
 | 05 | SPEC-GXP-003 | WP-01 | H | 30 | 7 | 81 | 38 | 0 | 59 | IN_DEVELOPMENT | Claude Code |
 | 06 | SPEC-GXP-004 | WP-01 | H | 30 | 8 | 147 | 56 | 0 | 81 | IN_DEVELOPMENT | Claude Code |
 | 07 | SPEC-IAM-001 | WP-01 | H | 32 | 3 | 118 | 6 | 0 | 110 | IN_DEVELOPMENT | Claude Code |
-| 08 | SPEC-GXP-006 | WP-01 | H | 32 | 10 | 134 | 43 | 0 | 83 | IN_DEVELOPMENT | Claude Code |
+| 08 | SPEC-GXP-006 | WP-01 | H | 32 | 10 | 135 | 44 | 0 | 83 | IN_DEVELOPMENT | Claude Code |
 | 09 | SPEC-EBMR-000 | WP-02 | H | 32 | 0 | 121 | 26 | 0 | 92 | IN_DEVELOPMENT | Claude Code |
 | 10 | SPEC-EBMR-001 | WP-02 | H | 36 | 4 | 115 | 31 | 0 | 81 | IN_DEVELOPMENT | Claude Code |
-| 11 | SPEC-EBMR-002 | WP-02 | H | 36 | 5 | 96 | 40 | 0 | 88 | IN_DEVELOPMENT | Claude Code |
+| 11 | SPEC-EBMR-002 | WP-02 | H | 36 | 7 | 96 | 42 | 0 | 86 | IN_DEVELOPMENT | Claude Code |
 | 12 | SPEC-EBMR-003 | WP-02 | H | 30 | 6 | 71 | 19 | 0 | 90 | IN_DEVELOPMENT | Claude Code |
-| 13 | SPEC-EBMR-004 | WP-03 | H | 30 | 4 | 61 | 24 | 0 | 64 | IN_DEVELOPMENT | Claude Code |
+| 13 | SPEC-EBMR-004 | WP-03 | H | 30 | 5 | 61 | 25 | 0 | 63 | IN_DEVELOPMENT | Claude Code |
 | 14 | SPEC-EBMR-005 | WP-03 | H | 30 | 1 | 80 | 24 | 0 | 83 | IN_DEVELOPMENT | Claude Code |
 | 15 | SPEC-EBMR-006 | WP-03 | H | 32 | 1 | 111 | 29 | 0 | 112 | IN_DEVELOPMENT | Claude Code |
 | 16 | SPEC-EBMR-007 | WP-03 | H | 32 | 6 | 75 | 24 | 0 | 80 | IN_DEVELOPMENT | Claude Code |
-| 17 | SPEC-EBMR-008 | WP-03 | H | 32 | 20 | 123 | 85 | 0 | 33 | IN_DEVELOPMENT | Claude Code |
+| 17 | SPEC-EBMR-008 | WP-03 | H | 32 | 21 | 123 | 85 | 0 | 33 | IN_DEVELOPMENT | Claude Code |
 | 18 | SPEC-MAT-001 | WP-04 | H | 32 | 8 | 78 | 21 | 0 | 73 | IN_DEVELOPMENT | Claude Code |
 | 19 | SPEC-MAT-002A | WP-04 | H | 32 | 29 | 70 | 69 | 0 | 6 | CODE_COMPLETE | Claude Code |
 | 20 | SPEC-MAT-002B | WP-04 | H | 32 | 28 | 98 | 64 | 0 | 10 | CODE_COMPLETE | Claude Code |
 | 21 | SPEC-MAT-002C | WP-04 | H | 32 | 26 | 102 | 73 | 0 | 23 | CODE_COMPLETE | Claude Code |
-| 22 | SPEC-MAT-002D | WP-04 | H | 32 | 24 | 109 | 68 | 0 | 21 | CODE_COMPLETE | Claude Code |
-| 23 | SPEC-QC-001 | WP-04 | H | 38 | 10 | 98 | 44 | 0 | 101 | IN_DEVELOPMENT | Claude Code |
+| 22 | SPEC-MAT-002D | WP-04 | H | 32 | 24 | 111 | 70 | 0 | 21 | CODE_COMPLETE | Claude Code |
+| 23 | SPEC-QC-001 | WP-04 | H | 38 | 10 | 98 | 45 | 0 | 100 | IN_DEVELOPMENT | Claude Code |
 | 24 | SPEC-QC-002 | WP-04 | H | 34 | 10 | 106 | 64 | 0 | 63 | IN_DEVELOPMENT | Claude Code |
-| 25 | SPEC-QC-003 | WP-04 | H | 40 | 32 | 106 | 69 | 0 | 19 | IN_DEVELOPMENT | Claude Code |
+| 25 | SPEC-QC-003 | WP-04 | H | 40 | 32 | 106 | 70 | 0 | 18 | IN_DEVELOPMENT | Claude Code |
 | 26 | SPEC-QMS-001 | WP-05 | H | 24 | 15 | 73 | 33 | 0 | 26 | IN_DEVELOPMENT | Claude Code |
 | 27 | SPEC-QMS-002 | WP-05 | H | 22 | 14 | 61 | 34 | 0 | 19 | IN_DEVELOPMENT | Claude Code |
 | 28 | SPEC-QMS-003 | WP-05 | H | 18 | 3 | 65 | 26 | 0 | 35 | IN_DEVELOPMENT | Claude Code |

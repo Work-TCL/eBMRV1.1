@@ -1,7 +1,9 @@
 """Document 30 (SPEC-QMS-005) -- the buildable slice: the linear DRAFT -> REVIEW -> RELEASED -> EFFECTIVE
--> OBSOLETE pipeline, matching the module's own 7-op API list exactly (`/documents/v1` prefix). New module.
-DOC-FR-011/013/014/022/023(partial)/024 are out of scope this pass -- see docs/generated/18_SPEC_GAPS.md
-SG-078/SG-079/SG-080.
+-> OBSOLETE pipeline, matching the module's own 7-op API list exactly (`/documents/v1` prefix), plus a
+`GET /documents/v1` browsable/code-searchable/paginated list (2026-09-24, same paginate()/filtered()
+contract as every other QMS list endpoint) partially resolving DOC-FR-023 -- title/owner/effective-date
+search still open. DOC-FR-011/013/014/022/024 remain out of scope this pass -- see
+docs/generated/18_SPEC_GAPS.md SG-078/SG-079/SG-080.
 """
 
 import uuid
@@ -308,9 +310,34 @@ async def test_get_versions_lists_all_versions_for_code(client, seeded, db):
     resp = await client.get(f"/documents/v1/{code}/versions", headers=auth_headers(token))
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["document_code"] == code
-    assert len(body["versions"]) == 2
-    assert {v["version_label"] for v in body["versions"]} == {"1.0", "2.0"}
+    assert len(body) == 2
+    assert {v["document_code"] for v in body} == {code}
+    assert {v["version_label"] for v in body} == {"1.0", "2.0"}
+
+
+async def test_list_documents_searches_and_paginates(client, seeded, db):
+    # DOC-FR-023 (SG-078, partial): a browsable, code-searchable, paginated document list -- the same
+    # shared paginate()/filtered() contract every other QMS list endpoint in this codebase already uses.
+    owner = await _setup(db, seeded, "15", signed=False)
+    token = await login(client, "admin.doc15")
+    tag = uuid.uuid4().hex[:8]
+    findable_code = f"SOP-FINDME-{tag}"
+    other_code = f"POL-OTHER-{tag}"
+    await _create(client, token, seeded["site_id"], owner.id, document_code=findable_code, document_type="sop")
+    await _create(client, token, seeded["site_id"], owner.id, document_code=other_code, document_type="policy")
+
+    resp = await client.get(f"/documents/v1?q={findable_code}", headers=auth_headers(token))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["total"] == 1
+    assert body["items"][0]["document_code"] == findable_code
+    assert body["items"][0]["document_type"] == "sop"
+
+    resp = await client.get(f"/documents/v1?q={tag}&sort_by=document_code&sort_dir=asc", headers=auth_headers(token))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["total"] == 2
+    assert [i["document_code"] for i in body["items"]] == sorted([findable_code, other_code])
 
 
 async def test_stale_version_rejected(client, seeded, db):

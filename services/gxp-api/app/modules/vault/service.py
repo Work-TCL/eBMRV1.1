@@ -169,3 +169,15 @@ async def get_correction(session: AsyncSession, correction_id: uuid.UUID) -> Rec
     if correction is None:
         raise NotFoundError("Correction not found")
     return correction
+
+
+async def list_evidence_for_object(session: AsyncSession, object_id: uuid.UUID) -> list[VaultEvidence]:
+    return (
+        (
+            await session.execute(
+                select(VaultEvidence).where(VaultEvidence.vault_object_id == object_id).order_by(VaultEvidence.sequence)
+            )
+        )
+        .scalars()
+        .all()
+    )

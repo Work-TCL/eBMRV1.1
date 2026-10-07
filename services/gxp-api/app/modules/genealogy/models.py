@@ -65,6 +65,13 @@ EDGE_TYPES = (
     "REWORKED_FROM",
     "SUPERSEDES",
     "DISTRIBUTED_AS",
+    # Client_Decisions_Neededanswers Topic 2 (2026-10-02, project-owner-directed): confirms SG-085's
+    # "merge investigated, not built" finding -- no existing entry cleanly describes "N same-lot
+    # containers combined into one" (AGGREGATED_INTO is reserved for the packaging unit->carton->pallet
+    # hierarchy, GEN-FR-012; SPLIT_FROM is directionally backward). A dedicated entry, not a reused
+    # ill-fitting one, same "add a real considered option" precedent as every other project-owner-
+    # directed catalogue addition in this codebase (e.g. warehouse_location.create/SG-081).
+    "MERGED_FROM",
 )
 
 # GEN-FR-024: rework/correction relationships are separately typed precisely so cycle detection over

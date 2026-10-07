@@ -1,16 +1,24 @@
 import pytest
 
+from tests.conftest import auth_headers, login
+
 
 @pytest.mark.asyncio
-async def test_bad_path_uuid_returns_normalized_validation_envelope(client):
+async def test_bad_path_uuid_returns_normalized_validation_envelope(client, seeded):
     """A path param FastAPI itself rejects before any route runs (not a valid UUID) must come back in
     the same {code, message, details} envelope every other GxPError uses, not Starlette's raw
     {"detail": [...]} shape — the frontend's ApiError parsing (frontend/src/lib/api.ts) only reads
     code/message/details and silently falls back to a generic status text otherwise. Regression test
-    for a batch_number-shaped value (e.g. "BATCH-PFS-001") landing in a batch_id path param."""
+    for a batch_number-shaped value (e.g. "BATCH-PFS-001") landing in a batch_id path param.
+
+    Authenticated as of the Phase 1 gap-audit fix (2026-09-22): this endpoint's GET now requires a valid
+    actor (it didn't before), resolved ahead of path validation, so an unauthenticated call now 401s
+    before ever reaching the UUID-parsing error this test exists to check."""
+    token = await login(client, "operator1")
     resp = await client.get(
         "/ddcp/v1/prefilled-syringe/batches/BATCH-PFS-001/readiness",
         params={"profile_version_id": "7c4f5391-9dac-4a98-b4c7-12d0ad9fa3fc"},
+        headers=auth_headers(token),
     )
     assert resp.status_code == 422
     body = resp.json()

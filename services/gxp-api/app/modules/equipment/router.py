@@ -10,13 +10,21 @@ from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.equipment.cleaning_models import EquipmentArea
 from app.modules.equipment.commands import (
+    BulkImportEquipmentCommand,
+    BulkImportEquipmentResult,
+    BulkImportEquipmentRow,
+    BulkImportEquipmentRowValidation,
     CreateEquipmentAreaCommand,
     CreateEquipmentAssetCommand,
     HoldEquipmentCommand,
     RecordCalibrationCommand,
     RecordMaintenanceCommand,
     RecordQualificationCommand,
+    RelocateEquipmentCommand,
+    ReserveEquipmentCommand,
+    RetireEquipmentCommand,
     ReturnToServiceCommand,
+    bulk_import_equipment,
     create_equipment_area,
     create_equipment_asset,
     equipment_record_hash,
@@ -27,10 +35,15 @@ from app.modules.equipment.commands import (
     record_calibration,
     record_maintenance,
     record_qualification,
+    relocate_equipment,
+    reserve_equipment,
+    retire_equipment,
     return_to_service,
+    validate_bulk_import_equipment_rows,
 )
 from app.modules.equipment.models import EquipmentAsset
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
+from app.modules.recipe_master.service import list_equipment_classes
 from app.modules.signature.service import create_challenge
 from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.schemas import MutationReceipt
@@ -53,8 +66,12 @@ def _asset_dict(asset: EquipmentAsset) -> dict:
         "manufacturer": asset.manufacturer,
         "model": asset.model,
         "serial_no": asset.serial_no,
+        "location_id": str(asset.location_id) if asset.location_id else None,
         "state": asset.state,
         "qualification_status": asset.qualification_status,
+        "qualification_effective_date": asset.qualification_effective_date.isoformat() if asset.qualification_effective_date else None,
+        "qualification_expiry_date": asset.qualification_expiry_date.isoformat() if asset.qualification_expiry_date else None,
+        "qualification_scope": asset.qualification_scope,
         "calibration_status": asset.calibration_status,
         "next_calibration_due_date": asset.next_calibration_due_date.isoformat() if asset.next_calibration_due_date else None,
         "maintenance_status": asset.maintenance_status,
@@ -65,6 +82,8 @@ def _asset_dict(asset: EquipmentAsset) -> dict:
         "hold_source": asset.hold_source,
         "dedicated": asset.dedicated,
         "firmware_version": asset.firmware_version,
+        "is_computer_operated": asset.is_computer_operated,
+        "recalibration_required": asset.recalibration_required,
         "change_control_id": str(asset.change_control_id) if asset.change_control_id else None,
         "version": asset.version,
     }
@@ -81,11 +100,52 @@ async def post_create_asset(
         return await create_equipment_asset(session, cmd, actor.user_id)
 
 
+class BulkImportEquipmentPreviewRequest(BaseModel):
+    rows: list[BulkImportEquipmentRow]
+
+
+@router.post("/assets/bulk-import/preview")
+async def post_bulk_import_equipment_preview(
+    body: BulkImportEquipmentPreviewRequest,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[BulkImportEquipmentRowValidation]:
+    """Read-only -- validates every row (unknown equipment_class_code, duplicate/existing equipment_code)
+    and reports per-row errors without creating anything, same shape as the user bulk-import preview."""
+    await evaluate_policy(session, actor.user_id, action="equipment_asset.create", site_id=None)
+    return await validate_bulk_import_equipment_rows(session, body.rows)
+
+
+@router.post("/assets/bulk-import/commit", response_model=BulkImportEquipmentResult)
+async def post_bulk_import_equipment_commit(
+    cmd: BulkImportEquipmentCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> BulkImportEquipmentResult:
+    """All-or-nothing: if any row fails validation the whole batch is rejected with the per-row reasons
+    and nothing is created."""
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="equipment_asset.create", site_id=cmd.site_id)
+        return await bulk_import_equipment(session, cmd, actor.user_id)
+
+
+# Client Topic 15 fix (2026-10-02, project-owner-directed): this router's reads held an `actor`
+# dependency but never called evaluate_policy() or filtered by site -- any authenticated actor, any
+# role, any site, could list/fetch any other site's equipment (the module docstring's own prior
+# "no RBAC gate here ... same precedent" note is superseded by the client's explicit Topic 15 answer
+# that cross-site access must be controlled, full stop). `equipment_asset.view`/`equipment_area.view`
+# are new permission codes (seed.py), granted to every role that already touches equipment plus the
+# standard "view" roleset.
 @router.get("/assets")
 async def list_assets(
-    session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params), state: str | None = None
+    session: AsyncSession = Depends(get_session),
+    params: PageParams = Depends(page_params),
+    state: str | None = None,
+    site_id: uuid.UUID | None = None,
+    actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    stmt = select(EquipmentAsset)
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="equipment_asset.view")
+    stmt = select(EquipmentAsset).where(EquipmentAsset.site_id.in_(site_scope))
     if params.q:
         stmt = stmt.where(EquipmentAsset.equipment_code.ilike(f"%{params.q}%"))
     if state:
@@ -95,10 +155,15 @@ async def list_assets(
 
 
 @router.get("/assets/{asset_id}")
-async def get_asset(asset_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_asset(
+    asset_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     asset = await session.get(EquipmentAsset, asset_id)
     if asset is None:
         raise NotFoundError("Equipment asset not found")
+    await evaluate_policy(session, actor.user_id, action="equipment_asset.view", site_id=asset.site_id)
     return _asset_dict(asset)
 
 
@@ -146,8 +211,14 @@ async def post_create_area(
 
 
 @router.get("/areas")
-async def list_areas(session: AsyncSession = Depends(get_session), params: PageParams = Depends(page_params)) -> dict:
-    stmt = select(EquipmentArea)
+async def list_areas(
+    session: AsyncSession = Depends(get_session),
+    params: PageParams = Depends(page_params),
+    site_id: uuid.UUID | None = None,
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="equipment_area.view")
+    stmt = select(EquipmentArea).where(EquipmentArea.site_id.in_(site_scope))
     if params.q:
         stmt = stmt.where(EquipmentArea.area_code.ilike(f"%{params.q}%"))
     rows, envelope = await paginate(session, stmt, params, sortable=AREA_SORTABLE, default_sort=EquipmentArea.created_at)
@@ -155,11 +226,36 @@ async def list_areas(session: AsyncSession = Depends(get_session), params: PageP
 
 
 @router.get("/areas/{area_id}")
-async def get_area(area_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_area(
+    area_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     area = await session.get(EquipmentArea, area_id)
     if area is None:
         raise NotFoundError("Equipment area not found")
+    await evaluate_policy(session, actor.user_id, action="equipment_area.view", site_id=area.site_id)
     return _area_dict(area)
+
+
+@router.get("/equipment-classes")
+async def list_equipment_classes_for_assets(
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
+    """SG-218: equipment-module-native read of `gxp_equipment_class` (owned by recipe_master, read via its
+    own service function per AG-02 -- never this module's tables reached into directly) so "New equipment
+    asset" can offer a class picker without requiring the recipe.view permission recipe_master's own
+    `/recipes/v2/equipment-classes` endpoint requires. Equipment Administrator (this module's own
+    asset-creating role, seed.py) never held recipe.view and has no reason to need visibility into
+    unrelated recipe/product data just to classify an asset. No RBAC gate here, matching this router's own
+    other plain read endpoints (list_assets/list_areas/get_dashboard) -- additive, non-regulated read
+    data, same precedent."""
+    classes = await list_equipment_classes(session)
+    return [
+        {"id": str(c.id), "class_code": c.class_code, "name": c.name, "description": c.description, "status": c.status}
+        for c in classes
+    ]
 
 
 @router.post("/{asset_id}/qualifications", response_model=MutationReceipt)
@@ -192,7 +288,11 @@ async def post_record_calibration(
         asset = await session.get(EquipmentAsset, asset_id)
         if asset is None:
             raise NotFoundError("Equipment asset not found")
-        await evaluate_policy(session, actor.user_id, action="equipment_asset.calibrate", site_id=asset.site_id)
+        # Client gap-analysis Phase 4: approving/rejecting an existing calibration is a distinct
+        # authority from recording one in the first place (the whole point is SoD between the two) --
+        # gate it on its own permission, held by QA Releaser, not Calibration Technician.
+        action = "equipment_asset.approve_calibration" if cmd.calibration_id is not None else "equipment_asset.calibrate"
+        await evaluate_policy(session, actor.user_id, action=action, site_id=asset.site_id)
         return await record_calibration(session, cmd, actor.user_id)
 
 
@@ -217,7 +317,7 @@ class EquipmentSignatureChallengeRequest(BaseModel):
     action: str = "hold"
 
 
-_EQUIPMENT_CHALLENGE_MEANINGS = {"hold": "Performed"}
+_EQUIPMENT_CHALLENGE_MEANINGS = {"hold": "Performed", "retire": "Approved"}
 
 
 @router.post("/{asset_id}/signature-challenges")
@@ -279,19 +379,82 @@ async def post_return_to_service(
         return await return_to_service(session, cmd, actor.user_id)
 
 
+@router.post("/{asset_id}/reserve", response_model=MutationReceipt)
+async def post_reserve_equipment(
+    asset_id: uuid.UUID,
+    cmd: ReserveEquipmentCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.asset_id != asset_id:
+        raise ValidationFailedError("asset_id in path and body must match")
+    async with session.begin():
+        asset = await session.get(EquipmentAsset, asset_id)
+        if asset is None:
+            raise NotFoundError("Equipment asset not found")
+        await evaluate_policy(session, actor.user_id, action="equipment_asset.reserve", site_id=asset.site_id)
+        return await reserve_equipment(session, cmd, actor.user_id)
+
+
+@router.post("/{asset_id}/retire", response_model=MutationReceipt)
+async def post_retire_equipment(
+    asset_id: uuid.UUID,
+    cmd: RetireEquipmentCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.asset_id != asset_id:
+        raise ValidationFailedError("asset_id in path and body must match")
+    async with session.begin():
+        asset = await session.get(EquipmentAsset, asset_id)
+        if asset is None:
+            raise NotFoundError("Equipment asset not found")
+        await evaluate_policy(session, actor.user_id, action="equipment_asset.retire", site_id=asset.site_id)
+        return await retire_equipment(session, cmd, actor.user_id)
+
+
+@router.post("/{asset_id}/relocate", response_model=MutationReceipt)
+async def post_relocate_equipment(
+    asset_id: uuid.UUID,
+    cmd: RelocateEquipmentCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.asset_id != asset_id:
+        raise ValidationFailedError("asset_id in path and body must match")
+    async with session.begin():
+        asset = await session.get(EquipmentAsset, asset_id)
+        if asset is None:
+            raise NotFoundError("Equipment asset not found")
+        await evaluate_policy(session, actor.user_id, action="equipment_asset.relocate", site_id=asset.site_id)
+        return await relocate_equipment(session, cmd, actor.user_id)
+
+
 @router.get("/{asset_id}/eligibility")
-async def get_asset_eligibility(asset_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_asset_eligibility(
+    asset_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     async with session.begin():
         return await get_eligibility(session, asset_id)
 
 
 @router.get("/{asset_id}/history")
-async def get_asset_history(asset_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_asset_history(
+    asset_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     async with session.begin():
         return await get_equipment_history(session, asset_id)
 
 
 @router.get("/dashboard")
-async def get_equipment_dashboard(site_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_equipment_dashboard(
+    site_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     async with session.begin():
         return await get_dashboard(session, site_id)

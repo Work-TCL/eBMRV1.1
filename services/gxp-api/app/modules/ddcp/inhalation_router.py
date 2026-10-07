@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
+from app.modules.batch_execution.models import Batch
 from app.modules.ddcp import commands as ddcp_commands
 from app.modules.ddcp import inhalation_commands
 from app.modules.ddcp.models import INHALATION_SUBTYPES, DdcpProcessOperation, DdcpProfileVersion
@@ -90,7 +91,10 @@ async def post_start_fill_run(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_fill.start", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_fill.start", site_id=batch.site_id)
         return await inhalation_commands.start_inhaler_fill_run(session, cmd, actor.user_id)
 
 
@@ -115,7 +119,10 @@ async def post_record_closure_result(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_device.record_test", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_device.record_test", site_id=batch.site_id)
         return await inhalation_commands.record_crimp_or_closure_result(session, cmd, actor.user_id)
 
 
@@ -125,7 +132,10 @@ async def post_record_dose_test(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_device.record_test", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_device.record_test", site_id=batch.site_id)
         return await inhalation_commands.record_inhaler_dose_test(session, cmd, actor.user_id)
 
 
@@ -135,7 +145,10 @@ async def post_record_dose_counter_test(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_device.record_test", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_device.record_test", site_id=batch.site_id)
         return await inhalation_commands.record_dose_counter_test(session, cmd, actor.user_id)
 
 
@@ -144,7 +157,10 @@ async def post_evaluate_release_readiness(
     batch_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_release.evaluate", site_id=None)
+        batch = await session.get(Batch, batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_release.evaluate", site_id=batch.site_id)
         return await inhalation_commands.evaluate_inhaler_release_readiness(session, batch_id, actor.user_id)
 
 
@@ -156,7 +172,10 @@ async def post_create_evidence_package(
     if cmd.batch_id != batch_id:
         raise ValidationFailedError("batch_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_release.export", site_id=None)
+        batch = await session.get(Batch, batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_release.export", site_id=batch.site_id)
         return await inhalation_commands.create_inhaler_batch_evidence_package(session, cmd, actor.user_id)
 
 
@@ -176,5 +195,8 @@ async def post_bind_dose_unit_to_device(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="ddcp_constituent.handoff", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="ddcp_constituent.handoff", site_id=batch.site_id)
         return await inhalation_commands.bind_dose_unit_to_device(session, cmd, actor.user_id)

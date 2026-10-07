@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.qms.read_support import filtered, iso, sid
 from app.modules.qms.scar_commands import (
     CloseScarCommand,
@@ -50,7 +50,10 @@ async def post_issue_scar(
     if cmd.case_id != case_id:
         raise ValidationFailedError("case_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="scar.issue", site_id=None)
+        case = await session.get(SupplierQualityCase, case_id)
+        if case is None:
+            raise NotFoundError("Supplier quality case not found")
+        await evaluate_policy(session, actor.user_id, action="scar.issue", site_id=case.site_id)
         return await issue_scar(session, cmd, actor.user_id)
 
 
@@ -62,7 +65,10 @@ async def post_record_supplier_response(
     if cmd.scar_id != scar_id:
         raise ValidationFailedError("scar_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="scar.response", site_id=None)
+        scar = await session.get(ScarRecord, scar_id)
+        if scar is None:
+            raise NotFoundError("SCAR not found")
+        await evaluate_policy(session, actor.user_id, action="scar.response", site_id=scar.site_id)
         return await record_supplier_response(session, cmd, actor.user_id)
 
 
@@ -74,7 +80,10 @@ async def post_review_scar(
     if cmd.scar_id != scar_id:
         raise ValidationFailedError("scar_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="scar.review", site_id=None)
+        scar = await session.get(ScarRecord, scar_id)
+        if scar is None:
+            raise NotFoundError("SCAR not found")
+        await evaluate_policy(session, actor.user_id, action="scar.review", site_id=scar.site_id)
         return await review_scar(session, cmd, actor.user_id)
 
 
@@ -86,7 +95,10 @@ async def post_record_effectiveness(
     if cmd.scar_id != scar_id:
         raise ValidationFailedError("scar_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="scar.effectiveness", site_id=None)
+        scar = await session.get(ScarRecord, scar_id)
+        if scar is None:
+            raise NotFoundError("SCAR not found")
+        await evaluate_policy(session, actor.user_id, action="scar.effectiveness", site_id=scar.site_id)
         return await record_effectiveness(session, cmd, actor.user_id)
 
 
@@ -113,7 +125,10 @@ async def post_close_scar(
     if cmd.scar_id != scar_id:
         raise ValidationFailedError("scar_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="scar.close", site_id=None)
+        scar = await session.get(ScarRecord, scar_id)
+        if scar is None:
+            raise NotFoundError("SCAR not found")
+        await evaluate_policy(session, actor.user_id, action="scar.close", site_id=scar.site_id)
         return await close_scar(session, cmd, actor.user_id)
 
 
@@ -183,9 +198,9 @@ async def list_supplier_cases(
     site_id: uuid.UUID | None = None,
     state: str | None = None,
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="scar.view", site_id=site_id)
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="scar.view")
     stmt = filtered(
-        SupplierQualityCase, params, search_column=SupplierQualityCase.case_number, site_id=site_id, state=state
+        SupplierQualityCase, params, search_column=SupplierQualityCase.case_number, site_id=site_scope, state=state
     )
     rows, envelope = await paginate(
         session, stmt, params, sortable=CASE_SORTABLE, default_sort=SupplierQualityCase.created_at
@@ -224,8 +239,8 @@ async def list_scars(
     site_id: uuid.UUID | None = None,
     state: str | None = None,
 ) -> dict:
-    await evaluate_policy(session, actor.user_id, action="scar.view", site_id=site_id)
-    stmt = filtered(ScarRecord, params, search_column=ScarRecord.scar_number, site_id=site_id, state=state)
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="scar.view")
+    stmt = filtered(ScarRecord, params, search_column=ScarRecord.scar_number, site_id=site_scope, state=state)
     rows, envelope = await paginate(
         session, stmt, params, sortable=SCAR_SORTABLE, default_sort=ScarRecord.issued_at
     )

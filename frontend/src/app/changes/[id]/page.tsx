@@ -3,8 +3,7 @@
 import { use, useState } from "react";
 import {
   api,
-  canApproveQms,
-  canInvestigateQms,
+  hasPermission,
   formatDate,
   formatDateTime,
   isOverdue,
@@ -13,6 +12,7 @@ import {
 } from "@/lib/api";
 import { useApiResource, useEntityOptions, useMe } from "@/lib/hooks";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
+import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { QmsDetailShell, useCommand } from "@/components/qms/QmsDetailShell";
 import { Fact, IdFact } from "@/components/ui/FactGrid";
 import { Tabs } from "@/components/ui/Tabs";
@@ -78,7 +78,9 @@ const ALLOWED_FROM: Record<string, Transition[]> = {
   CANCELLED: [],
 };
 
-// SG-138: no Document 106 policy rows for change_control approve/verify/close.
+// SG-138 resolved 2026-09-10 (seed.py SIGNATURE_POLICY_FLOOR rows 86-87): change_control approve/close
+// are QA Releaser-signed, independent of the record owner; verify is a qualified independent verifier.
+// Go through the shared Part 11 ceremony (challenge -> password re-entry -> signed mutation) below.
 const SIGNATURE_GATED: Transition[] = ["approve", "verify", "close"];
 
 const LABEL: Record<Transition, string> = {
@@ -91,6 +93,20 @@ const LABEL: Record<Transition, string> = {
   close: "Close",
 };
 
+// The exact permission code app/modules/qms/change_router.py checks for each transition. Note
+// change.impact and change.verify are NOT held by Supervisor (unlike change.task.add/.implement) --
+// the old shared "investigator" bucket lumped all four together and would have shown Supervisor a
+// button it has no backend grant for (audit finding 2026-09-18).
+const PERMISSION_FOR_TRANSITION: Record<Transition, string> = {
+  impact: "change.impact",
+  approve: "change.approve",
+  add_task: "change.task.add",
+  implement: "change.implement",
+  verify: "change.verify",
+  make_effective: "change.make_effective",
+  close: "change.close",
+};
+
 export default function ChangeDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { me } = useMe();
@@ -98,8 +114,7 @@ export default function ChangeDetailPage({ params }: { params: Promise<{ id: str
   const { data, loading, error, reload } = useApiResource<ChangeDetail>(`/qms/v1/changes/${id}`);
 
   const allowed = data ? (ALLOWED_FROM[data.state] ?? []) : [];
-  const canDo = (t: Transition) =>
-    allowed.includes(t) && (SIGNATURE_GATED.includes(t) || t === "make_effective" ? canApproveQms(me) : canInvestigateQms(me));
+  const canDo = (t: Transition) => allowed.includes(t) && hasPermission(me, PERMISSION_FOR_TRANSITION[t]);
 
   return (
     <QmsDetailShell
@@ -335,8 +350,6 @@ function TransitionModal({
             training_impact: { description: training, required: trainingRequired },
             reason: reason || null,
           });
-        case "approve":
-          return api.post(`${path}/approve`, { ...base, approval_notes: approvalNotes || null });
         case "add_task":
           return api.post(`${path}/tasks`, {
             ...base,
@@ -346,12 +359,6 @@ function TransitionModal({
           });
         case "implement":
           return api.post(`${path}/implement`, { ...base, reason: reason || null });
-        case "verify":
-          return api.post(`${path}/verify`, {
-            ...base,
-            verification_evidence: { description: verificationEvidence },
-            reason: reason || null,
-          });
         case "make_effective":
           return api.post(`${path}/make-effective`, {
             ...base,
@@ -359,24 +366,131 @@ function TransitionModal({
             training_confirmed: trainingConfirmed,
             reason: reason || null,
           });
-        case "close":
-          return api.post(`${path}/close`, {
-            ...base,
-            post_implementation_review: { conclusion: reviewConclusion },
-          });
+        default:
+          // approve/verify/close are signature-gated and never reach this form -- see the early returns
+          // below that render <SignatureCeremony> for them instead.
+          throw new Error(`${transition} does not submit through the plain form`);
       }
     });
+  }
+
+  // Document 106 section 9 rows 86-88 (SG-138, resolved): approve/close are QA Releaser-signed,
+  // independent of the record owner; verify is a qualified independent verifier. Same shared Part 11
+  // ceremony (challenge -> password re-entry -> signed mutation) as CAPA/deviations.
+  if (transition === "approve") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`${path}/signature-challenges`}
+        action="approve"
+        title={`Approve - ${change.change_number}`}
+        summary="Approves this change control for implementation. This is a released quality decision - signer must be independent of the record's owner."
+        submitLabel="Sign & approve"
+        submitVariant="success"
+        extraFields={
+          <Field label="Approval notes">
+            <textarea className="input" rows={3} value={approvalNotes} onChange={(e) => setApprovalNotes(e.target.value)} />
+          </Field>
+        }
+        onSign={(p) =>
+          api.post(`${path}/approve`, {
+            idempotency_key: p.idempotency_key,
+            change_id: change.id,
+            expected_version: change.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+            approval_notes: approvalNotes || null,
+          })
+        }
+      />
+    );
+  }
+
+  if (transition === "verify") {
+    const verifyDisabled = Boolean(change.validation_impact?.required) && !verificationEvidence.trim();
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`${path}/signature-challenges`}
+        action="verify"
+        title={`Verify - ${change.change_number}`}
+        summary="Records verification of this change's implementation. Signer must be a qualified independent verifier, not the performer."
+        submitLabel="Sign & verify"
+        submitVariant="success"
+        disabled={verifyDisabled}
+        extraFields={
+          <Field
+            label="Verification evidence"
+            required={Boolean(change.validation_impact?.required)}
+            hint="Required when the impact assessment declared revalidation."
+          >
+            <textarea
+              className="input"
+              rows={3}
+              value={verificationEvidence}
+              onChange={(e) => setVerificationEvidence(e.target.value)}
+            />
+          </Field>
+        }
+        onSign={(p) =>
+          api.post(`${path}/verify`, {
+            idempotency_key: p.idempotency_key,
+            change_id: change.id,
+            expected_version: change.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+            verification_evidence: verificationEvidence ? { description: verificationEvidence } : null,
+          })
+        }
+      />
+    );
+  }
+
+  if (transition === "close") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`${path}/signature-challenges`}
+        action="close"
+        title={`Close - ${change.change_number}`}
+        summary="Closes the change control permanently. This is a released quality decision - signer must be independent of the record's owner."
+        submitLabel="Sign & close"
+        submitVariant="success"
+        disabled={!reviewConclusion.trim()}
+        extraFields={
+          <Field label="Post-implementation review conclusion" required>
+            <textarea
+              className="input"
+              rows={3}
+              value={reviewConclusion}
+              onChange={(e) => setReviewConclusion(e.target.value)}
+              required
+            />
+          </Field>
+        }
+        onSign={(p) =>
+          api.post(`${path}/close`, {
+            idempotency_key: p.idempotency_key,
+            change_id: change.id,
+            expected_version: change.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+            post_implementation_review: { conclusion: reviewConclusion },
+          })
+        }
+      />
+    );
   }
 
   return (
     <Modal open onClose={onClose} title={`${LABEL[transition]} - ${change.change_number}`} large={transition === "impact"}>
       <form onSubmit={submit}>
-        {SIGNATURE_GATED.includes(transition) && (
-          <Banner tone="warn" title="This transition requires an electronic signature">
-            This action needs a signature policy that hasn&apos;t been configured for this deployment yet, so it will be correctly refused rather than proceeding without one.
-          </Banner>
-        )}
-
         {transition === "impact" && (
           <>
             <Field label="Regulatory impact" required>
@@ -403,12 +517,6 @@ function TransitionModal({
           </>
         )}
 
-        {transition === "approve" && (
-          <Field label="Approval notes">
-            <textarea className="input" rows={3} value={approvalNotes} onChange={(e) => setApprovalNotes(e.target.value)} />
-          </Field>
-        )}
-
         {transition === "add_task" && (
           <>
             <Field label="Description" required>
@@ -431,18 +539,6 @@ function TransitionModal({
           </>
         )}
 
-        {transition === "verify" && (
-          <Field label="Verification evidence" required hint="Required when the impact assessment declared revalidation.">
-            <textarea
-              className="input"
-              rows={3}
-              value={verificationEvidence}
-              onChange={(e) => setVerificationEvidence(e.target.value)}
-              required
-            />
-          </Field>
-        )}
-
         {transition === "make_effective" && (
           <>
             <Field label="Effective at" required>
@@ -455,13 +551,7 @@ function TransitionModal({
           </>
         )}
 
-        {transition === "close" && (
-          <Field label="Post-implementation review conclusion" required>
-            <textarea className="input" rows={3} value={reviewConclusion} onChange={(e) => setReviewConclusion(e.target.value)} required />
-          </Field>
-        )}
-
-        {(transition === "impact" || transition === "implement" || transition === "verify" || transition === "make_effective") && (
+        {(transition === "impact" || transition === "implement" || transition === "make_effective") && (
           <Field label="Reason" hint="Optional. Recorded in the audit trail.">
             <Input value={reason} onChange={(e) => setReason(e.target.value)} />
           </Field>

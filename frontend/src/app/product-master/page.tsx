@@ -1,16 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   api,
   ApiError,
   canAuthorProduct,
   canReleaseProduct,
+  canSuspendProduct,
   clientPagedFetcher,
-  holdsAnyRole,
   newIdempotencyKey,
+  type MutationReceipt,
 } from "@/lib/api";
-import { useApiResource, useMe, useSites } from "@/lib/hooks";
+import { useApiResource, useMe, useRequirePermission, useSites } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
@@ -18,6 +20,8 @@ import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { Modal } from "@/components/ui/Modal";
 import { Field, RowButtonSlot } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { CodeField } from "@/components/ui/CodeField";
+import { UomSelect } from "@/components/ui/UomSelect";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -45,6 +49,7 @@ interface ProductVersion {
   name: string;
   product_family_id: string | null;
   lifecycle_state: string;
+  superseded_by_version_id: string | null;
   manufacturing_profile_code: string;
   combination_product_type: string | null;
   pmoa_reference: string | null;
@@ -80,6 +85,108 @@ function sterileProfileLabel(p: SterileProfile): string {
   return `${p.profile_number} v${p.version_no}${p.required_area_classification ? ` - ${p.required_area_classification}` : ""}`;
 }
 
+// Known-limitations fix (docs/testing/demo-gujarati/06 §6.8 item 2): matches app/modules/product_master/
+// router.py::get_families / _family_dict. product_family_id previously rendered nowhere in the UI at all
+// (orphaned FK) -- this is now a real, selectable picker with inline create.
+interface ProductFamily {
+  id: string;
+  family_code: string;
+  name: string;
+  profile_code: string | null;
+  status: string;
+}
+
+function NewProductFamilyModal({ onClose, onDone }: { onClose: () => void; onDone: (id: string) => void }) {
+  const [familyCode, setFamilyCode] = useState("");
+  const [name, setName] = useState("");
+  const [profileCode, setProfileCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const receipt = await api.post<{ aggregate_id: string }>("/products/v1/families", {
+        idempotency_key: newIdempotencyKey(),
+        family_code: familyCode,
+        name,
+        profile_code: profileCode || null,
+      });
+      onDone(receipt.aggregate_id);
+    } catch (err) {
+      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Failed to create family");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="New product family"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={onSubmit} disabled={busy || !familyCode.trim() || !name.trim()}>
+            {busy ? "Creating…" : "Create"}
+          </Button>
+        </>
+      }
+    >
+      <Field label="Family code" required>
+        <Input value={familyCode} onChange={(e) => setFamilyCode(e.target.value)} autoFocus />
+      </Field>
+      <Field label="Name" required>
+        <Input value={name} onChange={(e) => setName(e.target.value)} />
+      </Field>
+      <Field label="Profile code" hint="Optional.">
+        <Input value={profileCode} onChange={(e) => setProfileCode(e.target.value)} />
+      </Field>
+      {error && <p className="error-text mt-2">{error}</p>}
+    </Modal>
+  );
+}
+
+function ProductFamilyPicker({ value, onChange }: { value: string; onChange: (id: string) => void }) {
+  const { data: families, reload } = useApiResource<ProductFamily[]>("/products/v1/families");
+  const [creating, setCreating] = useState(false);
+
+  return (
+    <div className="flex flex-wrap items-start gap-3">
+      <Field label="Product family" hint="Optional.">
+        <Select value={value} onChange={(e) => onChange(e.target.value)} style={{ minWidth: 220 }}>
+          <option value="">—</option>
+          {(families ?? []).map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.family_code} - {f.name}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <RowButtonSlot>
+        <Button type="button" variant="secondary" size="sm" onClick={() => setCreating(true)}>
+          + New family
+        </Button>
+      </RowButtonSlot>
+      {creating && (
+        <NewProductFamilyModal
+          onClose={() => setCreating(false)}
+          onDone={(id) => {
+            setCreating(false);
+            reload();
+            onChange(id);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 // Matches app/modules/product_master/router.py::get_business_ids — one row per distinct
 // product_business_id (its highest version_no), used to populate the Constituent editor's Business ID
 // field as a real picker instead of free-text (SG-081 read-side precedent: a plain read-only GET listing
@@ -97,9 +204,15 @@ function businessIdOptionLabel(o: BusinessIdOption): string {
 }
 
 const MANUFACTURING_PROFILES = ["pharma", "device", "injectable_ddcp", "inhalation_ddcp", "drug_eluting_device"];
+// Known-limitations fix (docs/testing/demo-gujarati/06 §6.8 item 3): matches
+// product_master/commands.py::COMBINATION_PRODUCT_TYPES exactly -- provisional taxonomy, no controlled
+// value set exists anywhere else in the codebase (logged as a SPEC_GAP). "other" keeps the field free
+// text for anything not yet covered so nothing already stored breaks.
+const COMBINATION_PRODUCT_TYPES = ["", "prefilled_syringe", "autoinjector", "inhalation_device", "drug_eluting_device", "other"];
 // STERILE_REQUIRED_PROFILES (services/gxp-api/app/modules/product_master/models.py) — matches the
 // PRD-FR-010 completeness check exactly, so the UI can hint before Release ever blocks on it.
 const STERILE_REQUIRED_PROFILES = ["injectable_ddcp", "inhalation_ddcp"];
+
 // ddcp/models.py CONSTITUENT_TYPES — reused here for UI consistency only; product_master's own
 // constituent_type column carries no matching DB/backend enum constraint (free text).
 const CONSTITUENT_TYPES = ["DRUG", "BIOLOGIC", "DEVICE", "PACKAGING", "LABEL"];
@@ -131,14 +244,31 @@ function toConstituentDrafts(constituents: Constituent[] | undefined): Constitue
 }
 
 export default function ProductMasterPage() {
-  const { me } = useMe();
-  const [draftOpen, setDraftOpen] = useState(false);
+  const { me } = useRequirePermission("product.view");
+  const router = useRouter();
+  const [draftOpen, setDraftOpen] = useState<{ existingBusinessId?: string; suggestedVersionNo?: number } | null>(
+    null
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [historyBusinessId, setHistoryBusinessId] = useState<string | null>(null);
   const [historyVersions, setHistoryVersions] = useState<ProductVersion[] | null>(null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
+
+  // Deep link from the workflow-notifications bell (`?product_version_id=<id>`) — jump straight to the
+  // version detail (its own Release button lives there). Reads window.location directly rather than
+  // next/navigation's useSearchParams(), which needs a Suspense boundary this page has no other reason to
+  // opt into.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const versionId = params.get("product_version_id");
+    if (!versionId) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelectedId(versionId);
+    router.replace("/product-master");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // GET /products/v1/business-ids returns a plain array, not the server-side Paged<T> envelope
   // (Phase 1, small row counts — same ceiling `listAll`/`clientPagedFetcher` document) — DataTable's
@@ -197,16 +327,21 @@ export default function ProductMasterPage() {
         subtitle="Product, Constituent & Regulatory Profile Master. Draft, author constituents, and release."
         action={
           canAuthorProduct(me) ? (
-            <Button variant="primary" onClick={() => setDraftOpen(true)}>
-              <Icon name="plus" /> New draft
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={() => router.push("/import/product-master")}>
+                <Icon name="file-plus-2" /> Bulk import
+              </Button>
+              <Button variant="primary" onClick={() => setDraftOpen({})}>
+                <Icon name="plus" /> New draft
+              </Button>
+            </div>
           ) : undefined
         }
       />
 
       <p className="hint mb-4">
-        This is the current product master - separate from the legacy Products page, which still feeds
-        batch creation until the two are unified.
+        This is the authoritative product master - every batch is created against a released version
+        from this page.
       </p>
 
       <Card className="mb-4">
@@ -228,9 +363,25 @@ export default function ProductMasterPage() {
           <CardHeader
             title={`Versions - ${historyBusinessId}`}
             meta={
-              <Button size="sm" variant="ghost" onClick={() => setHistoryBusinessId(null)}>
-                Close
-              </Button>
+              <div className="flex gap-2">
+                {canAuthorProduct(me) && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() =>
+                      setDraftOpen({
+                        existingBusinessId: historyBusinessId,
+                        suggestedVersionNo: (historyVersions ?? []).reduce((max, v) => Math.max(max, v.version_no), 0) + 1,
+                      })
+                    }
+                  >
+                    <Icon name="plus" /> New version
+                  </Button>
+                )}
+                <Button size="sm" variant="ghost" onClick={() => setHistoryBusinessId(null)}>
+                  Close
+                </Button>
+              </div>
             }
           />
           {historyLoading ? (
@@ -276,9 +427,11 @@ export default function ProductMasterPage() {
 
       {draftOpen && (
         <DraftModal
-          onClose={() => setDraftOpen(false)}
+          existingBusinessId={draftOpen.existingBusinessId}
+          suggestedVersionNo={draftOpen.suggestedVersionNo}
+          onClose={() => setDraftOpen(null)}
           onDone={(newBusinessId) => {
-            setDraftOpen(false);
+            setDraftOpen(null);
             setReloadToken((n) => n + 1);
             showHistory(newBusinessId);
           }}
@@ -296,6 +449,7 @@ export default function ProductMasterPage() {
           }}
         />
       )}
+
     </div>
   );
 }
@@ -527,74 +681,107 @@ function ConstituentEditor({
   );
 }
 
-function DraftModal({ onClose, onDone }: { onClose: () => void; onDone: (businessId: string) => void }) {
+function DraftModal({
+  onClose,
+  onDone,
+  existingBusinessId,
+  suggestedVersionNo,
+}: {
+  onClose: () => void;
+  onDone: (businessId: string) => void;
+  /** Client gap-analysis Phase 8 (2026-10-05, project-owner-directed): Business ID is no longer a
+   * free-text field anywhere in this form -- auto-generated server-side for a brand-new product. Adding a
+   * further version to an *existing* product still needs to say which one, so the "New version" action on
+   * the Versions card passes the existing record's own business id through here instead of asking the
+   * user to retype it. */
+  existingBusinessId?: string;
+  suggestedVersionNo?: number;
+}) {
   const { sites } = useSites();
-  const [businessId, setBusinessId] = useState("");
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
-  const [versionNo, setVersionNo] = useState("1");
+  // Client follow-up (2026-10-06, project-owner-directed): the create form shows only the fields the
+  // client actually named (Product Family -> Code -> Name -> Strength, per §2.9), plus Site (kept visible
+  // -- CreateProductDraftCommand.site_id is required with no safe default, so hiding it would make the
+  // form unable to submit at all). Version no. has no client-visible role here either (it's always 1 for
+  // a brand-new product, or the existing product's next number for the Versions card's "New version"
+  // action), so it's now a derived value rather than an editable input.
+  const versionNo = suggestedVersionNo ?? 1;
   const [siteId, setSiteId] = useState("");
   const [profile, setProfile] = useState(MANUFACTURING_PROFILES[0]);
-  const [udiApplicable, setUdiApplicable] = useState(false);
-  const [deviceModelCode, setDeviceModelCode] = useState("");
-  const [sterileProfileId, setSterileProfileId] = useState("");
-  const [combinationProductType, setCombinationProductType] = useState("");
+  const [productFamilyId, setProductFamilyId] = useState("");
   const [strengthValue, setStrengthValue] = useState("");
   const [strengthUom, setStrengthUom] = useState("");
-  const [pmoaReference, setPmoaReference] = useState("");
-  const [part4ProfileCode, setPart4ProfileCode] = useState("");
-  const [finishedTrackingStrategy, setFinishedTrackingStrategy] = useState("");
-  const [constituents, setConstituents] = useState<ConstituentDraft[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const { data: sterileProfiles } = useApiResource<SterileProfile[]>(
-    siteId ? `/products/v1/sterile-profiles?site_id=${siteId}` : null
-  );
-  useEffect(() => {
-    // A site change invalidates any profile picked for the previous site (the registry is site-scoped).
-    // This is a legitimate "reconcile local selection against freshly-fetched options" reset, not a
-    // derived-state loop — the guard makes it converge in one pass.
-    if (sterileProfileId && !(sterileProfiles ?? []).some((p) => p.id === sterileProfileId)) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setSterileProfileId("");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [siteId, sterileProfiles]);
+  // Commented out, not deleted (2026-10-06, project-owner-directed): Sterile process profile, Device
+  // model code/UDI, and the Combination product section (type, PMOA/Part4/tracking strategy, constituents)
+  // are not among the fields the client named for this form -- removed from the create flow but still
+  // fully available on EditDraftModal below, so a sterile/device/combination product can still have these
+  // set once the draft exists (they're genuinely optional server-side -- CreateProductDraftCommand accepts
+  // null for all of them -- so no capability is lost, just moved off the first-touch form). Uncomment this
+  // block + the matching JSX further down, and restore the literal fields in the request payload, to bring
+  // them back onto this form.
+  // const [udiApplicable, setUdiApplicable] = useState(false);
+  // const [deviceModelCode, setDeviceModelCode] = useState("");
+  // const [sterileProfileId, setSterileProfileId] = useState("");
+  // const [combinationProductType, setCombinationProductType] = useState("");
+  // const [combinationProductTypeOther, setCombinationProductTypeOther] = useState("");
+  // const [pmoaReference, setPmoaReference] = useState("");
+  // const [part4ProfileCode, setPart4ProfileCode] = useState("");
+  // const [finishedTrackingStrategy, setFinishedTrackingStrategy] = useState("");
+  // const [constituents, setConstituents] = useState<ConstituentDraft[]>([]);
+  // const { data: sterileProfiles } = useApiResource<SterileProfile[]>(
+  //   siteId ? `/products/v1/sterile-profiles?site_id=${siteId}` : null
+  // );
+  // useEffect(() => {
+  //   // A site change invalidates any profile picked for the previous site (the registry is site-scoped).
+  //   // This is a legitimate "reconcile local selection against freshly-fetched options" reset, not a
+  //   // derived-state loop — the guard makes it converge in one pass.
+  //   if (sterileProfileId && !(sterileProfiles ?? []).some((p) => p.id === sterileProfileId)) {
+  //     // eslint-disable-next-line react-hooks/set-state-in-effect
+  //     setSterileProfileId("");
+  //   }
+  //   // eslint-disable-next-line react-hooks/exhaustive-deps
+  // }, [siteId, sterileProfiles]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      await api.post("/products/v1/drafts", {
+      const receipt = await api.post<MutationReceipt>("/products/v1/drafts", {
         idempotency_key: newIdempotencyKey(),
-        product_business_id: businessId,
-        product_code: code || businessId,
+        product_business_id: existingBusinessId || undefined,
+        product_code: code || undefined,
         name,
         version_no: Number(versionNo),
         site_id: siteId,
         manufacturing_profile_code: profile,
-        udi_applicable: udiApplicable,
-        device_model_code: deviceModelCode || null,
-        sterile_profile_id: sterileProfileId || null,
-        combination_product_type: combinationProductType || null,
+        product_family_id: productFamilyId || null,
         strength_value: strengthValue || null,
         strength_uom: strengthUom || null,
-        pmoa_reference: pmoaReference || null,
-        part4_profile_code: part4ProfileCode || null,
-        finished_tracking_strategy: finishedTrackingStrategy || null,
-        constituents: constituents.map((c) => ({
-          constituent_type: c.constituent_type,
-          role_code: c.role_code || null,
-          constituent_business_id: c.constituent_business_id,
-          constituent_version_id: c.constituent_version_id,
-          source_site_id: c.source_site_id || null,
-          tracking_strategy: c.tracking_strategy || null,
-          sequence_no: c.sequence_no ? Number(c.sequence_no) : null,
-        })),
+        // Not among the fields the client named for this form (commented out above and in the JSX below)
+        // -- all genuinely optional server-side, so sending their neutral default loses no capability;
+        // still settable afterward via EditDraftModal. Restore the literal field references here if the
+        // commented-out state/JSX is brought back.
+        udi_applicable: false,
+        device_model_code: null,
+        sterile_profile_id: null,
+        combination_product_type: null,
+        pmoa_reference: null,
+        part4_profile_code: null,
+        finished_tracking_strategy: null,
+        constituents: [],
       });
-      onDone(businessId);
+      if (existingBusinessId) {
+        onDone(existingBusinessId);
+      } else {
+        // product_business_id was auto-generated server-side -- read it back off the record just created.
+        const created = await api.get<ProductVersion>(`/products/v1/${receipt.aggregate_id}`);
+        onDone(created.product_business_id);
+      }
     } catch (err) {
       setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Failed to create draft");
     } finally {
@@ -603,85 +790,114 @@ function DraftModal({ onClose, onDone }: { onClose: () => void; onDone: (busines
   }
 
   return (
-    <Modal open onClose={onClose} title="New product draft" large>
+    <Modal open onClose={onClose} title={existingBusinessId ? `New version - ${existingBusinessId}` : "New product draft"} large>
       <form onSubmit={onSubmit}>
-        <div className="grid grid-cols-3 gap-4">
-          <Field label="Business ID" required>
-            <Input value={businessId} onChange={(e) => setBusinessId(e.target.value)} required autoFocus />
-          </Field>
-          <Field label="Product code" hint="Defaults to business ID">
-            <Input value={code} onChange={(e) => setCode(e.target.value)} />
-          </Field>
-          <Field label="Version no." required>
-            <Input type="number" min={1} value={versionNo} onChange={(e) => setVersionNo(e.target.value)} required />
-          </Field>
-        </div>
+        {/* Client follow-up (2026-10-06, project-owner-directed): this form now shows only the fields the
+            client named, in the order they named them -- Product Family -> Code -> Name -> Strength (§2.9)
+            -- plus Site, kept because CreateProductDraftCommand.site_id is required with no safe default.
+            Everything else that used to be on this form (Version no., Sterile process profile, Device
+            model code/UDI, Combination product + constituents) is commented out below rather than
+            deleted -- all genuinely optional server-side, so no capability is lost: they're still fully
+            settable on an existing draft via the Edit action. */}
+        <ProductFamilyPicker value={productFamilyId} onChange={setProductFamilyId} />
+        <CodeField
+          label="Product code"
+          value={code}
+          onChange={setCode}
+          hint="Only used for a version 1 draft; later versions reuse the product's established code."
+        />
+        {/*
+        <Field label="Version no." required>
+          <Input type="number" min={1} value={versionNo} onChange={(e) => setVersionNo(e.target.value)} required />
+        </Field>
+        */}
         <Field label="Name" required>
           <Input value={name} onChange={(e) => setName(e.target.value)} required />
         </Field>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Site" required>
-            <Select value={siteId} onChange={(e) => setSiteId(e.target.value)} required>
-              <option value="">Select a site…</option>
-              {sites.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </Select>
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Strength value (Optional)">
+            <Input type="number" step="any" value={strengthValue} onChange={(e) => setStrengthValue(e.target.value)} />
           </Field>
-          <Field label="Manufacturing profile" required>
-            <Select value={profile} onChange={(e) => setProfile(e.target.value)}>
-              {MANUFACTURING_PROFILES.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </Select>
-          </Field>
+          <UomSelect label="Strength UOM (Optional)" value={strengthUom} onChange={setStrengthUom} />
         </div>
-        <div className="grid grid-cols-2 gap-4">
-          <Field
-            label="Sterile process profile"
-            hint={
-              !siteId
-                ? "Select a site first."
-                : STERILE_REQUIRED_PROFILES.includes(profile)
-                ?"Required at Release for this profile - picked from the site's released sterile process profiles."
-                  : "Not required for this profile."
-            }
-          >
-            <Select value={sterileProfileId} onChange={(e) => setSterileProfileId(e.target.value)} disabled={!siteId}>
-            <option value="">—</option>
-              {(sterileProfiles ?? []).map((p) => (
-                <option key={p.id} value={p.id}>
-                  {sterileProfileLabel(p)}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Device model code" hint="Required at Release if UDI applicable is checked">
-            <Input value={deviceModelCode} onChange={(e) => setDeviceModelCode(e.target.value)} />
-          </Field>
-        </div>
+
+        <Field label="Site" required>
+          <Select value={siteId} onChange={(e) => setSiteId(e.target.value)} required>
+            <option value="">Select a site…</option>
+            {sites.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        {/*
+        <Field
+          label="Sterile process profile"
+          hint={
+            !siteId
+              ? "Select a site first."
+              : STERILE_REQUIRED_PROFILES.includes(profile)
+              ?"Required at Release for this profile - picked from the site's released sterile process profiles."
+                : "Not required for this profile."
+          }
+        >
+          <Select value={sterileProfileId} onChange={(e) => setSterileProfileId(e.target.value)} disabled={!siteId}>
+          <option value="">—</option>
+            {(sterileProfiles ?? []).map((p) => (
+              <option key={p.id} value={p.id}>
+                {sterileProfileLabel(p)}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Device model code (Optional)" hint="Required at Release if UDI applicable is checked">
+          <Input value={deviceModelCode} onChange={(e) => setDeviceModelCode(e.target.value)} />
+        </Field>
         <label className="flex items-center gap-2 fs-2 mb-3">
           <input type="checkbox" checked={udiApplicable} onChange={(e) => setUdiApplicable(e.target.checked)} />
           UDI applicable
         </label>
+        */}
 
-        <p className="fact-k mb-2">Combination product (optional)</p>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Combination product type" hint="Free text, e.g. drug-device-combination.">
-            <Input value={combinationProductType} onChange={(e) => setCombinationProductType(e.target.value)} />
-          </Field>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Strength value">
-              <Input type="number" step="any" value={strengthValue} onChange={(e) => setStrengthValue(e.target.value)} />
-            </Field>
-            <Field label="Strength UOM">
-              <Input value={strengthUom} onChange={(e) => setStrengthUom(e.target.value)} placeholder="mg" />
+        {/* Manufacturing profile stays a real required input (it gates Release-readiness and which DDCP
+            profile family can be authored against this product -- not cosmetic), just moved out of the
+            main flow since the client found it clutters the everyday create form. */}
+        <details className="mb-3">
+          <summary className="hint" style={{ cursor: "pointer" }}>Advanced</summary>
+          <div className="mt-2">
+            <Field label="Manufacturing profile" required>
+              <Select value={profile} onChange={(e) => setProfile(e.target.value)}>
+                {MANUFACTURING_PROFILES.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </Select>
             </Field>
           </div>
+        </details>
+
+        {/*
+        <p className="fact-k mb-2">Combination product (optional)</p>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Combination product type" hint="Provisional taxonomy - pick 'other' for anything not listed.">
+            <Select value={combinationProductType} onChange={(e) => setCombinationProductType(e.target.value)}>
+              {COMBINATION_PRODUCT_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t || "—"}
+                </option>
+              ))}
+            </Select>
+            {combinationProductType === "other" && (
+              <Input
+                className="mt-2"
+                value={combinationProductTypeOther}
+                onChange={(e) => setCombinationProductTypeOther(e.target.value)}
+                placeholder="Describe the combination product type"
+              />
+            )}
+          </Field>
         </div>
         <div className="grid grid-cols-3 gap-4">
           <Field label="PMOA reference" hint="Optional.">
@@ -701,14 +917,15 @@ function DraftModal({ onClose, onDone }: { onClose: () => void; onDone: (busines
         )}
 
         <ConstituentEditor constituents={constituents} onChange={setConstituents} sites={sites} />
+        */}
 
         {error && <p className="error-text mb-2">{error}</p>}
         <div className="flex justify-between gap-3 mt-2">
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={busy || !businessId.trim() || !name.trim() || !siteId}>
-            {busy ? "Creating…" : "Create draft"}
+          <Button type="submit" variant="primary" disabled={busy || !name.trim() || !siteId}>
+            {busy ? "Creating…" : existingBusinessId ? "Create version" : "Create draft"}
           </Button>
         </div>
       </form>
@@ -737,7 +954,14 @@ function EditDraftModal({
   const [udiApplicable, setUdiApplicable] = useState(!!version.udi_applicable);
   const [deviceModelCode, setDeviceModelCode] = useState(version.device_model_code ?? "");
   const [sterileProfileId, setSterileProfileId] = useState(version.sterile_profile_id ?? "");
-  const [combinationProductType, setCombinationProductType] = useState(version.combination_product_type ?? "");
+  const [productFamilyId, setProductFamilyId] = useState(version.product_family_id ?? "");
+  const knownType = COMBINATION_PRODUCT_TYPES.includes(version.combination_product_type ?? "");
+  const [combinationProductType, setCombinationProductType] = useState(
+    version.combination_product_type ? (knownType ? version.combination_product_type : "other") : ""
+  );
+  const [combinationProductTypeOther, setCombinationProductTypeOther] = useState(
+    version.combination_product_type && !knownType ? version.combination_product_type : ""
+  );
   const [strengthValue, setStrengthValue] = useState(version.strength_value ?? "");
   const [strengthUom, setStrengthUom] = useState(version.strength_uom ?? "");
   const [pmoaReference, setPmoaReference] = useState(version.pmoa_reference ?? "");
@@ -765,7 +989,9 @@ function EditDraftModal({
         udi_applicable: udiApplicable,
         device_model_code: deviceModelCode || null,
         sterile_profile_id: sterileProfileId || null,
-        combination_product_type: combinationProductType || null,
+        product_family_id: productFamilyId || null,
+        combination_product_type:
+          combinationProductType === "other" ? combinationProductTypeOther || null : combinationProductType || null,
         strength_value: strengthValue || null,
         strength_uom: strengthUom || null,
         pmoa_reference: pmoaReference || null,
@@ -840,18 +1066,32 @@ function EditDraftModal({
           </label>
         </div>
 
+        <ProductFamilyPicker value={productFamilyId} onChange={setProductFamilyId} />
+
         <p className="fact-k mb-2">Combination product (optional)</p>
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Combination product type" hint="Free text, e.g. drug-device-combination.">
-            <Input value={combinationProductType} onChange={(e) => setCombinationProductType(e.target.value)} />
+          <Field label="Combination product type" hint="Provisional taxonomy - pick 'other' for anything not listed.">
+            <Select value={combinationProductType} onChange={(e) => setCombinationProductType(e.target.value)}>
+              {COMBINATION_PRODUCT_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t || "—"}
+                </option>
+              ))}
+            </Select>
+            {combinationProductType === "other" && (
+              <Input
+                className="mt-2"
+                value={combinationProductTypeOther}
+                onChange={(e) => setCombinationProductTypeOther(e.target.value)}
+                placeholder="Describe the combination product type"
+              />
+            )}
           </Field>
           <div className="grid grid-cols-2 gap-2">
             <Field label="Strength value">
               <Input type="number" step="any" value={strengthValue} onChange={(e) => setStrengthValue(e.target.value)} />
             </Field>
-            <Field label="Strength UOM">
-              <Input value={strengthUom} onChange={(e) => setStrengthUom(e.target.value)} placeholder="mg" />
-            </Field>
+            <UomSelect label="Strength UOM" value={strengthUom} onChange={setStrengthUom} />
           </div>
         </div>
         <div className="grid grid-cols-3 gap-4">
@@ -915,6 +1155,11 @@ function VersionDetailModal({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [suspendSigOpen, setSuspendSigOpen] = useState(false);
+  const [reinstateSigOpen, setReinstateSigOpen] = useState(false);
+  const [obsoleteSigOpen, setObsoleteSigOpen] = useState(false);
+  const [supersedeSigOpen, setSupersedeSigOpen] = useState(false);
+  const [supersedingVersionId, setSupersedingVersionId] = useState("");
   const [releaseSigOpen, setReleaseSigOpen] = useState(false);
 
   const { data: sterileProfiles } = useApiResource<SterileProfile[]>(
@@ -970,25 +1215,17 @@ function VersionDetailModal({
     );
 
 
-  const suspend = () =>
-    runAction(() =>
-      api.post(`/products/v1/${productVersionId}/suspend`, {
-        idempotency_key: newIdempotencyKey(),
-        product_version_id: productVersionId,
-        expected_version: version!.version,
-        reason: "Suspended from Product Master UI",
-      })
-    );
-
-  const reinstate = () =>
-    runAction(() =>
-      api.post(`/products/v1/${productVersionId}/reinstate`, {
-        idempotency_key: newIdempotencyKey(),
-        product_version_id: productVersionId,
-        expected_version: version!.version,
-        reason: "Reinstated from Product Master UI",
-      })
-    );
+  // Known-limitations fix (docs/testing/demo-gujarati/06 §6.8): suspend/reinstate previously called
+  // their endpoints directly with no challenge_id/reauth_password, which the backend's real signature
+  // policy (signature_required=True) always rejects with 428 MISSING_SIGNATURE -- these buttons could
+  // never actually succeed. All four lifecycle actions below now go through SignatureCeremony, the same
+  // ceremony Release already uses.
+  const { data: otherVersions } = useApiResource<ProductVersion[]>(
+    version && supersedeSigOpen ? `/products/v1/${version.product_business_id}/versions` : null
+  );
+  const supersessionCandidates = (otherVersions ?? []).filter(
+    (v) => v.product_version_id !== productVersionId && v.lifecycle_state === "released"
+  );
 
   if (!version) {
     return (
@@ -1007,6 +1244,9 @@ function VersionDetailModal({
           [
             ["Business ID", version.product_business_id],
             ["Lifecycle state", version.lifecycle_state],
+            ...(version.superseded_by_version_id
+              ? ([["Superseded by", version.superseded_by_version_id]] as [string, string][])
+              : []),
             ["Manufacturing profile", version.manufacturing_profile_code],
             ...(version.sterile_profile_id
               ? ([
@@ -1154,13 +1394,21 @@ function VersionDetailModal({
               Release
             </Button>
           )}
-          {holdsAnyRole(me, ["Admin"]) && version.lifecycle_state === "released" && (
-            <Button variant="danger" onClick={suspend} disabled={busy}>
-              Suspend
-            </Button>
+          {canSuspendProduct(me) && version.lifecycle_state === "released" && (
+            <>
+              <Button variant="danger" onClick={() => setSuspendSigOpen(true)} disabled={busy}>
+                Suspend
+              </Button>
+              <Button variant="secondary" onClick={() => setObsoleteSigOpen(true)} disabled={busy}>
+                Obsolete
+              </Button>
+              <Button variant="secondary" onClick={() => setSupersedeSigOpen(true)} disabled={busy}>
+                Supersede
+              </Button>
+            </>
           )}
-          {holdsAnyRole(me, ["Admin"]) && version.lifecycle_state === "suspended" && (
-            <Button variant="primary" onClick={reinstate} disabled={busy}>
+          {canSuspendProduct(me) && version.lifecycle_state === "suspended" && (
+            <Button variant="primary" onClick={() => setReinstateSigOpen(true)} disabled={busy}>
               Reinstate
             </Button>
           )}
@@ -1205,6 +1453,162 @@ function VersionDetailModal({
               idempotency_key: p.idempotency_key,
               product_version_id: productVersionId,
               expected_version: version.version,
+              challenge_id: p.challenge_id,
+              reauth_password: p.reauth_password,
+            })
+          }
+        />
+      )}
+
+      {suspendSigOpen && (
+        <SignatureCeremony
+          open
+          onClose={() => setSuspendSigOpen(false)}
+          onDone={() => {
+            setSuspendSigOpen(false);
+            refresh().catch((err) => setError(err instanceof ApiError ? err.message : "Failed to reload"));
+            onChanged();
+          }}
+          challengePath={`/products/v1/${productVersionId}/signature-challenges`}
+          action="suspend"
+          title={`Suspend ${version.name} v${version.version_no}`}
+          submitLabel="Sign & suspend"
+          submitVariant="danger"
+          reason="required"
+          summary={
+            <>
+              This suspends <strong>{version.product_business_id}</strong> v{version.version_no} - it can
+              no longer be used to create new batches until reinstated.
+            </>
+          }
+          onSign={(p) =>
+            api.post(`/products/v1/${productVersionId}/suspend`, {
+              idempotency_key: p.idempotency_key,
+              product_version_id: productVersionId,
+              expected_version: version.version,
+              reason: p.reason,
+              challenge_id: p.challenge_id,
+              reauth_password: p.reauth_password,
+            })
+          }
+        />
+      )}
+
+      {reinstateSigOpen && (
+        <SignatureCeremony
+          open
+          onClose={() => setReinstateSigOpen(false)}
+          onDone={() => {
+            setReinstateSigOpen(false);
+            refresh().catch((err) => setError(err instanceof ApiError ? err.message : "Failed to reload"));
+            onChanged();
+          }}
+          challengePath={`/products/v1/${productVersionId}/signature-challenges`}
+          action="reinstate"
+          title={`Reinstate ${version.name} v${version.version_no}`}
+          submitLabel="Sign & reinstate"
+          submitVariant="primary"
+          reason="required"
+          summary={
+            <>
+              This reinstates <strong>{version.product_business_id}</strong> v{version.version_no} back to
+              released. Must be signed by someone other than whoever suspended it.
+            </>
+          }
+          onSign={(p) =>
+            api.post(`/products/v1/${productVersionId}/reinstate`, {
+              idempotency_key: p.idempotency_key,
+              product_version_id: productVersionId,
+              expected_version: version.version,
+              reason: p.reason,
+              challenge_id: p.challenge_id,
+              reauth_password: p.reauth_password,
+            })
+          }
+        />
+      )}
+
+      {obsoleteSigOpen && (
+        <SignatureCeremony
+          open
+          onClose={() => setObsoleteSigOpen(false)}
+          onDone={() => {
+            setObsoleteSigOpen(false);
+            refresh().catch((err) => setError(err instanceof ApiError ? err.message : "Failed to reload"));
+            onChanged();
+          }}
+          challengePath={`/products/v1/${productVersionId}/signature-challenges`}
+          action="obsolete"
+          title={`Obsolete ${version.name} v${version.version_no}`}
+          submitLabel="Sign & obsolete"
+          submitVariant="danger"
+          reason="required"
+          summary={
+            <>
+              This retires <strong>{version.product_business_id}</strong> v{version.version_no}{" "}
+              permanently - obsolete is a terminal state with no further transitions.
+            </>
+          }
+          onSign={(p) =>
+            api.post(`/products/v1/${productVersionId}/obsolete`, {
+              idempotency_key: p.idempotency_key,
+              product_version_id: productVersionId,
+              expected_version: version.version,
+              reason: p.reason,
+              challenge_id: p.challenge_id,
+              reauth_password: p.reauth_password,
+            })
+          }
+        />
+      )}
+
+      {supersedeSigOpen && (
+        <SignatureCeremony
+          open
+          onClose={() => setSupersedeSigOpen(false)}
+          onDone={() => {
+            setSupersedeSigOpen(false);
+            setSupersedingVersionId("");
+            refresh().catch((err) => setError(err instanceof ApiError ? err.message : "Failed to reload"));
+            onChanged();
+          }}
+          challengePath={`/products/v1/${productVersionId}/signature-challenges`}
+          action="supersede"
+          title={`Supersede ${version.name} v${version.version_no}`}
+          submitLabel="Sign & supersede"
+          submitVariant="danger"
+          reason="required"
+          disabled={!supersedingVersionId}
+          summary={
+            <>
+              This marks <strong>{version.product_business_id}</strong> v{version.version_no} as
+              superseded by the released version chosen below - terminal, no further transitions.
+            </>
+          }
+          extraFields={
+            <Field label="Superseded by" required>
+              <Select value={supersedingVersionId} onChange={(e) => setSupersedingVersionId(e.target.value)}>
+                <option value="">Select a released version…</option>
+                {supersessionCandidates.map((v) => (
+                  <option key={v.product_version_id} value={v.product_version_id}>
+                    v{v.version_no} - {v.name}
+                  </option>
+                ))}
+              </Select>
+              {supersessionCandidates.length === 0 && (
+                <p className="hint mt-1">
+                  No other released version of {version.product_business_id} exists yet.
+                </p>
+              )}
+            </Field>
+          }
+          onSign={(p) =>
+            api.post(`/products/v1/${productVersionId}/supersede`, {
+              idempotency_key: p.idempotency_key,
+              product_version_id: productVersionId,
+              expected_version: version.version,
+              reason: p.reason,
+              superseding_version_id: supersedingVersionId,
               challenge_id: p.challenge_id,
               reauth_password: p.reauth_password,
             })

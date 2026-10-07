@@ -9,9 +9,11 @@ call (ERP-ARC-023 "async default", ERP-ARC-024 "no distributed 2PC") instead of 
 shape every other command handler in this codebase uses -- see its docstring below.
 """
 
+import ipaddress
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
+from urllib.parse import urlsplit
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -231,6 +233,29 @@ class RegisterERPInstanceCommand(CommandEnvelope):
     reauth_password: str | None = None
 
 
+def _reject_private_network_base_url(base_url: str) -> None:
+    """SSRF defense-in-depth: this hostname becomes an outbound `httpx.AsyncClient(base_url=...)` target
+    for every future integration call (adapters/base.py), so a registered instance pointed at an internal
+    address would let a privileged-but-not-infra-trusted actor use this server to reach internal services
+    or a cloud metadata endpoint. Only catches a literal private/loopback/link-local IP or "localhost" in
+    the hostname itself -- it does NOT resolve DNS, so a public hostname that later resolves to a private
+    address (DNS rebinding) is not caught here; that requires a connect-time check in the adapter's HTTP
+    client, which is not built this pass."""
+    hostname = urlsplit(base_url).hostname
+    if hostname is None:
+        raise ErpInstanceInvalidError("base_url has no parseable hostname", base_url=base_url)
+    if hostname.lower() == "localhost":
+        raise ErpInstanceInvalidError("base_url must not target localhost", base_url=base_url)
+    try:
+        addr = ipaddress.ip_address(hostname)
+    except ValueError:
+        return  # not a literal IP -- DNS-based rebinding is a documented, unresolved gap (see docstring)
+    if addr.is_private or addr.is_loopback or addr.is_link_local or addr.is_reserved or addr.is_multicast:
+        raise ErpInstanceInvalidError(
+            "base_url must not target a private, loopback, link-local, or reserved address", base_url=base_url
+        )
+
+
 async def register_erp_instance(
     session: AsyncSession, cmd: RegisterERPInstanceCommand, actor_user_id: uuid.UUID
 ) -> MutationReceipt:
@@ -253,6 +278,7 @@ async def register_erp_instance(
     # exists in the baseline for any environment, including SANDBOX/TEST.
     if not cmd.base_url.lower().startswith("https://"):
         raise ErpInstanceInvalidError("base_url must use https:// -- plaintext ERP connections are not permitted", base_url=cmd.base_url)
+    _reject_private_network_base_url(cmd.base_url)
 
     duplicate = (
         await session.execute(select(ErpInstance.id).where(ErpInstance.instance_name == cmd.instance_name))

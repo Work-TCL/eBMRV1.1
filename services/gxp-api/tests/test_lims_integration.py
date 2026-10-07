@@ -371,7 +371,7 @@ async def test_health_reports_instance_status(client, seeded, db):
     async with db.begin():
         instance = await _make_instance(client, db, seeded, code=f"LIMS-{idem()[:8]}")
 
-    resp = await client.get(f"/integrations/lims/{instance.id}/health")
+    resp = await client.get(f"/integrations/lims/{instance.id}/health", headers=auth_headers(op_token))
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["status"] == "active"

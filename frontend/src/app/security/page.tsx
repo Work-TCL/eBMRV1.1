@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { api, ApiError, newIdempotencyKey, type MutationReceipt } from "@/lib/api";
-import { useRequireAdmin } from "@/lib/hooks";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { api, ApiError, canOperateSecurity, hasPermission, newIdempotencyKey, type MutationReceipt } from "@/lib/api";
+import { useMe } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -26,8 +27,15 @@ const READS = [
 ];
 
 export default function SecurityPage() {
-  const { isAdmin } = useRequireAdmin();
-  if (!isAdmin) return null;
+  const { me, loading } = useMe();
+  const router = useRouter();
+  const canOperate = canOperateSecurity(me);
+
+  useEffect(() => {
+    if (!loading && !canOperate) router.replace("/batch-execution");
+  }, [me, loading, canOperate, router]);
+
+  if (!canOperate) return null;
 
   return (
     <div>
@@ -38,17 +46,19 @@ export default function SecurityPage() {
 
       <ReadDashboards />
       <ParameterizedReadsCard />
-      <RaiseIncidentCard />
-      <RegisterVulnerabilityCard />
-      <RequestPrivilegedAccessCard />
+      {hasPermission(me, "security_incident.open") && <RaiseIncidentCard />}
+      {hasPermission(me, "vulnerability.register") && <RegisterVulnerabilityCard />}
+      {hasPermission(me, "privileged_access.request") && <RequestPrivilegedAccessCard />}
 
       <FormConsole
       title="Threat model & risk operations"
         root="/security/v1"
+        me={me}
         ops={[
           {
             path: "threats",
             label: "Add a threat",
+            requiredPermission: "security_threat.register",
             about: "Registers one threat against a threat-model version, with its abuse case.",
             fields: [
               { name: "threat_model_version_id", label: "Threat model version ID", required: true },
@@ -66,6 +76,7 @@ export default function SecurityPage() {
           {
             path: "threat-models",
             label: "Create a threat model version",
+            requiredPermission: "security_threat_model.create",
             fields: [
               { name: "system_version", label: "System version", required: true },
               { name: "methodology_version", label: "Methodology version", required: true },
@@ -79,6 +90,7 @@ export default function SecurityPage() {
           {
             path: "threat-models/{id}/reviews",
             label: "Record a review",
+            requiredPermission: "security_threat_model.trigger_review",
             fields: [
               { name: "id", label: "Threat model version ID", required: true },
               { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -91,6 +103,7 @@ export default function SecurityPage() {
           {
             path: "threats/{id}/controls",
             label: "Map a control",
+            requiredPermission: "security_threat.map_control",
             fields: [
               { name: "id", label: "Threat ID", required: true },
               { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -108,6 +121,7 @@ export default function SecurityPage() {
           {
             path: "threats/{id}/risk-calculations",
             label: "Calculate residual risk",
+            requiredPermission: "security_threat.calculate_risk",
             fields: [
               { name: "id", label: "Threat ID", required: true },
               { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -122,6 +136,7 @@ export default function SecurityPage() {
           {
             path: "exceptions",
             label: "Raise a security exception",
+            requiredPermission: "security_exception.request",
             fields: [
               { name: "control_or_requirement", label: "Control or requirement", required: true },
               { name: "reason", label: "Reason", type: "textarea", required: true },
@@ -138,12 +153,14 @@ export default function SecurityPage() {
       title="Threat model & risk operations - signed"
         subtitle="Residual risk acceptance and security exception approval now require a Part 11 signature."
         root="/security/v1"
+        me={me}
         ops={[
           {
             postPath: "risks/{risk_id}/accept",
             challengePath: "risks/{risk_id}/accept-signature-challenges",
             action: "accept_risk",
             label: "Accept a residual risk",
+            requiredPermission: "security_threat.accept_risk",
             about: "Formally accepts the residual risk on a threat's current risk calculation.",
             fields: [
               { name: "risk_id", label: "Risk (threat) ID", required: true },
@@ -157,6 +174,7 @@ export default function SecurityPage() {
             challengePath: "exceptions/{exception_id}/approval-signature-challenges",
             action: "approve",
             label: "Approve a security exception",
+            requiredPermission: "security_exception.approve",
             about: "The approver must be independent of whoever requested the exception.",
             fields: [{ name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" }],
           },
@@ -166,10 +184,12 @@ export default function SecurityPage() {
       <FormConsole
       title="Identity & session operations"
         root="/security/v1"
+        me={me}
         ops={[
           {
             path: "sessions/{id}/revoke",
             label: "Revoke a session",
+            requiredPermission: "application_session.revoke",
             fields: [
               { name: "id", label: "Session ID", required: true },
               { name: "reason", label: "Reason", type: "textarea", required: true },
@@ -178,6 +198,7 @@ export default function SecurityPage() {
           {
             path: "sessions:revoke-all",
             label: "Revoke all sessions for a subject",
+            requiredPermission: "application_session.revoke",
             fields: [
               { name: "subject_id", label: "Subject", type: "userSelect", required: true },
               { name: "reason", label: "Reason", type: "textarea", required: true },
@@ -186,6 +207,7 @@ export default function SecurityPage() {
           {
             path: "identity-providers",
             label: "Register an IdP config",
+            requiredPermission: "identity_provider.create",
             fields: [
               { name: "deployment_label", label: "Deployment label", required: true },
               { name: "issuer", label: "Issuer", required: true },
@@ -201,6 +223,7 @@ export default function SecurityPage() {
           {
             path: "identity-providers/{identity_provider_config_id}/mappings",
             label: "Add a federation mapping",
+            requiredPermission: "identity_provider.map_identity",
             fields: [
               { name: "identity_provider_config_id", label: "IdP config ID", required: true },
               { name: "user_id", label: "User", type: "userSelect", required: true },
@@ -213,6 +236,7 @@ export default function SecurityPage() {
           {
             path: "identity-providers/{identity_provider_config_id}/tokens:validate",
             label: "Validate a token",
+            requiredPermission: "identity_provider.validate_token",
             fields: [
               { name: "identity_provider_config_id", label: "IdP config ID", required: true },
               { name: "token", label: "Token", type: "textarea", required: true },
@@ -222,6 +246,7 @@ export default function SecurityPage() {
           {
             path: "service-identities",
             label: "Register a service identity",
+            requiredPermission: "service_identity.provision",
             fields: [
               { name: "service_name", label: "Service name", required: true },
               { name: "auth_method", label: "Auth method", required: true, placeholder: "e.g. mtls, jwt" },
@@ -235,6 +260,7 @@ export default function SecurityPage() {
           {
             path: "service-identities/{service_identity_id}/revoke",
             label: "Revoke a service identity",
+            requiredPermission: "service_identity.revoke",
             fields: [
               { name: "service_identity_id", label: "Service identity ID", required: true },
               { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -247,10 +273,12 @@ export default function SecurityPage() {
       <FormConsole
         title="Privileged access & crypto operations (Docs 63, 65)"
         root="/security/v1"
+        me={me}
         ops={[
           {
             path: "privileged-access/requests/{id}/approve",
             label: "Approve a privileged-access request",
+            requiredPermission: "privileged_access.approve",
             fields: [
               { name: "id", label: "Request ID", required: true },
               { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -262,6 +290,7 @@ export default function SecurityPage() {
           {
             path: "support-sessions",
             label: "Open a support session",
+            requiredPermission: "privileged_session.open_support",
             fields: [
               { name: "grant_id", label: "Grant ID", required: true },
               { name: "support_case_ref", label: "Support case reference", required: true },
@@ -273,6 +302,7 @@ export default function SecurityPage() {
           {
             path: "break-glass",
             label: "Break-glass access",
+            requiredPermission: "privileged_session.break_glass",
             about: "Emergency access outside the normal approval flow - used only when the incident requires it.",
             fields: [
               { name: "requested_role", label: "Requested role", required: true },
@@ -285,6 +315,7 @@ export default function SecurityPage() {
           {
             path: "admin-commands/{command_code}:execute",
             label: "Execute a controlled admin command",
+            requiredPermission: "privileged_session.execute_command",
             fields: [
               { name: "command_code", label: "Command code", required: true },
               { name: "privileged_session_id", label: "Privileged session ID", required: true },
@@ -295,6 +326,7 @@ export default function SecurityPage() {
           {
             path: "privileged-sessions/{privileged_session_id}/close",
             label: "Close a privileged session",
+            requiredPermission: "privileged_session.close",
             fields: [
               { name: "privileged_session_id", label: "Privileged session ID", required: true },
               { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -304,6 +336,7 @@ export default function SecurityPage() {
           {
             path: "privileged-sessions/{privileged_session_id}/review",
             label: "Review a privileged session",
+            requiredPermission: "privileged_session.review",
             fields: [
               { name: "privileged_session_id", label: "Privileged session ID", required: true },
               { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -314,6 +347,7 @@ export default function SecurityPage() {
           {
             path: "secrets/{secret_id}/rotate",
             label: "Rotate a secret",
+            requiredPermission: "secret.rotate",
             fields: [
               { name: "secret_id", label: "Secret ID", required: true },
               { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -325,6 +359,7 @@ export default function SecurityPage() {
           {
             path: "certificates:issue",
             label: "Issue a certificate",
+            requiredPermission: "certificate.issue",
             fields: [
               { name: "subject_sans", label: "Subject SANs", type: "kv", required: true },
               {
@@ -340,6 +375,7 @@ export default function SecurityPage() {
           {
             path: "certificates/{certificate_id}/rotate",
             label: "Rotate a certificate",
+            requiredPermission: "certificate.rotate",
             fields: [
               { name: "certificate_id", label: "Certificate ID", required: true },
               { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -350,6 +386,7 @@ export default function SecurityPage() {
           {
             path: "certificates/{certificate_id}/revoke",
             label: "Revoke a certificate",
+            requiredPermission: "certificate.revoke",
             fields: [
               { name: "certificate_id", label: "Certificate ID", required: true },
               { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -363,6 +400,7 @@ export default function SecurityPage() {
           {
             path: "outbound-destinations",
             label: "Register an outbound destination",
+            requiredPermission: "outbound_destination.register",
             fields: [
               { name: "service_id", label: "Service ID", required: true },
               { name: "schemes_hosts_ports", label: "Schemes / hosts / ports", type: "kv", required: true },
@@ -378,6 +416,7 @@ export default function SecurityPage() {
           {
             path: "webhook-profiles",
             label: "Register a webhook profile",
+            requiredPermission: "webhook_profile.register",
             fields: [
               { name: "provider", label: "Provider", required: true },
               { name: "auth_mechanism", label: "Auth mechanism", default: "HMAC_SHA256" },
@@ -393,10 +432,12 @@ export default function SecurityPage() {
       <FormConsole
         title="Incident & supply-chain operations (Docs 67, 68)"
         root="/security/v1"
+        me={me}
         ops={[
           {
             path: "incidents/{incident_id}/containment",
             label: "Record a containment action",
+            requiredPermission: "security_incident.contain",
             fields: [
               { name: "incident_id", label: "Incident ID", required: true },
               { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -409,6 +450,7 @@ export default function SecurityPage() {
           {
             path: "incidents/{incident_id}/evidence",
             label: "Attach forensic evidence",
+            requiredPermission: "security_incident.evidence",
             fields: [
               { name: "incident_id", label: "Incident ID", required: true },
               { name: "source", label: "Source", required: true },
@@ -426,6 +468,7 @@ export default function SecurityPage() {
           {
             path: "incidents/{incident_id}/gxp-impact",
             label: "Assess GxP impact",
+            requiredPermission: "security_incident.gxp_impact",
             fields: [
               { name: "incident_id", label: "Incident ID", required: true },
               { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -441,6 +484,7 @@ export default function SecurityPage() {
           {
             path: "incidents/{incident_id}/close",
             label: "Close an incident",
+            requiredPermission: "security_incident.close",
             fields: [
               { name: "incident_id", label: "Incident ID", required: true },
               { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -453,6 +497,7 @@ export default function SecurityPage() {
           {
             path: "vulnerabilities/{vulnerability_id}/assess",
             label: "Assess a vulnerability",
+            requiredPermission: "vulnerability.assess",
             fields: [
               { name: "vulnerability_id", label: "Vulnerability ID", required: true },
               { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
@@ -470,6 +515,7 @@ export default function SecurityPage() {
           {
             path: "vulnerabilities/{vulnerability_id}/exceptions",
             label: "Grant a vulnerability exception",
+            requiredPermission: "vulnerability.exception",
             fields: [
               { name: "vulnerability_id", label: "Vulnerability ID", required: true },
               { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },

@@ -1,15 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   api,
   ApiError,
   canEvaluateYield,
   canVerifyReconciliation,
+  listAll,
   newIdempotencyKey,
   type MutationReceipt,
 } from "@/lib/api";
-import { useEntityOptions, useMe } from "@/lib/hooks";
+import { useEntityOptions, useMe, type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
@@ -17,6 +18,7 @@ import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { UomSelect } from "@/components/ui/UomSelect";
 import { Icon } from "@/components/ui/Icon";
 import { StatePill } from "@/components/ui/StatePill";
 import { summarizeJson } from "@/components/ui/JsonPanel";
@@ -282,7 +284,7 @@ export default function YieldPage() {
             defaultBatchId={batchId}
             entities={entities}
           />
-          <EvaluateLabelReconciliationCard onEvaluated={() => load()} />
+          <EvaluateLabelReconciliationCard onEvaluated={() => load()} entities={entities} />
           <EvaluateComponentReconciliationCard onEvaluated={() => load()} defaultBatchId={batchId} entities={entities} />
         </div>
       )}
@@ -382,9 +384,7 @@ function EvaluateYieldCard({
         <Field label="Phase code" hint="Optional - omit for a whole-batch yield.">
           <Input value={phaseCode} onChange={(e) => setPhaseCode(e.target.value)} />
         </Field>
-        <Field label="UOM" required>
-          <Input value={uom} onChange={(e) => setUom(e.target.value)} required />
-        </Field>
+        <UomSelect value={uom} onChange={setUom} required />
         <Field label="Theoretical quantity" required>
           <Input value={theoretical} onChange={(e) => setTheoretical(e.target.value)} required />
         </Field>
@@ -421,6 +421,84 @@ const LOSS_REASON_SUBFIELDS: RepeatSubField[] = [
   { name: "description", label: "Description", required: true },
   { name: "quantity", label: "Quantity", type: "number" },
 ];
+
+/** The exact `quantities` key vocabulary `yield_reconciliation/models.py` accepts: `QUANTITY_CATEGORIES`
+ * (issued/consumed/returned/samples/rejected/destroyed/approved_loss) for MATERIAL/PACKAGING/LABEL, plus
+ * `assembled`/`scrapped` (`COMPONENT_QUANTITY_CATEGORIES`) for COMPONENT. `issued` is the only key the
+ * backend actually requires — `_persist_reconciliation` raises on a missing `quantities["issued"]`, while
+ * every other category defaults to "0" server-side when omitted (`quantities.get(k, "0")`), so `build()`
+ * only sends the ones the user filled in. Replaces a raw key-value editor whose hint text told the user
+ * to type these exact key names by hand, with no validation that they had. `item_ref` stays a real
+ * key-value editor below (unlike `quantities`, its shape genuinely varies by what's being reconciled —
+ * e.g. `material_lot_id` vs a device unit's own `serial_number` — and nothing downstream validates its
+ * keys the way `quantities`' categories are validated). */
+function useQuantityFields(includeComponentCategories = false) {
+  const [issued, setIssued] = useState("");
+  const [consumed, setConsumed] = useState("");
+  const [returned, setReturned] = useState("");
+  const [samples, setSamples] = useState("");
+  const [rejected, setRejected] = useState("");
+  const [destroyed, setDestroyed] = useState("");
+  const [approvedLoss, setApprovedLoss] = useState("");
+  const [assembled, setAssembled] = useState("");
+  const [scrapped, setScrapped] = useState("");
+
+  function build(): Record<string, string> {
+    const q: Record<string, string> = { issued: issued.trim() };
+    if (consumed.trim()) q.consumed = consumed.trim();
+    if (returned.trim()) q.returned = returned.trim();
+    if (samples.trim()) q.samples = samples.trim();
+    if (rejected.trim()) q.rejected = rejected.trim();
+    if (destroyed.trim()) q.destroyed = destroyed.trim();
+    if (approvedLoss.trim()) q.approved_loss = approvedLoss.trim();
+    if (includeComponentCategories) {
+      if (assembled.trim()) q.assembled = assembled.trim();
+      if (scrapped.trim()) q.scrapped = scrapped.trim();
+    }
+    return q;
+  }
+
+  const fields = (
+    <div>
+      <label className="label">Quantities</label>
+      <div className="grid grid-cols-3 gap-3 mt-1">
+        <Field label="Issued" required>
+          <Input type="number" step="any" value={issued} onChange={(e) => setIssued(e.target.value)} required />
+        </Field>
+        <Field label="Consumed">
+          <Input type="number" step="any" value={consumed} onChange={(e) => setConsumed(e.target.value)} />
+        </Field>
+        <Field label="Returned">
+          <Input type="number" step="any" value={returned} onChange={(e) => setReturned(e.target.value)} />
+        </Field>
+        <Field label="Samples">
+          <Input type="number" step="any" value={samples} onChange={(e) => setSamples(e.target.value)} />
+        </Field>
+        <Field label="Rejected">
+          <Input type="number" step="any" value={rejected} onChange={(e) => setRejected(e.target.value)} />
+        </Field>
+        <Field label="Destroyed">
+          <Input type="number" step="any" value={destroyed} onChange={(e) => setDestroyed(e.target.value)} />
+        </Field>
+        <Field label="Approved loss" hint="Requires a loss reason below when non-zero.">
+          <Input type="number" step="any" value={approvedLoss} onChange={(e) => setApprovedLoss(e.target.value)} />
+        </Field>
+        {includeComponentCategories && (
+          <>
+            <Field label="Assembled">
+              <Input type="number" step="any" value={assembled} onChange={(e) => setAssembled(e.target.value)} />
+            </Field>
+            <Field label="Scrapped">
+              <Input type="number" step="any" value={scrapped} onChange={(e) => setScrapped(e.target.value)} />
+            </Field>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
+  return { issued, build, fields };
+}
 
 /** The `{type, value, inclusive}` shape is identical across every reconciliation command
  * (`tolerance_rule: dict`) — structured fields here instead of a raw `kv` editor since the shape is
@@ -523,12 +601,16 @@ function EvaluatePotencyCard({
         <Field label="Phase code" hint="Optional - omit for a whole-batch calculation.">
           <Input value={phaseCode} onChange={(e) => setPhaseCode(e.target.value)} />
         </Field>
-        <Field label="Rule ID" required>
-          <Input value={ruleId} onChange={(e) => setRuleId(e.target.value)} required />
-        </Field>
-        <Field label="UOM" hint="Optional.">
-          <Input value={uom} onChange={(e) => setUom(e.target.value)} />
-        </Field>
+        <EntityPickerField
+          label="Rule ID"
+          required
+          value={ruleId}
+          onChange={setRuleId}
+          options={entities.rules}
+          status={entities.rulesStatus}
+          kind="rule"
+        />
+        <UomSelect value={uom} onChange={setUom} hint="Optional." />
       </form>
       <div className="mt-3">
         <KeyValueRows
@@ -574,7 +656,7 @@ function ReconciliationCard({
 }) {
   const [batchId, setBatchId] = useState(defaultBatchId);
   const [itemRef, setItemRef] = useState<KvRow[]>([]);
-  const [quantities, setQuantities] = useState<KvRow[]>([]);
+  const quantityFields = useQuantityFields();
   const [uom, setUom] = useState("");
   const [toleranceType, setToleranceType] = useState("percentage");
   const [toleranceValue, setToleranceValue] = useState("");
@@ -596,7 +678,7 @@ function ReconciliationCard({
         batch_id: batchId.trim(),
         reconciliation_type: reconciliationType,
         item_ref: buildKvObject(itemRef),
-        quantities: buildKvObject(quantities),
+        quantities: quantityFields.build(),
         uom: uom.trim(),
         tolerance_rule: { type: toleranceType, value: toleranceValue.trim(), inclusive: toleranceInclusive === "true" },
         loss_reasons: lossReasons.length > 0 ? buildRepeatArray(LOSS_REASON_SUBFIELDS, lossReasons) : null,
@@ -624,12 +706,16 @@ function ReconciliationCard({
           status={entities.batchesStatus}
           kind="batch"
         />
-        <Field label="UOM" required>
-          <Input value={uom} onChange={(e) => setUom(e.target.value)} required />
-        </Field>
-        <Field label="Linked deviation ID" hint="An existing QMS deviation - only relevant alongside an approved_loss quantity.">
-          <Input value={linkedDeviationId} onChange={(e) => setLinkedDeviationId(e.target.value)} />
-        </Field>
+        <UomSelect value={uom} onChange={setUom} required />
+        <EntityPickerField
+          label="Linked deviation ID"
+          hint="An existing QMS deviation - only relevant alongside an approved_loss quantity."
+          value={linkedDeviationId}
+          onChange={setLinkedDeviationId}
+          options={entities.deviations}
+          status={entities.deviationsStatus}
+          kind="deviation"
+        />
         <ToleranceRuleFields
           type={toleranceType}
           setType={setToleranceType}
@@ -641,12 +727,7 @@ function ReconciliationCard({
       </form>
       <div className="grid grid-cols-2 gap-4 mt-3">
         <KeyValueRows label="Item reference" hint="What is being reconciled, e.g. material_lot_id → a lot ID." value={itemRef} onChange={setItemRef} />
-        <KeyValueRows
-          label="Quantities"
-          hint="e.g. issued, consumed, returned, samples, rejected, destroyed, approved_loss."
-          value={quantities}
-          onChange={setQuantities}
-        />
+        {quantityFields.fields}
       </div>
       <div className="mt-3">
         <RepeatableRows
@@ -665,7 +746,7 @@ function ReconciliationCard({
           type="submit"
           variant="primary"
           onClick={submit}
-          disabled={busy || !batchId.trim() || !uom.trim() || itemRef.length === 0 || quantities.length === 0 || !toleranceValue.trim()}
+          disabled={busy || !batchId.trim() || !uom.trim() || itemRef.length === 0 || !quantityFields.issued.trim() || !toleranceValue.trim()}
         >
           {busy ? "Evaluating…" : "Evaluate reconciliation"}
         </Button>
@@ -674,7 +755,42 @@ function ReconciliationCard({
   );
 }
 
-function EvaluateLabelReconciliationCard({ onEvaluated }: { onEvaluated: () => void }) {
+/** Local to this file only (per the picker-fix scope) — `GET /packaging/v1/runs` has no shared hook in
+ * `lib/hooks.ts` yet since no other page needs it. Same "fetch once, map to {value,label}" shape as
+ * `useEntityOptions`'s other fields; `listAll` handles the paginated envelope
+ * (`packaging/router.py::list_packaging_runs` returns the same `{items, ...}` shape every other
+ * `listAll` consumer does). */
+function usePackagingRuns(): { options: EntityOption[]; status: EntityOptionsStatus } {
+  const [options, setOptions] = useState<EntityOption[]>([]);
+  const [status, setStatus] = useState<EntityOptionsStatus>("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+    listAll<{ id: string; line_ref: string; state: string }>("/packaging/v1/runs")
+      .then((rows) => {
+        if (cancelled) return;
+        setOptions(rows.map((r) => ({ value: r.id, label: `${r.line_ref} (${r.state})` })));
+        setStatus(rows.length ? "ready" : "empty");
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return { options, status };
+}
+
+function EvaluateLabelReconciliationCard({
+  onEvaluated,
+  entities,
+}: {
+  onEvaluated: () => void;
+  entities: ReturnType<typeof useEntityOptions>;
+}) {
+  const packagingRuns = usePackagingRuns();
   const [packagingRunId, setPackagingRunId] = useState("");
   const [toleranceType, setToleranceType] = useState("percentage");
   const [toleranceValue, setToleranceValue] = useState("");
@@ -715,12 +831,24 @@ function EvaluateLabelReconciliationCard({ onEvaluated }: { onEvaluated: () => v
         tolerance rule - the batch and quantities are derived from the packaging run, not entered here.
       </p>
       <form onSubmit={submit} className="grid grid-cols-3 gap-4">
-        <Field label="Packaging run ID" required>
-          <Input value={packagingRunId} onChange={(e) => setPackagingRunId(e.target.value)} required />
-        </Field>
-        <Field label="Linked deviation ID" hint="An existing QMS deviation - only relevant alongside an approved_loss quantity.">
-          <Input value={linkedDeviationId} onChange={(e) => setLinkedDeviationId(e.target.value)} />
-        </Field>
+        <EntityPickerField
+          label="Packaging run ID"
+          required
+          value={packagingRunId}
+          onChange={setPackagingRunId}
+          options={packagingRuns.options}
+          status={packagingRuns.status}
+          kind="packaging run"
+        />
+        <EntityPickerField
+          label="Linked deviation ID"
+          hint="An existing QMS deviation - only relevant alongside an approved_loss quantity."
+          value={linkedDeviationId}
+          onChange={setLinkedDeviationId}
+          options={entities.deviations}
+          status={entities.deviationsStatus}
+          kind="deviation"
+        />
         <div />
         <ToleranceRuleFields
           type={toleranceType}
@@ -764,7 +892,7 @@ function EvaluateComponentReconciliationCard({
   const [batchId, setBatchId] = useState(defaultBatchId);
   const [deviceUnitId, setDeviceUnitId] = useState("");
   const [itemRef, setItemRef] = useState<KvRow[]>([]);
-  const [quantities, setQuantities] = useState<KvRow[]>([]);
+  const quantityFields = useQuantityFields(true);
   const [uom, setUom] = useState("");
   const [toleranceType, setToleranceType] = useState("percentage");
   const [toleranceValue, setToleranceValue] = useState("");
@@ -787,7 +915,7 @@ function EvaluateComponentReconciliationCard({
         reconciliation_type: "COMPONENT",
         device_unit_id: deviceUnitId.trim() || null,
         item_ref: buildKvObject(itemRef),
-        quantities: buildKvObject(quantities),
+        quantities: quantityFields.build(),
         uom: uom.trim(),
         tolerance_rule: { type: toleranceType, value: toleranceValue.trim(), inclusive: toleranceInclusive === "true" },
         loss_reasons: lossReasons.length > 0 ? buildRepeatArray(LOSS_REASON_SUBFIELDS, lossReasons) : null,
@@ -822,9 +950,7 @@ function EvaluateComponentReconciliationCard({
         <Field label="Device unit ID" hint="Optional - only for a serialized case; must belong to this batch.">
           <Input value={deviceUnitId} onChange={(e) => setDeviceUnitId(e.target.value)} />
         </Field>
-        <Field label="UOM" required>
-          <Input value={uom} onChange={(e) => setUom(e.target.value)} required />
-        </Field>
+        <UomSelect value={uom} onChange={setUom} required />
         <ToleranceRuleFields
           type={toleranceType}
           setType={setToleranceType}
@@ -833,18 +959,19 @@ function EvaluateComponentReconciliationCard({
           inclusive={toleranceInclusive}
           setInclusive={setToleranceInclusive}
         />
-        <Field label="Linked deviation ID" hint="An existing QMS deviation - only relevant alongside an approved_loss quantity.">
-          <Input value={linkedDeviationId} onChange={(e) => setLinkedDeviationId(e.target.value)} />
-        </Field>
+        <EntityPickerField
+          label="Linked deviation ID"
+          hint="An existing QMS deviation - only relevant alongside an approved_loss quantity."
+          value={linkedDeviationId}
+          onChange={setLinkedDeviationId}
+          options={entities.deviations}
+          status={entities.deviationsStatus}
+          kind="deviation"
+        />
       </form>
       <div className="grid grid-cols-2 gap-4 mt-3">
         <KeyValueRows label="Item reference" value={itemRef} onChange={setItemRef} />
-        <KeyValueRows
-          label="Quantities"
-          hint="e.g. issued, assembled, rejected, scrapped, returned, samples, destroyed, approved_loss."
-          value={quantities}
-          onChange={setQuantities}
-        />
+        {quantityFields.fields}
       </div>
       <div className="mt-3">
         <RepeatableRows
@@ -863,7 +990,7 @@ function EvaluateComponentReconciliationCard({
           type="submit"
           variant="primary"
           onClick={submit}
-          disabled={busy || !batchId.trim() || !uom.trim() || itemRef.length === 0 || quantities.length === 0 || !toleranceValue.trim()}
+          disabled={busy || !batchId.trim() || !uom.trim() || itemRef.length === 0 || !quantityFields.issued.trim() || !toleranceValue.trim()}
         >
           {busy ? "Evaluating…" : "Evaluate component reconciliation"}
         </Button>

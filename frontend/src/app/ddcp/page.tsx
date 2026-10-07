@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { api, listAll, holdsAnyRole, newIdempotencyKey, type MutationReceipt } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { api, listAll, hasPermission, newIdempotencyKey, type MutationReceipt } from "@/lib/api";
 import { useMe, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -13,6 +13,9 @@ import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 import { Modal } from "@/components/ui/Modal";
+import { Table } from "@/components/ui/Table";
+import { WorkflowStatePill } from "@/components/ui/StatePill";
+import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { Tabs } from "@/components/ui/Tabs";
 import { Stepper, StepItem, type StepMarkerState } from "@/components/ui/Stepper";
 import { DDCP_FAMILIES, type DdcpFamily, type DdcpOp } from "@/components/ddcp/catalog";
@@ -35,10 +38,48 @@ import {
   type SelectOption,
 } from "@/components/ddcp/fields";
 
+// Only 2 of Product Master's 5 manufacturing-profile codes name a DDCP family unambiguously (SG-175's
+// own residual gap, §19 #25 of the demo guide): "drug_eluting_device" is one example coated-device
+// subtype, not exhaustive, and "device" is too generic to mean autoinjector specifically -- guessing
+// either mapping would violate CLAUDE.md §4. Auto-detect only ever fires for these 2; every other batch
+// still needs its family picked by hand, exactly like today.
+const MANUFACTURING_PROFILE_TO_FAMILY: Record<string, string> = {
+  injectable_ddcp: "pfs",
+  inhalation_ddcp: "inh",
+};
+
 export default function DdcpPage() {
   const { me } = useMe();
   const [typeKey, setTypeKey] = useState(DDCP_FAMILIES[0].key);
   const family = DDCP_FAMILIES.find((t) => t.key === typeKey)!;
+  // §19 #33's own finding: no query param, link or copy-button bridges /batch-execution's batch detail
+  // to this page -- a tester had to manually select/copy the batch UUID, come here, pick the right
+  // family by hand (no auto-detect), then paste it into the Batch field, every single time. Reads via
+  // window.location.search rather than next/navigation's useSearchParams() for the same reason
+  // recipe-master/page.tsx's own ?openFamily= read does (SG-149 #35) -- avoids a Suspense-boundary
+  // requirement this page has no other reason for.
+  const [batchIdFromQuery] = useState<string | null>(() =>
+    typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("batch_id")
+  );
+  useEffect(() => {
+    if (!batchIdFromQuery) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const batch = await api.get<{ product_version_id: string }>(`/batches/v1/${batchIdFromQuery}`);
+        const product = await api.get<{ manufacturing_profile_code: string }>(`/products/v1/${batch.product_version_id}`);
+        const detected = MANUFACTURING_PROFILE_TO_FAMILY[product.manufacturing_profile_code];
+        if (!cancelled && detected) setTypeKey(detected);
+      } catch {
+        // Auto-detect is a convenience only -- e.g. DDCP Operator lacking product.view, or the batch/
+        // product no longer resolving. The family picker just stays on its default; batch_id below
+        // still pre-fills once a family is picked by hand.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [batchIdFromQuery]);
   // Split to match the real backend RBAC split (scripts/seed.py's ROLE_PERMISSIONS, Document 54 §4):
   // "DDCP Engineer" authors/releases the profile master; "DDCP Operator" performs every execution-time
   // action, including release-readiness evaluation and evidence export (ddcp_release.evaluate/export).
@@ -47,8 +88,13 @@ export default function DdcpPage() {
   // DDCP Engineer/Operator roles could reach these cards, nor did QA Reviewer/Supervisor actually hold
   // any ddcp_* permission (their submits 403'd despite the form being shown) — see
   // docs/testing/DDCP_Manual_Test_Guide_Gujarati.md §4.3/§17 for how this was found.
-  const canAuthorProfile = holdsAnyRole(me, ["Admin", "DDCP Engineer"]);
-  const canExecute = holdsAnyRole(me, ["Admin", "DDCP Operator"]);
+  const canAuthorProfile = hasPermission(me, "ddcp_profile.author");
+  // Moved off QA Releaser to its own code (2026-10-03, seed.py) -- a DDCP Engineer authors but a QA
+  // Releaser (who holds neither ddcp_profile.author nor ddcp_constituent.handoff) releases, so the
+  // "Profile designer" tab below must stay reachable on this permission too, not just authoring.
+  const canReleaseProfile = hasPermission(me, "ddcp_profile.release");
+  // Entry permission for the whole DDCP Operator execution surface (handoff/fill/device/release).
+  const canExecute = hasPermission(me, "ddcp_constituent.handoff");
   const entities = useDdcpEntityOptions();
   // Shared across cards so a profile ID created in Card 1 pre-fills wherever Card 2/3 ask for one —
   // the user still sees and can overwrite the field, this only saves the copy/paste.
@@ -80,6 +126,15 @@ export default function DdcpPage() {
         </Field>
       </Card>
 
+      {batchIdFromQuery && (
+        <Banner tone="info" title="Batch pre-filled from link">
+          Opened from a batch link — the Batch field on the tabs below is already filled in with{" "}
+          <span className="tabular">{batchIdFromQuery}</span>. If this isn&apos;t a Prefilled syringe/
+          injectable or Inhalation product, pick the right family above yourself — it can&apos;t be
+          auto-detected for Autoinjector/Coated device yet (SG-175).
+        </Banner>
+      )}
+
       {!canAuthorProfile && !canExecute && (
         <Banner tone="info" title="Read-only">
           Authoring and releasing profiles needs the DDCP Engineer role; recording batch execution and
@@ -110,13 +165,20 @@ export default function DdcpPage() {
       <Tabs
         initial="batch"
         tabs={[
-          ...(canAuthorProfile
+          ...(canAuthorProfile || canReleaseProfile
             ? [
                 {
                   id: "profile",
                   label: "Profile designer",
                   content: (
-                    <ProfileCard key={`profile-${family.key}`} family={family} entities={entities} onProfileCreated={setLastProfileId} />
+                    <ProfileCard
+                      key={`profile-${family.key}`}
+                      family={family}
+                      entities={entities}
+                      onProfileCreated={setLastProfileId}
+                      canAuthor={canAuthorProfile}
+                      canRelease={canReleaseProfile}
+                    />
                   ),
                 },
               ]
@@ -125,7 +187,7 @@ export default function DdcpPage() {
             id: "batch",
             label: "Batch readiness & release",
             content: (
-              <BatchCard key={`batch-${family.key}`} family={family} canAuthor={canExecute} entities={entities} defaultProfileId={lastProfileId} />
+              <BatchCard key={`batch-${family.key}`} family={family} canAuthor={canExecute} entities={entities} defaultProfileId={lastProfileId} defaultBatchId={batchIdFromQuery} />
             ),
           },
           ...(canExecute
@@ -134,7 +196,7 @@ export default function DdcpPage() {
                   id: "execution",
                   label: "Execution & result records",
                   content: (
-                    <ExecutionCard key={`exec-${family.key}`} family={family} entities={entities} defaultProfileId={lastProfileId} />
+                    <ExecutionCard key={`exec-${family.key}`} family={family} entities={entities} defaultProfileId={lastProfileId} defaultBatchId={batchIdFromQuery} />
                   ),
                 },
               ]
@@ -176,10 +238,14 @@ function ProfileCard({
   family,
   entities,
   onProfileCreated,
+  canAuthor,
+  canRelease,
 }: {
   family: DdcpFamily;
   entities: EntityCtx; // profile fields never render a batch/equipment picker; passed through only for a uniform DdcpFieldsGrid call.
   onProfileCreated: (id: string) => void;
+  canAuthor: boolean;
+  canRelease: boolean;
 }) {
   const { siteId } = useSiteId();
   const [state, setState] = useState<DdcpFormState>(() => initState(family.profileFields));
@@ -196,6 +262,8 @@ function ProfileCard({
   const [changeRef, setChangeRef] = useState("");
   const [releaseBusy, setReleaseBusy] = useState(false);
   const [releaseResult, setReleaseResult] = useState<{ ok: boolean; text: string } | null>(null);
+  // Client Topic 12 (SG-148, project-owner-directed): release now requires a real Part 11 signature.
+  const [releasing, setReleasing] = useState(false);
 
   const [lookupId, setLookupId] = useState("");
   const [profile, setProfile] = useState<Record<string, unknown> | null>(null);
@@ -261,20 +329,23 @@ function ProfileCard({
     }
   }
 
-  async function release(e: React.FormEvent) {
+  function release(e: React.FormEvent) {
     e.preventDefault();
-    setReleaseBusy(true);
     setReleaseResult(null);
+    setReleasing(true);
+  }
+
+  async function performRelease(extra: { challenge_id: string; reauth_password: string }) {
+    setReleaseBusy(true);
     try {
       await api.post<MutationReceipt>(`${family.prefix}/profiles/${releaseId.trim()}/release`, {
         idempotency_key: newIdempotencyKey(),
         profile_id: releaseId.trim(),
         expected_version: Number(expectedVersion),
         change_ref: changeRef.trim() || null,
+        ...extra,
       });
       setReleaseResult({ ok: true, text: "Profile released." });
-    } catch (err) {
-      setReleaseResult({ ok: false, text: friendlyDdcpError(err, "Couldn't release the profile.") });
     } finally {
       setReleaseBusy(false);
     }
@@ -300,6 +371,7 @@ function ProfileCard({
         Define this product&rsquo;s recipe before any batch can use it - what constituents it needs, and what state each must be
         in. A profile starts as a DRAFT you can still edit; releasing it locks it and makes it available to batches.
       </p>
+      {canAuthor && (
       <form onSubmit={submitCreate}>
         <DdcpFieldsGrid fields={family.profileFields} state={state} onChange={setField} entities={entities} profilePrefix={family.prefix} />
         <div className="mt-2">
@@ -313,6 +385,7 @@ function ProfileCard({
           </Button>
         </div>
       </form>
+      )}
 
       {duplicateConfirm && (
         <Modal
@@ -345,6 +418,7 @@ function ProfileCard({
         </Modal>
       )}
 
+      {canRelease && (
       <div className="mt-4" style={{ borderTop: "1px solid var(--border-hairline)", paddingTop: "var(--space-3)" }}>
         <p className="fs-1 text-muted mb-1">Release a profile version</p>
         <p className="fs-2 text-muted mb-2">
@@ -382,7 +456,26 @@ function ProfileCard({
           </RowButtonSlot>
         </form>
         {releaseResult && <p className={releaseResult.ok ? "fs-2 mt-2" : "error-text mt-2"}>{releaseResult.text}</p>}
+        <SignatureCeremony
+          open={releasing}
+          onClose={() => setReleasing(false)}
+          onDone={() => setReleasing(false)}
+          challengePath={`${family.prefix}/signature-challenges`}
+          action="release"
+          challengeBody={{ record_type: "ddcp_profile_version", action: "release", record_id: releaseId.trim() }}
+          title={
+            <span className="flex items-center gap-2">
+              <Icon name="check-circle" /> Release profile version
+            </span>
+          }
+          summary="Releasing this profile version is a Part 11 electronic signature attributable to you, bound to this exact version. The profile becomes usable by execution and the previously released version (if any) is superseded."
+          submitLabel="Sign & release"
+          submitVariant="success"
+          reason="none"
+          onSign={(payload) => performRelease({ challenge_id: payload.challenge_id, reauth_password: payload.reauth_password })}
+        />
       </div>
+      )}
 
       {family.hasProfileGet && (
         <div className="mt-4" style={{ borderTop: "1px solid var(--border-hairline)", paddingTop: "var(--space-3)" }}>
@@ -419,11 +512,13 @@ function BatchCard({
   canAuthor,
   entities,
   defaultProfileId,
+  defaultBatchId,
 }: {
   family: DdcpFamily;
   canAuthor: boolean;
   entities: EntityCtx;
   defaultProfileId: string | null;
+  defaultBatchId: string | null;
 }) {
   const readinessFields: DdcpField[] = [
     { name: "batch_id", label: "Batch", type: "batchSelect", required: true },
@@ -431,13 +526,17 @@ function BatchCard({
     ...family.readinessExtraFields,
   ];
   const [state, setState] = useState<DdcpFormState>(() =>
-    initState(readinessFields, defaultProfileId ? { profile_version_id: defaultProfileId } : undefined)
+    initState(readinessFields, {
+      ...(defaultProfileId ? { profile_version_id: defaultProfileId } : {}),
+      ...(defaultBatchId ? { batch_id: defaultBatchId } : {}),
+    })
   );
   const [readiness, setReadiness] = useState<Record<string, unknown> | null>(null);
   const [genealogy, setGenealogy] = useState<Record<string, unknown> | null>(null);
   const [reviewSummary, setReviewSummary] = useState<Record<string, unknown> | null>(null);
   const [serializationCompliance, setSerializationCompliance] = useState<Record<string, unknown> | null>(null);
-  const [stepSyncStatus, setStepSyncStatus] = useState<Record<string, unknown> | null>(null);
+  const [stepSyncStatus, setStepSyncStatus] = useState<DdcpStepSyncStatus | null>(null);
+  const [completingMapping, setCompletingMapping] = useState<DdcpStepSyncMapping | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -471,7 +570,7 @@ function BatchCard({
           await api.get<Record<string, unknown>>(`${family.prefix}/batches/${batchId}/serialization-compliance?${q.toString()}`).catch(() => null)
         );
       if (family.hasStepSyncStatus)
-        setStepSyncStatus(await api.get<Record<string, unknown>>(`${family.prefix}/batches/${batchId}/step-sync-status`).catch(() => null));
+        setStepSyncStatus(await api.get<DdcpStepSyncStatus>(`${family.prefix}/batches/${batchId}/step-sync-status`).catch(() => null));
     } catch (err) {
       setError(friendlyDdcpError(err, "Couldn't load batch readiness."));
     } finally {
@@ -546,7 +645,42 @@ function BatchCard({
           )}
           {stepSyncStatus && (
             <div className="mt-4" style={{ borderTop: "1px solid var(--border-hairline)", paddingTop: "var(--space-3)" }}>
-            <JsonPanel title="Batch / DDCP step sync status" value={stepSyncStatus} />
+              <p className="fs-1 text-muted mb-2">Batch / DDCP step sync status</p>
+              <p className="fs-2 text-muted mb-2">
+                These two execution tracks don&apos;t auto-sync — completing a DDCP action here does not
+                complete its mapped batch-execution step. Use &quot;Complete this step&quot; below to run
+                the real signed batch-execution complete flow without switching pages.
+              </p>
+              {stepSyncStatus.mappings.length === 0 ? (
+                <p className="hint">No DDCP-to-step mapping is declared for this batch&apos;s recipe.</p>
+              ) : (
+                <Table>
+                  <thead>
+                    <tr>
+                      <th>DDCP action</th>
+                      <th>Mapped batch step</th>
+                      <th>Step state</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stepSyncStatus.mappings.map((m, i) => (
+                      <tr key={`${m.ddcp_action}-${i}`}>
+                        <td className="fs-2">{m.ddcp_action}</td>
+                        <td className="font-semibold tabular">{m.stable_step_code}</td>
+                        <td>{m.generic_step_state ? <WorkflowStatePill state={m.generic_step_state} /> : <span className="text-muted">not on this batch</span>}</td>
+                        <td style={{ textAlign: "right" }}>
+                          {canAuthor && m.generic_step_state && m.generic_step_state !== "complete" && m.batch_step_id && (
+                            <Button size="sm" variant="primary" onClick={() => setCompletingMapping(m)}>
+                              <Icon name="check-circle" /> Complete this step
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              )}
             </div>
           )}
           {canAuthor && (
@@ -562,7 +696,79 @@ function BatchCard({
           {actionMsg && <p className="fs-2 mt-2">{actionMsg}</p>}
         </>
       )}
+      {completingMapping && stepSyncStatus && completingMapping.batch_step_id && completingMapping.expected_version !== null && (
+        <DdcpCompleteStepModal
+          batchId={stepSyncStatus.batch_id}
+          mapping={completingMapping}
+          onClose={() => setCompletingMapping(null)}
+          onDone={() => {
+            setCompletingMapping(null);
+            api
+              .get<DdcpStepSyncStatus>(`${family.prefix}/batches/${stepSyncStatus.batch_id}/step-sync-status`)
+              .then(setStepSyncStatus)
+              .catch(() => {});
+          }}
+        />
+      )}
     </Card>
+  );
+}
+
+// SG-180 shortcut (2026-09-17, project-owner-directed): triggers the exact same signed
+// batch_execution complete-step flow /batch-execution itself uses — real signature challenge, real
+// audit event — just launched from here instead of requiring a page switch. Does not pre-check
+// required parameters/evidence the way batch-execution's own CompleteStepModal does (this page has no
+// access to that step's parameter/evidence declarations) — a step that still needs those will correctly
+// fail closed with the server's own PARAMETER_REQUIRED/VALIDATION_FAILED error, shown below the form.
+interface DdcpStepSyncMapping {
+  ddcp_action: string;
+  stable_step_code: string;
+  generic_step_state: string | null;
+  batch_step_id: string | null;
+  expected_version: number | null;
+}
+interface DdcpStepSyncStatus {
+  batch_id: string;
+  mappings: DdcpStepSyncMapping[];
+}
+
+function DdcpCompleteStepModal({
+  batchId,
+  mapping,
+  onClose,
+  onDone,
+}: {
+  batchId: string;
+  mapping: DdcpStepSyncMapping;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  return (
+    <SignatureCeremony
+      open
+      onClose={onClose}
+      onDone={onDone}
+      challengePath={`/batches/v1/${batchId}/steps/${mapping.batch_step_id}/signature-challenges`}
+      action="complete"
+      title={
+        <span className="flex items-center gap-2">
+          <Icon name="check-circle" /> Complete step - {mapping.stable_step_code}
+        </span>
+      }
+      summary={`Mapped from DDCP action "${mapping.ddcp_action}". Completing this step is a signed act and unblocks any batch-execution step whose only remaining predecessor is this one.`}
+      submitLabel="Sign & complete"
+      reason="none"
+      onSign={(payload) =>
+        api.post(`/batches/v1/${batchId}/steps/${mapping.batch_step_id}/complete`, {
+          idempotency_key: payload.idempotency_key,
+          batch_id: batchId,
+          step_id: mapping.batch_step_id,
+          expected_version: mapping.expected_version,
+          challenge_id: payload.challenge_id,
+          reauth_password: payload.reauth_password,
+        })
+      }
+    />
   );
 }
 
@@ -679,10 +885,12 @@ function ExecutionCard({
   family,
   entities,
   defaultProfileId,
+  defaultBatchId,
 }: {
   family: DdcpFamily;
   entities: EntityCtx;
   defaultProfileId: string | null;
+  defaultBatchId: string | null;
 }) {
   const { siteId } = useSiteId();
 
@@ -690,6 +898,9 @@ function ExecutionCard({
     const seeds: Record<string, string> = {};
     if (defaultProfileId) {
       for (const f of op.fields) if (f.name === "profile_version_id") seeds[f.name] = defaultProfileId;
+    }
+    if (defaultBatchId) {
+      for (const f of op.fields) if (f.name === "batch_id") seeds[f.name] = defaultBatchId;
     }
     return initState(op.fields, seeds);
   }
@@ -703,6 +914,17 @@ function ExecutionCard({
   const [state, setState] = useState<DdcpFormState>(() => seedState(op));
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  // Client Topic 12 (SG-148, project-owner-directed): `op.signedAction` means Submit opens this
+  // ceremony instead of posting directly — see `performSubmit`'s own comment for why the two paths
+  // share one implementation.
+  const [signing, setSigning] = useState(false);
+  // Client Topic 13 (SG-180, project-owner-directed): "chain a second real signature" — after a signed
+  // decide(ACCEPTED)/complete succeeds, if this op's mapped generic step is reachable (via the batch id
+  // the operator used to look up records, the only batch id this card reliably knows for an op whose own
+  // fields never carry one), prompt the exact same signed batch-execution complete-step ceremony
+  // `DdcpCompleteStepModal` already provides from the Batch card above — one combined flow, two real
+  // independent signatures, never reusing or skipping either.
+  const [chainMapping, setChainMapping] = useState<DdcpStepSyncMapping | null>(null);
   // family.ops in the order catalog.ts declares them, bucketed by each op's `group` (first appearance
   // sets the bucket's position) — turns one long flat list into a handful of labelled clusters for step 1.
   const opGroups: { name: string; items: { op: DdcpOp; index: number }[] }[] = [];
@@ -815,33 +1037,74 @@ function ExecutionCard({
     });
   }
 
+  // Client Topic 12 (SG-148, project-owner-directed): shared by both the unsigned path (`doSubmit`
+  // calls this with no `extra`) and the signed path (the `SignatureCeremony` below calls this from
+  // `onSign` with `{challenge_id, reauth_password}`) — one implementation, so the bookkeeping after a
+  // successful submit (recordVersions/recentRecords tracking, Topic 13's chain check) never drifts
+  // between the two.
+  async function performSubmit(extra?: Record<string, unknown>) {
+    // Every DDCP sub-action that names an id in its URL (handoff_id, fill_operation_id, record_id)
+    // also requires that same id in the body — the backend checks the two match — so the body is
+    // built from every field, path id included, never filtered down.
+    const payload = buildPayload(op.fields, state);
+    const filledPath = op.path.replace(/\{(\w+)\}/g, (_, name) => encodeURIComponent(((state[name] as string) ?? "").trim()));
+    const receipt = await api.post<MutationReceipt>(`${family.prefix}/${filledPath}`, {
+      idempotency_key: newIdempotencyKey(),
+      ...payload,
+      ...(extra ?? {}),
+    });
+    setResult({ ok: true, text: `Recorded successfully. Record ID: ${receipt.aggregate_id}` });
+    // aggregate_id/resulting_version are this same record's id and its version *after* this op's own
+    // mutation — true whether this op just created the record or updated an existing one (decide/ipc/
+    // interventions/complete/verify all mutate the id they were given), so this one line keeps the
+    // tracker correct for both cases.
+    setRecordVersions((v) => ({ ...v, [receipt.aggregate_id]: receipt.resulting_version }));
+    if (op.producesRecordKind) {
+      const kind = op.producesRecordKind;
+      const option: SelectOption = {
+        value: receipt.aggregate_id,
+        label: `${receipt.aggregate_id.slice(0, 8)}… - ${op.label} (${new Date().toLocaleTimeString()})`,
+      };
+      setRecentRecords((r) => ({ ...r, [kind]: [option, ...(r[kind] ?? [])] }));
+    }
+    await maybeChainStepSignature();
+  }
+
+  // Client Topic 13's "chain a second real signature": only the 2 (recordType, action) pairs
+  // `DDCP_MAPPABLE_ACTIONS` (backend) actually recognises as completing a mapped generic step —
+  // `constituent_handoff`/`decide` when the decision was ACCEPTED, and `fill_operation`/`complete` —
+  // ever have a step to chain onto; `ddcp_profile_version`/`release` and `fill_operation`/`start` never
+  // map to anything, matching the backend's own `DDCP_MAPPABLE_ACTIONS` tuple.
+  async function maybeChainStepSignature() {
+    const sa = op.signedAction;
+    if (!sa) return;
+    const ddcpAction =
+      sa.recordType === "constituent_handoff" && sa.action === "decide" && state.decision === "ACCEPTED"
+        ? "constituent_handoff.accept"
+        : sa.recordType === "fill_operation" && sa.action === "complete"
+          ? "filling_stage.complete"
+          : null;
+    if (!ddcpAction || !lookupBatchId.trim()) return;
+    try {
+      const status = await api.get<DdcpStepSyncStatus>(`${family.prefix}/batches/${lookupBatchId.trim()}/step-sync-status`);
+      const mapping = status.mappings.find(
+        (m) => m.ddcp_action === ddcpAction && m.generic_step_state && m.generic_step_state !== "complete" && m.batch_step_id,
+      );
+      if (mapping) setChainMapping(mapping);
+    } catch {
+      // Best-effort only — never blocks or fails the action that already succeeded above.
+    }
+  }
+
   async function doSubmit() {
+    if (op.signedAction) {
+      setSigning(true);
+      return;
+    }
     setBusy(true);
     setResult(null);
     try {
-      // Every DDCP sub-action that names an id in its URL (handoff_id, fill_operation_id, record_id)
-      // also requires that same id in the body — the backend checks the two match — so the body is
-      // built from every field, path id included, never filtered down.
-      const payload = buildPayload(op.fields, state);
-      const filledPath = op.path.replace(/\{(\w+)\}/g, (_, name) => encodeURIComponent(((state[name] as string) ?? "").trim()));
-      const receipt = await api.post<MutationReceipt>(`${family.prefix}/${filledPath}`, {
-        idempotency_key: newIdempotencyKey(),
-        ...payload,
-      });
-      setResult({ ok: true, text: `Recorded successfully. Record ID: ${receipt.aggregate_id}` });
-      // aggregate_id/resulting_version are this same record's id and its version *after* this op's own
-      // mutation — true whether this op just created the record or updated an existing one (decide/ipc/
-      // interventions/complete/verify all mutate the id they were given), so this one line keeps the
-      // tracker correct for both cases.
-      setRecordVersions((v) => ({ ...v, [receipt.aggregate_id]: receipt.resulting_version }));
-      if (op.producesRecordKind) {
-        const kind = op.producesRecordKind;
-        const option: SelectOption = {
-          value: receipt.aggregate_id,
-          label: `${receipt.aggregate_id.slice(0, 8)}… - ${op.label} (${new Date().toLocaleTimeString()})`,
-        };
-        setRecentRecords((r) => ({ ...r, [kind]: [option, ...(r[kind] ?? [])] }));
-      }
+      await performSubmit();
     } catch (err) {
       setResult({ ok: false, text: friendlyDdcpError(err, "That action failed.") });
     } finally {
@@ -1111,6 +1374,38 @@ function ExecutionCard({
           </div>
         )}
       </form>
+      {op.signedAction && (
+        <SignatureCeremony
+          open={signing}
+          onClose={() => setSigning(false)}
+          onDone={() => setSigning(false)}
+          challengePath={`${family.prefix}/signature-challenges`}
+          action={op.signedAction.action}
+          challengeBody={{
+            record_type: op.signedAction.recordType,
+            action: op.signedAction.action,
+            ...(op.signedAction.idField ? { record_id: state[op.signedAction.idField] } : {}),
+            ...(op.signedAction.batchIdField ? { batch_id: state[op.signedAction.batchIdField] } : {}),
+          }}
+          title={
+            <span className="flex items-center gap-2">
+              <Icon name="check-circle" /> {op.label}
+            </span>
+          }
+          summary={`This is a Part 11 electronic signature attributable to you, bound to this exact record and version.`}
+          submitLabel="Sign & submit"
+          reason="none"
+          onSign={(payload) => performSubmit({ challenge_id: payload.challenge_id, reauth_password: payload.reauth_password })}
+        />
+      )}
+      {chainMapping && lookupBatchId.trim() && (
+        <DdcpCompleteStepModal
+          batchId={lookupBatchId.trim()}
+          mapping={chainMapping}
+          onClose={() => setChainMapping(null)}
+          onDone={() => setChainMapping(null)}
+        />
+      )}
     </Card>
   );
 }

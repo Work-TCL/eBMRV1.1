@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { holdsAnyRole, pagedFetcher, type Me } from "@/lib/api";
+import { hasPermission, pagedFetcher, type Me } from "@/lib/api";
 import { useSiteId } from "@/lib/hooks";
 import { Fact, IdFact, OpsRecordPage, type OpsRecordConfig } from "@/components/shared/OpsRecordPage";
 import { Button } from "@/components/ui/Button";
@@ -27,12 +27,13 @@ interface LineClearanceRecord {
 
 // Document 39 (SPEC-EQP-002): same actor class as cleaning execution, and every role that can create a
 // cleaning execution also holds line_clearance.create/.complete in scripts/seed.py's ROLE_PERMISSIONS.
-const canClear = (me: Me | null) => holdsAnyRole(me, ["Admin", "Operator", "Supervisor", "Sanitation Operator"]);
+// line_clearance.create/.complete share one grant.
+const canClear = (me: Me | null) => hasPermission(me, "line_clearance.create");
 
 const config: OpsRecordConfig<LineClearanceRecord> = {
   title: "Line clearance",
   subtitle:
- "Confirm an equipment area is clear of the previous batch and its materials before the next one starts the check DDCP batch readiness (“Line clearance state is NOT_STARTED”) and Packaging both depend on, previously reachable only via direct API call.",
+ "Confirm an equipment area is clear of the previous batch and its materials before the next one starts - the check DDCP batch readiness (“Line clearance state is NOT_STARTED”) depends on. Packaging has its own separate, self-attested line-clearance flag and does not look this up.",
   idLabel: "Line clearance ID",
   apiRoot: "/line-clearance/v1",
   create: {
@@ -42,7 +43,7 @@ const config: OpsRecordConfig<LineClearanceRecord> = {
     fields: [
       {
         name: "area_id", label: "Equipment area / line", type: "areaSelect", required: true,
- hint: "The area this clearance covers the same area a batch readiness check (DDCP, Packaging, …) looks up by id.",
+ hint: "The area this clearance covers - the same area a DDCP batch readiness check looks up by id (Packaging does not).",
       },
       { name: "previous_batch_id", label: "Previous batch", type: "batchSelect", hint: "The batch/product being cleared out of this area, if known." },
       { name: "next_batch_id", label: "Next batch", type: "batchSelect", hint: "The batch about to use this area, if known yet." },
@@ -55,7 +56,7 @@ const config: OpsRecordConfig<LineClearanceRecord> = {
             name: "item_type", label: "Item type", type: "select", required: true,
             options: [{ value: "material", label: "Material" }, { value: "label", label: "Label" }, { value: "equipment", label: "Equipment" }],
           },
-          { name: "equipment_id", label: "Equipment asset ID (if item type is Equipment)", placeholder: "e.g. equipment asset UUID" },
+          { name: "equipment_id", label: "Equipment asset (if item type is Equipment)", type: "equipmentSelect" },
         ],
       },
       { name: "critical", label: "Critical clearance", type: "bool", hint: "A critical clearance requires a reason when it's completed." },

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { api, ApiError, newIdempotencyKey } from "@/lib/api";
+import { api, ApiError, canAuthorRules, canReleaseRules, newIdempotencyKey } from "@/lib/api";
+import { useApiResource, useMe, useRequirePermission } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
@@ -49,27 +50,16 @@ const exprBoxStyle: React.CSSProperties = {
 };
 
 export default function RulesPage() {
-  const [ruleId, setRuleId] = useState("");
-  const [versions, setVersions] = useState<RuleDefinition[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // rules.author (draft/validate/simulate) and rules.release (release a validated rule/UOM/UOM
+  // conversion) are held by different roles (Admin + Process Engineer author; Admin + QA Releaser
+  // release) -- gating on rules.author alone structurally blocked QA Releaser from ever reaching this
+  // page to use the Release buttons it already has a backend grant for (found 2026-09-28, same
+  // structural-RBAC-block class as canOperateMachineIntegration/canOperateEdgeGateways in lib/api.ts).
+  const { me } = useRequirePermission(["rules.author", "rules.release"]);
   const [draftOpen, setDraftOpen] = useState(false);
   const [selected, setSelected] = useState<RuleDefinition | null>(null);
-
-  async function performLookup() {
-    if (!ruleId.trim()) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await api.get<RuleDefinition[]>(`/rules/v1/${encodeURIComponent(ruleId.trim())}/versions`);
-      setVersions(result);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Lookup failed");
-      setVersions(null);
-    } finally {
-      setLoading(false);
-    }
-  }
+  const { data, loading, error, reload } = useApiResource<RuleDefinition[]>("/rules/v1/all");
+  const rules = data ?? [];
 
   return (
     <div>
@@ -77,44 +67,33 @@ export default function RulesPage() {
         title="Rules"
         subtitle="Calculation and eligibility rules - draft, validate, simulate against test inputs, and release."
         action={
-          <Button variant="primary" onClick={() => setDraftOpen(true)}>
-            <Icon name="plus" /> New draft
-          </Button>
+          canAuthorRules(me) && (
+            <Button variant="primary" onClick={() => setDraftOpen(true)}>
+              <Icon name="plus" /> New draft
+            </Button>
+          )
         }
       />
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          performLookup();
-        }}
-        className="flex flex-wrap items-end gap-4 mb-4"
-      >
-        <Field label="Rule ID">
-          <Input value={ruleId} onChange={(e) => setRuleId(e.target.value)} placeholder="e.g. ASSAY-ELIGIBILITY" style={{ minWidth: 200, maxWidth: 260, width: "100%" }} />
-        </Field>
-        <Button type="submit" variant="secondary" disabled={loading || !ruleId.trim()}>
-          <Icon name="search" /> {loading ? "Looking up…" : "Look up versions"}
-        </Button>
-      </form>
-
-      {error && (
-        <Card>
+      <Card>
+        {error && (
           <p className="error-text" style={{ padding: "var(--space-4, 16px)" }}>
             {error}
           </p>
-        </Card>
-      )}
-
-      {versions && !error && (
-        <Card>
-          <CardHeader title={ruleId} />
-          {versions.length === 0 ? (
-            <EmptyState icon="gauge">No versions exist for this rule ID yet.</EmptyState>
+        )}
+        {!error && loading && (
+          <p className="hint" style={{ padding: "var(--space-4, 16px)" }}>
+            Loading…
+          </p>
+        )}
+        {!error && !loading && (
+          rules.length === 0 ? (
+            <EmptyState icon="gauge">No rules exist yet.</EmptyState>
           ) : (
             <Table>
               <thead>
                 <tr>
+                  <th>Rule ID</th>
                   <th>Version</th>
                   <th>Status</th>
                   <th>Type</th>
@@ -123,9 +102,10 @@ export default function RulesPage() {
                 </tr>
               </thead>
               <tbody>
-                {versions.map((r) => (
+                {rules.map((r) => (
                   <tr key={r.rule_object_id}>
-                    <td className="font-semibold tabular">{r.semantic_version}</td>
+                    <td className="font-semibold">{r.rule_id}</td>
+                    <td className="tabular">{r.semantic_version}</td>
                     <td><WorkflowStatePill state={r.status} /></td>
                     <td>{r.rule_type}</td>
                     <td className="tabular fs-2">
@@ -140,17 +120,16 @@ export default function RulesPage() {
                 ))}
               </tbody>
             </Table>
-          )}
-        </Card>
-      )}
+          )
+        )}
+      </Card>
 
       {draftOpen && (
         <DraftModal
           onClose={() => setDraftOpen(false)}
-          onDone={(newRuleId) => {
+          onDone={() => {
             setDraftOpen(false);
-            setRuleId(newRuleId);
-            performLookup();
+            reload();
           }}
         />
       )}
@@ -161,7 +140,7 @@ export default function RulesPage() {
           onClose={() => setSelected(null)}
           onChanged={() => {
             setSelected(null);
-            performLookup();
+            reload();
           }}
         />
       )}
@@ -191,75 +170,40 @@ interface Uom {
 }
 
 function UomSection() {
-  const [code, setCode] = useState("");
-  const [versions, setVersions] = useState<Uom[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [unavailable, setUnavailable] = useState(false);
+  const { me } = useMe();
+  const { data, loading, error, reload } = useApiResource<Uom[]>("/rules/v1/uom/all");
   const [draftOpen, setDraftOpen] = useState(false);
   const [releasingUom, setReleasingUom] = useState<Uom | null>(null);
-
-  async function lookup() {
-    if (!code.trim()) return;
-    setLoading(true);
-    setError(null);
-    try {
-      setVersions(await api.get<Uom[]>(`/rules/v1/uom/${encodeURIComponent(code.trim())}/versions`));
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 404) {
-        setUnavailable(true);
-        setVersions(null);
-      } else {
-        setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Lookup failed");
-        setVersions(null);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }
+  const uoms = data ?? [];
 
   return (
     <Card>
       <CardHeader
         title="Units of measure"
         meta={
-          <Button size="sm" variant="secondary" onClick={() => setDraftOpen(true)}>
-            <Icon name="plus" /> New UOM draft
-          </Button>
+          canAuthorRules(me) && (
+            <Button size="sm" variant="secondary" onClick={() => setDraftOpen(true)}>
+              <Icon name="plus" /> New UOM draft
+            </Button>
+          )
         }
       />
       <div style={{ padding: "var(--space-3) var(--space-4)" }}>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            lookup();
-          }}
-          className="flex flex-wrap items-end gap-4"
-        >
-          <Field label="UOM code">
-            <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. mg, mL, %w/w" style={{ minWidth: 200, maxWidth: 220, width: "100%" }} />
-          </Field>
-          <Button type="submit" variant="secondary" disabled={loading || !code.trim()}>
-            <Icon name="search" /> {loading ? "Looking up…" : "Look up versions"}
-          </Button>
-        </form>
-
-        {error && <p className="error-text mt-3">{error}</p>}
-
-        {unavailable && (
-          <p className="hint mt-3">
-            The unit-of-measure registry endpoints are not enabled in this deployment build.
+        {error && (
+          <p className="error-text">
+            {error === "404: Not Found" ? "The unit-of-measure registry endpoints are not enabled in this deployment build." : error}
           </p>
         )}
-
-        {versions && !error && (
-          <div className="mt-3">
-            {versions.length === 0 ? (
-              <EmptyState icon="scale">No versions exist for this UOM code yet.</EmptyState>
-            ) : (
+        {!error && loading && <p className="hint">Loading…</p>}
+        {!error && !loading && (
+          uoms.length === 0 ? (
+            <EmptyState icon="scale">No units of measure exist yet.</EmptyState>
+          ) : (
+            <>
               <Table>
                 <thead>
                   <tr>
+                    <th>Code</th>
                     <th>Version</th>
                     <th>Status</th>
                     <th>Dimension</th>
@@ -271,9 +215,10 @@ function UomSection() {
                   </tr>
                 </thead>
                 <tbody>
-                  {versions.map((u) => (
+                  {uoms.map((u) => (
                     <tr key={u.uom_id}>
-                      <td className="font-semibold tabular">v{u.version}</td>
+                      <td className="font-semibold">{u.code}</td>
+                      <td className="tabular">v{u.version}</td>
                       <td><WorkflowStatePill state={u.status} /></td>
                       <td>{u.dimension}</td>
                       <td className="tabular">{u.base_unit}</td>
@@ -281,7 +226,7 @@ function UomSection() {
                       <td className="tabular">{u.offset}</td>
                       <td className="tabular">{u.precision_dp}</td>
                       <td style={{ textAlign: "right" }}>
-                        {u.status === "draft" && (
+                        {u.status === "draft" && canReleaseRules(me) && (
                           <Button size="sm" variant="success" onClick={() => setReleasingUom(u)}>
                             <Icon name="pen" /> Release
                           </Button>
@@ -291,24 +236,22 @@ function UomSection() {
                   ))}
                 </tbody>
               </Table>
-            )}
-            {versions.some((u) => u.status === "draft") && (
-              <p className="hint mt-2">
-                No signature policy is configured yet for releasing a unit of measure - the challenge below
-                is real, but the release itself will correctly fail closed until one is added.
-              </p>
-            )}
-          </div>
+              {uoms.some((u) => u.status === "draft") && (
+                <p className="hint mt-2">
+                  Releasing requires an independent QA Releaser signature (SG-211).
+                </p>
+              )}
+            </>
+          )
         )}
       </div>
 
       {draftOpen && (
         <UomDraftModal
           onClose={() => setDraftOpen(false)}
-          onDone={(newCode) => {
+          onDone={() => {
             setDraftOpen(false);
-            setCode(newCode);
-            setVersions(null);
+            reload();
           }}
         />
       )}
@@ -319,12 +262,12 @@ function UomSection() {
           onClose={() => setReleasingUom(null)}
           onDone={() => {
             setReleasingUom(null);
-            lookup();
+            reload();
           }}
           challengePath={`/rules/v1/uom/${releasingUom.uom_id}/signature-challenges`}
           action="release"
-          title={`Release UOM - ${code}`}
-          summary={`You are about to release ${code} v${releasingUom.version}.`}
+          title={`Release UOM - ${releasingUom.code}`}
+          summary={`You are about to release ${releasingUom.code} v${releasingUom.version}.`}
           submitVariant="success"
           reason="none"
           onSign={(p) =>
@@ -341,7 +284,7 @@ function UomSection() {
   );
 }
 
-function UomDraftModal({ onClose, onDone }: { onClose: () => void; onDone: (code: string) => void }) {
+function UomDraftModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const [code, setCode] = useState("");
   const [dimension, setDimension] = useState("mass");
   const [baseUnit, setBaseUnit] = useState("kg");
@@ -365,7 +308,7 @@ function UomDraftModal({ onClose, onDone }: { onClose: () => void; onDone: (code
         offset: offset.trim(),
         precision_dp: Number(precisionDp),
       });
-      onDone(code.trim());
+      onDone();
     } catch (err) {
       setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Failed to create UOM draft");
     } finally {
@@ -398,8 +341,7 @@ function UomDraftModal({ onClose, onDone }: { onClose: () => void; onDone: (code
         </div>
         {error && <p className="error-text mt-2">{error}</p>}
         <p className="hint mt-2 mb-3">
-          Releasing a UOM needs a signature policy - this deployment hasn&apos;t defined yet - the draft is
-          stored; release will correctly fail closed until one exists.
+          This creates a draft. An independent QA Releaser signature is required to release it (SG-211).
         </p>
         <div className="flex justify-between gap-3 mt-2">
           <Button type="button" variant="secondary" onClick={onClose}>
@@ -420,6 +362,7 @@ function UomDraftModal({ onClose, onDone }: { onClose: () => void; onDone: (code
  * again. Release also has no signature-challenge endpoint at all (not just an unseeded policy row, an
  * actual missing route — see `UomSection`'s own note above), so it isn't offered here either. */
 function UomConversionSection() {
+  const { me } = useMe();
   const [draftOpen, setDraftOpen] = useState(false);
   const [lastCreated, setLastCreated] = useState<{ id: string; version: number } | null>(null);
   const [releasing, setReleasing] = useState(false);
@@ -429,9 +372,11 @@ function UomConversionSection() {
       <CardHeader
         title="UOM conversions"
         meta={
-          <Button size="sm" variant="secondary" onClick={() => setDraftOpen(true)}>
-            <Icon name="plus" /> New UOM conversion draft
-          </Button>
+          canAuthorRules(me) && (
+            <Button size="sm" variant="secondary" onClick={() => setDraftOpen(true)}>
+              <Icon name="plus" /> New UOM conversion draft
+            </Button>
+          )
         }
       />
       <div style={{ padding: "var(--space-3) var(--space-4)" }}>
@@ -445,9 +390,11 @@ function UomConversionSection() {
             <p className="fs-2">
               Last created: <span className="tabular">{lastCreated.id}</span> (v{lastCreated.version})
             </p>
-            <Button size="sm" variant="success" onClick={() => setReleasing(true)}>
-              <Icon name="pen" /> Release
-            </Button>
+            {canReleaseRules(me) && (
+              <Button size="sm" variant="success" onClick={() => setReleasing(true)}>
+                <Icon name="pen" /> Release
+              </Button>
+            )}
           </div>
         )}
         <p className="hint mt-2">
@@ -807,10 +754,12 @@ function RuleDetailModal({
   onClose: () => void;
   onChanged: () => void;
 }) {
+  const { me } = useMe();
   const [testInputs, setTestInputs] = useState<KvRow[]>([]);
   const [simResult, setSimResult] = useState<unknown>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [releasing, setReleasing] = useState(false);
 
   async function onValidate() {
     setBusy(true);
@@ -839,22 +788,6 @@ function RuleDetailModal({
     }
   }
 
-  async function onRelease() {
-    setBusy(true);
-    setError(null);
-    try {
-      await api.post(`/rules/v1/${rule.rule_object_id}/release`, {
-        idempotency_key: newIdempotencyKey(),
-        rule_object_id: rule.rule_object_id,
-      });
-      onChanged();
-    } catch (err) {
-      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Release failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <Modal open onClose={onClose} title={`${rule.rule_id} v${rule.semantic_version}`} large>
       <p className="fs-2 mb-3 flex items-center gap-2">
@@ -875,9 +808,11 @@ function RuleDetailModal({
             value={testInputs}
             onChange={setTestInputs}
           />
-          <Button size="sm" variant="secondary" onClick={onSimulate}>
-            Simulate
-          </Button>
+          {canAuthorRules(me) && (
+            <Button size="sm" variant="secondary" onClick={onSimulate}>
+              Simulate
+            </Button>
+          )}
           {simResult !== undefined && (
             <p className="fs-2 mt-2">
               Result: <strong>{summarizeJson(simResult)}</strong>
@@ -893,18 +828,47 @@ function RuleDetailModal({
           Close
         </Button>
         <div className="flex gap-2">
-          {rule.status === "draft" && (
+          {rule.status === "draft" && canAuthorRules(me) && (
             <Button variant="primary" onClick={onValidate} disabled={busy}>
               {busy ? "Validating…" : "Validate"}
             </Button>
           )}
-          {rule.status === "validated" && (
-            <Button variant="success" onClick={onRelease} disabled={busy}>
-              {busy ? "Releasing…" : "Release"}
+          {rule.status === "validated" && canReleaseRules(me) && (
+            <Button variant="success" onClick={() => setReleasing(true)} disabled={busy}>
+              Release
             </Button>
           )}
         </div>
       </div>
+
+      {releasing && (
+        <SignatureCeremony
+          open
+          onClose={() => setReleasing(false)}
+          onDone={() => {
+            setReleasing(false);
+            onChanged();
+          }}
+          challengePath={`/rules/v1/${rule.rule_object_id}/signature-challenges`}
+          action="release"
+          title={`Release - ${rule.rule_id} v${rule.semantic_version}`}
+          summary={
+            <>
+              You are about to release <strong>{rule.rule_id} v{rule.semantic_version}</strong>.
+            </>
+          }
+          submitVariant="success"
+          reason="none"
+          onSign={(payload) =>
+            api.post(`/rules/v1/${rule.rule_object_id}/release`, {
+              idempotency_key: payload.idempotency_key,
+              rule_object_id: rule.rule_object_id,
+              challenge_id: payload.challenge_id,
+              reauth_password: payload.reauth_password,
+            })
+          }
+        />
+      )}
     </Modal>
   );
 }

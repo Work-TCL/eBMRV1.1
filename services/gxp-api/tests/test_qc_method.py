@@ -1,7 +1,7 @@
 """SG-066 (QC-FR-003/004) -- draft/release for the new, additive QcMethodVersion (Document 23's
-Method-master entity, never defined by the spec itself). Release intentionally has no Document 106
-policy row yet and must fail closed with SIGNATURE_POLICY_UNRESOLVED (SG-186) -- same state every other
-brand-new record type in this codebase was correctly left in before its own resolution.
+Method-master entity, never defined by the spec itself). Release now resolves to a real signature
+policy (SG-186 RESOLVED 2026-09-18, project-owner-directed: same shape as the nearest in-module
+precedent, qc_test_specification/release -- "Released" by an independent QA Releaser).
 """
 
 import uuid
@@ -9,6 +9,7 @@ import uuid
 from app.core.security import hash_password
 from app.modules.iam.models import User, UserSiteRole
 from app.modules.product_master.models import ProductVersion
+from app.modules.signature.models import SignaturePolicy
 from tests.conftest import DEMO_PASSWORD, auth_headers, idem, login
 
 
@@ -76,6 +77,26 @@ async def test_create_draft_succeeds_for_qc_reviewer_and_is_readable(client, see
     assert len(versions.json()) == 1
 
 
+async def test_list_methods_includes_created_versions(client, seeded, db):
+    """Backs /qc's redesigned "QC method master" section (2026-09-26): a real browsable list now exists
+    (previously only "versions by method_code" and "single by id" -- a deliberate code-lookup console)."""
+    async with db.begin():
+        await _make_user(db, seeded, "qc.reviewer.qcmlist", "QC Reviewer")
+    token = await login(client, "qc.reviewer.qcmlist")
+
+    resp = await client.post(
+        "/qc/v1/methods/drafts", json=_draft_body(seeded["site_id"], "MTH-LIST"), headers=auth_headers(token)
+    )
+    assert resp.status_code == 200, resp.text
+    version_id = resp.json()["aggregate_id"]
+
+    listing = await client.get("/qc/v1/methods?page_size=100", headers=auth_headers(token))
+    assert listing.status_code == 200, listing.text
+    body = listing.json()
+    assert "items" in body and "total" in body
+    assert any(m["method_version_id"] == version_id for m in body["items"])
+
+
 async def test_create_draft_rejects_unknown_method_type(client, seeded, db):
     async with db.begin():
         await _make_user(db, seeded, "qc.reviewer.qcm2", "QC Reviewer")
@@ -125,6 +146,11 @@ async def test_second_version_requires_modification_reason(client, seeded, db):
 
 
 async def test_release_fails_closed_with_no_signature_policy(client, seeded, db):
+    """No SignaturePolicy row is added by conftest.py's global fixture set for qc_method_version/release
+    (the real row now lives in scripts/seed.py's SIGNATURE_POLICY_FLOOR for the live DB, SG-186 RESOLVED
+    2026-09-18) -- so absent a local row like the one the test below adds, resolve_signature_requirement()
+    still correctly fails closed with SIGNATURE_POLICY_UNRESOLVED, proving the fail-closed path itself
+    still works."""
     async with db.begin():
         await _make_user(db, seeded, "qc.reviewer.qcm5", "QC Reviewer")
         await _make_user(db, seeded, "qa.releaser.qcm5", "QA Releaser")
@@ -144,6 +170,63 @@ async def test_release_fails_closed_with_no_signature_policy(client, seeded, db)
     )
     assert release.status_code == 409
     assert release.json()["code"] == "SIGNATURE_POLICY_UNRESOLVED"
+
+
+async def test_release_authored_by_qc_reviewer_is_released_by_a_qa_releaser(client, seeded, db):
+    """SG-186 RESOLVED (2026-09-18, project-owner-directed): mirrors qc_test_specification/release
+    (Document 106 row 58, the nearest in-module precedent) -- QA Releaser signs "Released". Unlike
+    product_version/recipe_version/material_specification_version, release_qc_method_version() enforces
+    no bespoke author-independence check (no single stored "performer" identity, same as its precedent) --
+    RBAC (qc_method.release: QA Releaser/Admin only, not QC Reviewer) plus the signature ceremony are the
+    whole enforcement surface here, so a QC Reviewer who ALSO holds QA Releaser can release their own
+    draft (nothing analogous to the other three modules' SOD_CONFLICT applies)."""
+    async with db.begin():
+        await _make_user(db, seeded, "qc.reviewer.qcm7", "QC Reviewer")
+        await _make_user(db, seeded, "releaser.qcm7", "QA Releaser")
+        db.add(
+            SignaturePolicy(
+                record_type="qc_method_version", action="release", meaning="Released",
+                required_role_id=seeded["roles"]["QA Releaser"].id, requires_independent_signer=True,
+                signature_required=True, policy_source="PLATFORM_FLOOR",
+            )
+        )
+    author_token = await login(client, "qc.reviewer.qcm7")
+    releaser_token = await login(client, "releaser.qcm7")
+
+    version_id = (
+        await client.post(
+            "/qc/v1/methods/drafts", json=_draft_body(seeded["site_id"], "MTH-7"), headers=auth_headers(author_token)
+        )
+    ).json()["aggregate_id"]
+    body = {"idempotency_key": idem(), "method_version_id": version_id, "expected_version": 1}
+
+    # QC Reviewer cannot release (no qc_method.release permission -> router gate).
+    resp = await client.post(
+        f"/qc/v1/methods/drafts/{version_id}/release", json=body, headers=auth_headers(author_token)
+    )
+    assert resp.status_code == 403 and resp.json()["code"] == "ROLE_MISSING"
+
+    # QA Releaser: unsigned -> 428, signed -> released.
+    resp = await client.post(
+        f"/qc/v1/methods/drafts/{version_id}/release",
+        json={**body, "idempotency_key": idem()}, headers=auth_headers(releaser_token),
+    )
+    assert resp.status_code == 428
+    ch = (
+        await client.post(
+            f"/qc/v1/methods/{version_id}/signature-challenges",
+            json={"action": "release"}, headers=auth_headers(releaser_token),
+        )
+    ).json()
+    resp = await client.post(
+        f"/qc/v1/methods/drafts/{version_id}/release",
+        json={**body, "idempotency_key": idem(), "challenge_id": ch["challenge_id"], "reauth_password": DEMO_PASSWORD},
+        headers=auth_headers(releaser_token),
+    )
+    assert resp.status_code == 200, resp.text
+    assert (
+        await client.get(f"/qc/v1/methods/{version_id}", headers=auth_headers(releaser_token))
+    ).json()["lifecycle_state"] == "released"
 
 
 async def test_release_requires_qc_method_release_permission(client, seeded, db):

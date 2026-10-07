@@ -1,19 +1,28 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useEffect, useState } from "react";
 import {
   api,
   ApiError,
+  canApproveEquipmentCalibration,
   canCalibrateEquipment,
   canHoldEquipment,
   canMaintainEquipment,
   canReturnEquipmentToService,
   canCreateEquipment,
+  canOperateEvidence,
+  canReserveEquipment,
+  canRetireEquipment,
+  canRelocateEquipment,
+  downloadEvidence,
   formatDate,
   formatDateTime,
+  listAll,
   newIdempotencyKey,
   type EquipmentAsset,
+  type Me,
   type MutationReceipt,
+  type Supplier,
 } from "@/lib/api";
 import { useApiResource, useEntityOptions, useMe } from "@/lib/hooks";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
@@ -48,11 +57,20 @@ interface Calibration {
   standard_reference: string | null;
   standard_calibration_status: string | null;
   standard_expiry_date: string | null;
+  calibration_type: string;
+  provider_name: string | null;
+  provider_supplier_id: string | null;
+  certificate_reference: string | null;
   as_found: Record<string, unknown> | null;
   adjustments: Record<string, unknown> | null;
   as_left: Record<string, unknown> | null;
   impact_assessment_required: boolean;
   performer_user_id: string | null;
+  // Client gap-analysis Phase 4 (2026-10-05): Pass/Fail (result, above) is objective; Approved/
+  // Not-Approved is a separate QA disposition, null until reviewed.
+  approved: boolean | null;
+  approved_by_user_id: string | null;
+  approved_at: string | null;
 }
 
 interface WorkOrder {
@@ -64,23 +82,36 @@ interface WorkOrder {
   diagnosis: string | null;
   work_performed: string | null;
   parts_used: Record<string, unknown> | null;
+  non_critical: boolean;
+  activities: { activity: string; result: string }[] | null;
   procedure_version: string | null;
   frequency_days: number | null;
   next_due_date: string | null;
   expected_downtime_hours: string | null;
+  actual_downtime_hours: string | null;
   post_maintenance_verification_required: boolean;
   verified_at: string | null;
   technician_user_id: string;
+}
+
+interface UseLogEntry {
+  id: string;
+  log_type: string;
+  occurred_at: string;
+  ended_at: string | null;
+  batch_id: string | null;
+  operator_user_id: string | null;
+  event_reference: string | null;
 }
 
 interface History {
   asset_id: string;
   calibrations: Calibration[];
   maintenance_work_orders: WorkOrder[];
-  use_log: { id: string; log_type: string; occurred_at: string }[];
+  use_log: UseLogEntry[];
 }
 
-type PendingAction = "qualification" | "calibration" | "maintenance" | "hold" | "return_to_service";
+type PendingAction = "qualification" | "calibration" | "maintenance" | "hold" | "return_to_service" | "reserve" | "retire" | "relocate";
 
 export default function EquipmentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -135,35 +166,60 @@ export default function EquipmentDetailPage({ params }: { params: Promise<{ id: 
             <LinkButton href="/equipment" variant="secondary">
               <Icon name="arrow-left" /> Back
             </LinkButton>
-            {canCreateEquipment(me) && (
-              <Button variant="secondary" onClick={() => setPending("qualification")}>
-                Record qualification
-              </Button>
-            )}
-            {canCalibrateEquipment(me) && (
-              <Button variant="secondary" onClick={() => setPending("calibration")}>
-                Record calibration
-              </Button>
-            )}
-            {canMaintainEquipment(me) && (
-              <Button variant="secondary" onClick={() => setPending("maintenance")}>
-                Record maintenance
-              </Button>
-            )}
-            {a.hold_flag
-              ? canReturnEquipmentToService(me) && (
-                  <Button variant="success" onClick={() => setPending("return_to_service")}>
-                    Return to service
-                  </Button>
-                )
-              : canHoldEquipment(me) && (
-                  <Button variant="danger" onClick={() => setPending("hold")}>
-                    <Icon name="lock" /> Place on hold
+            {a.state !== "RETIRED" && (
+              <>
+                {canCreateEquipment(me) && (
+                  <Button variant="secondary" onClick={() => setPending("qualification")}>
+                    Record qualification
                   </Button>
                 )}
+                {canCalibrateEquipment(me) && (
+                  <Button variant="secondary" onClick={() => setPending("calibration")}>
+                    Record calibration
+                  </Button>
+                )}
+                {canMaintainEquipment(me) && (
+                  <Button variant="secondary" onClick={() => setPending("maintenance")}>
+                    Record maintenance
+                  </Button>
+                )}
+                {canReserveEquipment(me) && (
+                  <Button variant="secondary" onClick={() => setPending("reserve")}>
+                    <Icon name="calendar" /> Reserve
+                  </Button>
+                )}
+                {canRelocateEquipment(me) && (
+                  <Button variant="secondary" onClick={() => setPending("relocate")}>
+                    Relocate
+                  </Button>
+                )}
+                {a.hold_flag
+                  ? canReturnEquipmentToService(me) && (
+                      <Button variant="success" onClick={() => setPending("return_to_service")}>
+                        Return to service
+                      </Button>
+                    )
+                  : canHoldEquipment(me) && (
+                      <Button variant="danger" onClick={() => setPending("hold")}>
+                        <Icon name="lock" /> Place on hold
+                      </Button>
+                    )}
+                {canRetireEquipment(me) && (
+                  <Button variant="danger" onClick={() => setPending("retire")}>
+                    Retire
+                  </Button>
+                )}
+              </>
+            )}
           </div>
         }
       />
+
+      {a.state === "RETIRED" && (
+        <Banner tone="critical" title="This asset is retired" icon="lock">
+          Retired equipment is kept for historical record only and can no longer be modified or used.
+        </Banner>
+      )}
 
       {a.hold_flag && (
         <Banner tone="critical" title="This asset is on hold" icon="lock">
@@ -194,8 +250,11 @@ export default function EquipmentDetailPage({ params }: { params: Promise<{ id: 
           <Fact label="Maintenance">{a.maintenance_status ?? "—"}</Fact>
           <Fact label="Maintenance due">{formatDate(a.next_maintenance_due_date)}</Fact>
           <Fact label="Cleanliness">{a.cleanliness_status ?? "—"}</Fact>
+          <Fact label="Location">{a.location_id ?? "—"}</Fact>
           <Fact label="Dedicated">{a.dedicated ? "Yes" : "No"}</Fact>
-          <Fact label="Firmware">{a.firmware_version ?? "—"}</Fact>
+          <Fact label="Firmware">{a.firmware_version ?? "Not applicable"}</Fact>
+          <Fact label="Computer-operated">{a.is_computer_operated ? "Yes" : "No (manual)"}</Fact>
+          <Fact label="Recalibration required">{a.recalibration_required ? "Yes" : "No"}</Fact>
           <Fact label="Record version">{a.version}</Fact>
           <IdFact label="Asset ID" value={a.id} />
         </FactGrid>
@@ -207,13 +266,27 @@ export default function EquipmentDetailPage({ params }: { params: Promise<{ id: 
             id: "calibration",
             label: "Calibrations",
             badge: history.data?.calibrations.length,
-            content: <CalibrationTab calibrations={history.data?.calibrations ?? []} />,
+            content: (
+              <CalibrationTab
+                calibrations={history.data?.calibrations ?? []}
+                asset={a}
+                me={me}
+                onDone={reloadAll}
+              />
+            ),
           },
           {
             id: "maintenance",
             label: "Maintenance",
             badge: history.data?.maintenance_work_orders.length,
-            content: <MaintenanceTab workOrders={history.data?.maintenance_work_orders ?? []} />,
+            content: (
+              <MaintenanceTab
+                workOrders={history.data?.maintenance_work_orders ?? []}
+                asset={a}
+                me={me}
+                onDone={reloadAll}
+              />
+            ),
           },
           {
             id: "use",
@@ -225,6 +298,11 @@ export default function EquipmentDetailPage({ params }: { params: Promise<{ id: 
             id: "eligibility",
             label: "Eligibility",
             content: <EligibilityTab eligibility={eligibility.data} />,
+          },
+          {
+            id: "documents",
+            label: "Documents",
+            content: <DocumentsTab assetId={a.id} me={me} />,
           },
         ]}
       />
@@ -244,7 +322,19 @@ export default function EquipmentDetailPage({ params }: { params: Promise<{ id: 
   );
 }
 
-function CalibrationTab({ calibrations }: { calibrations: Calibration[] }) {
+function CalibrationTab({
+  calibrations,
+  asset,
+  me,
+  onDone,
+}: {
+  calibrations: Calibration[];
+  asset: EquipmentAsset;
+  me: Me | null;
+  onDone: () => void;
+}) {
+  const [reviewing, setReviewing] = useState<Calibration | null>(null);
+
   if (calibrations.length === 0) {
     return <EmptyState icon="gauge">No calibration events recorded for this asset.</EmptyState>;
   }
@@ -259,6 +349,9 @@ function CalibrationTab({ calibrations }: { calibrations: Calibration[] }) {
             <th>Result</th>
             <th>Standard</th>
             <th>Impact assessment</th>
+            {/* Client gap-analysis Phase 4: Pass/Fail (Result, above) is the objective outcome; Approved
+                is a separate QA disposition on top of it, never the same column. */}
+            <th>Approved</th>
           </tr>
         </thead>
         <tbody>
@@ -271,7 +364,7 @@ function CalibrationTab({ calibrations }: { calibrations: Calibration[] }) {
                   state={c.result?.toLowerCase() === "pass" ? "accepted" : "failed"}
                   icon={c.result?.toLowerCase() === "pass" ? "check-circle" : "x"}
                 >
-                  {c.result}
+                  {c.result ? c.result.charAt(0).toUpperCase() + c.result.slice(1) : ""}
                 </StatePill>
               </td>
               <td className="fs-2">
@@ -289,15 +382,125 @@ function CalibrationTab({ calibrations }: { calibrations: Calibration[] }) {
                   <span className="text-muted">—</span>
                 )}
               </td>
+              <td>
+                {c.approved === null ? (
+                  canApproveEquipmentCalibration(me) ? (
+                    <Button size="sm" variant="secondary" onClick={() => setReviewing(c)}>
+                      Review
+                    </Button>
+                  ) : (
+                    <StatePill state="missing" icon="clock">
+                      Pending
+                    </StatePill>
+                  )
+                ) : c.approved ? (
+                  <StatePill state="accepted" icon="check-circle">
+                    Approved
+                  </StatePill>
+                ) : (
+                  <StatePill state="failed" icon="x">
+                    Not approved
+                  </StatePill>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
       </Table>
+      {reviewing && (
+        <ApproveCalibrationModal
+          asset={asset}
+          calibration={reviewing}
+          onClose={() => setReviewing(null)}
+          onDone={() => {
+            setReviewing(null);
+            onDone();
+          }}
+        />
+      )}
     </Card>
   );
 }
 
-function MaintenanceTab({ workOrders }: { workOrders: WorkOrder[] }) {
+/** Client gap-analysis Phase 4 (2026-10-05) -- the "Approved/Not-Approved" step, deliberately separate
+ * from recording the calibration itself (different permission, SoD-enforced server-side against the
+ * performer). Mirrors CompleteMaintenanceModal's "continue an existing record" shape below. */
+function ApproveCalibrationModal({
+  asset,
+  calibration,
+  onClose,
+  onDone,
+}: {
+  asset: EquipmentAsset;
+  calibration: Calibration;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(approved: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post<MutationReceipt>(`/equipment/v1/${asset.id}/calibrations`, {
+        idempotency_key: newIdempotencyKey(),
+        asset_id: asset.id,
+        expected_version: asset.version,
+        calibration_id: calibration.id,
+        approved,
+        reason: reason || null,
+      });
+      onDone();
+    } catch (err) {
+      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Action failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`Review calibration - ${asset.equipment_code}`}>
+      <FactGrid>
+        <Fact label="Performed">{formatDate(calibration.performed_date)}</Fact>
+        <Fact label="Result"><span style={{ textTransform: "capitalize" }}>{calibration.result}</span></Fact>
+        <Fact label="Standard/Traceable Reference">{calibration.standard_reference ?? "—"}</Fact>
+      </FactGrid>
+      <Field label="Explanation" hint="Optional note recorded with this decision.">
+        <textarea className="input mt-2" rows={3} value={reason} onChange={(e) => setReason(e.target.value)} />
+      </Field>
+      {error && <p className="error-text mb-3">{error}</p>}
+      <div className="flex justify-between gap-3 mt-4">
+        <Button type="button" variant="secondary" onClick={onClose} disabled={busy}>
+          Cancel
+        </Button>
+        <div className="flex gap-2">
+          <Button type="button" variant="danger" onClick={() => submit(false)} disabled={busy}>
+            Not approved
+          </Button>
+          <Button type="button" variant="success" onClick={() => submit(true)} disabled={busy}>
+            {busy ? "Saving…" : "Approve"}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function MaintenanceTab({
+  workOrders,
+  asset,
+  me,
+  onDone,
+}: {
+  workOrders: WorkOrder[];
+  asset: EquipmentAsset;
+  me: Me | null;
+  onDone: () => void;
+}) {
+  const [completing, setCompleting] = useState<WorkOrder | null>(null);
+
   if (workOrders.length === 0) {
     return <EmptyState icon="refresh">No maintenance work orders for this asset.</EmptyState>;
   }
@@ -307,7 +510,14 @@ function MaintenanceTab({ workOrders }: { workOrders: WorkOrder[] }) {
         <Card key={w.id} pad className="mb-3">
           <div className="flex justify-between items-center mb-3">
             <span className="font-semibold">{w.type ?? "Maintenance"} work order</span>
-            <WorkflowStatePill state={w.state} />
+            <div className="flex items-center gap-3">
+              <WorkflowStatePill state={w.state} />
+              {w.state !== "verified" && canMaintainEquipment(me) && (
+                <Button variant="secondary" onClick={() => setCompleting(w)}>
+                  Complete maintenance
+                </Button>
+              )}
+            </div>
           </div>
           <FactGrid>
             <Fact label="Started">{formatDateTime(w.started_at)}</Fact>
@@ -315,6 +525,9 @@ function MaintenanceTab({ workOrders }: { workOrders: WorkOrder[] }) {
             <Fact label="Next due">{formatDate(w.next_due_date)}</Fact>
             <Fact label="Expected downtime">
               {w.expected_downtime_hours ? `${w.expected_downtime_hours} h` : "—"}
+            </Fact>
+            <Fact label="Actual downtime">
+              {w.actual_downtime_hours ? `${w.actual_downtime_hours} h` : "—"}
             </Fact>
           </FactGrid>
           {w.fault_description && (
@@ -340,11 +553,162 @@ function MaintenanceTab({ workOrders }: { workOrders: WorkOrder[] }) {
           </div>
         </Card>
       ))}
+      {completing && (
+        <CompleteMaintenanceModal
+          asset={asset}
+          workOrder={completing}
+          onClose={() => setCompleting(null)}
+          onDone={() => {
+            setCompleting(null);
+            onDone();
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function UseLogTab({ entries }: { entries: { id: string; log_type: string; occurred_at: string }[] }) {
+/** Closes out an open/in-progress work order — the step the equipment detail page had no UI for:
+ * `record_maintenance` only clears `maintenance_status` (and any maintenance-sourced hold) when
+ * called again with this work order's id and `verified: true`; without it, Return to service keeps
+ * failing with POST_MAINTENANCE_VERIFICATION_REQUIRED no matter how many times it's clicked. */
+function CompleteMaintenanceModal({
+  asset,
+  workOrder,
+  onClose,
+  onDone,
+}: {
+  asset: EquipmentAsset;
+  workOrder: WorkOrder;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [workPerformed, setWorkPerformed] = useState(workOrder.work_performed ?? "");
+  const [actualDowntimeHours, setActualDowntimeHours] = useState(workOrder.actual_downtime_hours ?? "");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Client gap-analysis Phase 7 (2026-10-05): car-service-style repeatable Activity/Result checklist,
+  // meaningful for a "planned" work order and recorded at completion time (not creation), matching when
+  // the actual work -- and its outcomes -- are known.
+  const [activities, setActivities] = useState<{ activity: string; result: string }[]>(
+    workOrder.activities && workOrder.activities.length > 0 ? workOrder.activities : [{ activity: "", result: "" }]
+  );
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post<MutationReceipt>(`/equipment/v1/${asset.id}/maintenance`, {
+        idempotency_key: newIdempotencyKey(),
+        asset_id: asset.id,
+        expected_version: asset.version,
+        work_order_id: workOrder.id,
+        work_performed: workPerformed || null,
+        actual_downtime_hours: actualDowntimeHours || null,
+        verified: true,
+        activities:
+          workOrder.type === "planned"
+            ? activities.filter((a) => a.activity.trim() || a.result.trim())
+            : null,
+        reason: reason || null,
+      });
+      onDone();
+    } catch (err) {
+      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Action failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={
+        <span className="flex items-center gap-2">
+          Complete maintenance - {asset.equipment_code}
+        </span>
+      }
+    >
+      <form onSubmit={submit}>
+        <Field label="Work performed">
+          <textarea
+            className="input"
+            rows={3}
+            value={workPerformed}
+            onChange={(e) => setWorkPerformed(e.target.value)}
+          />
+        </Field>
+        <Field
+          label="Actual downtime (hours)"
+          hint={workOrder.expected_downtime_hours ? `Expected: ${workOrder.expected_downtime_hours} h` : "Optional."}
+        >
+          <Input
+            type="number"
+            min={0}
+            step="0.01"
+            value={actualDowntimeHours}
+            onChange={(e) => setActualDowntimeHours(e.target.value)}
+          />
+        </Field>
+        {workOrder.type === "planned" && (
+          <Field label="Activity checklist (Optional)" hint="Two-column activity/outcome list, e.g. a planned-maintenance checklist.">
+            {activities.map((row, i) => (
+              <div key={i} className="flex gap-2 mb-2">
+                <Input
+                  placeholder="Activity"
+                  value={row.activity}
+                  onChange={(e) => {
+                    const next = [...activities];
+                    next[i] = { ...next[i], activity: e.target.value };
+                    setActivities(next);
+                  }}
+                />
+                <Input
+                  placeholder="Result/Outcome"
+                  value={row.result}
+                  onChange={(e) => {
+                    const next = [...activities];
+                    next[i] = { ...next[i], result: e.target.value };
+                    setActivities(next);
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setActivities(activities.filter((_, j) => j !== i))}
+                  disabled={activities.length === 1}
+                >
+                  <Icon name="x" />
+                </Button>
+              </div>
+            ))}
+            <Button type="button" variant="secondary" size="sm" onClick={() => setActivities([...activities, { activity: "", result: "" }])}>
+              <Icon name="plus" /> Add row
+            </Button>
+          </Field>
+        )}
+        <Field label="Reason" hint="Optional. Recorded in the audit trail.">
+          <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
+        </Field>
+        {error && <p className="error-text mb-2">{error}</p>}
+        <div className="flex justify-between gap-3 mt-3">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={busy}>
+            {busy ? "Saving…" : "Mark verified"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function UseLogTab({ entries }: { entries: UseLogEntry[] }) {
   if (entries.length === 0) {
     return <EmptyState icon="history">No use log entries for this asset.</EmptyState>;
   }
@@ -355,14 +719,20 @@ function UseLogTab({ entries }: { entries: { id: string; log_type: string; occur
         <thead>
           <tr>
             <th>Occurred</th>
+            <th>Until</th>
             <th>Type</th>
+            <th>Batch</th>
+            <th>Note</th>
           </tr>
         </thead>
         <tbody>
           {entries.map((entry) => (
             <tr key={entry.id}>
               <td className="tabular">{formatDateTime(entry.occurred_at)}</td>
+              <td className="tabular">{entry.ended_at ? formatDateTime(entry.ended_at) : "—"}</td>
               <td>{entry.log_type}</td>
+              <td className="fs-2 tabular">{entry.batch_id ?? "—"}</td>
+              <td className="fs-2">{entry.event_reference ?? "—"}</td>
             </tr>
           ))}
         </tbody>
@@ -410,17 +780,222 @@ function EligibilityTab({ eligibility }: { eligibility: Eligibility | null }) {
   );
 }
 
+const DOCUMENT_TYPES = [
+  { value: "spec_sheet", label: "Spec sheet" },
+  { value: "manual", label: "Operating/maintenance manual" },
+  { value: "sop_wi", label: "SOP / WI" },
+  { value: "iq_oq", label: "IQ/OQ" },
+  { value: "calibration_cert", label: "Calibration certificate" },
+  { value: "vendor_doc", label: "Vendor document" },
+  { value: "drawing", label: "Drawing" },
+  { value: "other", label: "Other" },
+];
+
+interface EquipmentDocument {
+  id: string;
+  filename: string;
+  mime_type: string;
+  state: string;
+  created_at: string;
+  provenance: { document_type?: string } | null;
+}
+
+/** Client requirement #6 -- equipment documentation via the existing generic evidence module
+ * (owner_type is a free string, so "equipment_asset" needs no evidence-module change). document_type is
+ * a soft, UI-only classification stored in `provenance` -- same "captured, unenforced" precedent as this
+ * module's other classification-only fields (e.g. `cleanliness_status`). */
+function DocumentsTab({ assetId, me }: { assetId: string; me: Me | null }) {
+  const { data, reload } = useApiResource<{ evidence_objects: EquipmentDocument[] }>(
+    `/evidence/v1/objects?owner_type=equipment_asset&owner_id=${assetId}`
+  );
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const documents = data?.evidence_objects ?? [];
+
+  return (
+    <Card>
+      <CardHeader
+        title="Documents"
+        meta={
+          canOperateEvidence(me) && (
+            <Button size="sm" variant="secondary" onClick={() => setUploadOpen(true)}>
+              <Icon name="plus" /> Upload document
+            </Button>
+          )
+        }
+      />
+      {documents.length === 0 ? (
+        <EmptyState icon="file-text">No controlled documents uploaded for this equipment yet.</EmptyState>
+      ) : (
+        <Table>
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Filename</th>
+              <th>State</th>
+              <th>Uploaded</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {documents.map((d) => (
+              <tr key={d.id}>
+                <td className="fs-2">
+                  {DOCUMENT_TYPES.find((t) => t.value === d.provenance?.document_type)?.label ??
+                    d.provenance?.document_type ??
+                    "—"}
+                </td>
+                <td>{d.filename}</td>
+                <td className="fs-2">{d.state}</td>
+                <td className="fs-2 text-muted">{formatDateTime(d.created_at)}</td>
+                <td style={{ textAlign: "right" }}>
+                  {d.state === "FINALIZED" && (
+                    <Button size="sm" variant="secondary" onClick={() => downloadEvidence(d.id)}>
+                      <Icon name="download" /> Download
+                    </Button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+
+      {uploadOpen && (
+        <UploadDocumentModal
+          assetId={assetId}
+          onClose={() => setUploadOpen(false)}
+          onDone={() => {
+            setUploadOpen(false);
+            reload();
+          }}
+        />
+      )}
+    </Card>
+  );
+}
+
+function UploadDocumentModal({
+  assetId,
+  onClose,
+  onDone,
+}: {
+  assetId: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [documentType, setDocumentType] = useState(DOCUMENT_TYPES[0].value);
+  const [reason, setReason] = useState("");
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [fileBase64, setFileBase64] = useState("");
+  const [mimeType, setMimeType] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function handleFile(file: File | undefined) {
+    if (!file) {
+      setFileName(null);
+      setFileBase64("");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = typeof reader.result === "string" ? reader.result : "";
+      const base64 = result.includes(",") ? result.slice(result.indexOf(",") + 1) : result;
+      setFileName(file.name);
+      setMimeType(file.type || "application/octet-stream");
+      setFileBase64(base64);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!fileName || !fileBase64) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const staged = await api.post<MutationReceipt>("/evidence/v1/uploads", {
+        idempotency_key: newIdempotencyKey(),
+        owner_type: "equipment_asset",
+        owner_id: assetId,
+        filename: fileName,
+        mime_type: mimeType,
+        provenance: { document_type: documentType },
+        reason: reason || `Equipment document upload (${documentType})`,
+      });
+      await api.post<MutationReceipt>(`/evidence/v1/${staged.aggregate_id}:finalize`, {
+        idempotency_key: newIdempotencyKey(),
+        evidence_id: staged.aggregate_id,
+        expected_version: staged.resulting_version,
+        content_base64: fileBase64,
+        reason: reason || `Equipment document upload (${documentType})`,
+      });
+      onDone();
+    } catch (err) {
+      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Failed to upload document");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Upload equipment document">
+      <form onSubmit={onSubmit}>
+        <Field label="Document type" required>
+          <Select value={documentType} onChange={(e) => setDocumentType(e.target.value)}>
+            {DOCUMENT_TYPES.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="File" required>
+          <input type="file" className="input" onChange={(e) => handleFile(e.target.files?.[0])} />
+        </Field>
+        <Field label="Reason" hint="Optional. Recorded in the audit trail.">
+          <Input value={reason} onChange={(e) => setReason(e.target.value)} />
+        </Field>
+        {error && <p className="error-text mb-2">{error}</p>}
+        <div className="flex justify-between gap-3 mt-3">
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={busy || !fileName}>
+            {busy ? "Uploading…" : "Upload"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/** Client requirement #8 -- mirrors the backend's own computation (`performed_date + frequency_days`)
+ * so the operator sees, before submitting, exactly what the asset's next_calibration_due_date will
+ * become when a frequency is set (it overrides the "Next due date" field above once submitted). */
+function computeNextDue(performedDateStr: string, frequencyDaysStr: string): string {
+  const performed = new Date(`${performedDateStr}T00:00:00Z`);
+  if (Number.isNaN(performed.getTime())) return "—";
+  const days = Number(frequencyDaysStr);
+  if (!Number.isFinite(days)) return "—";
+  const next = new Date(performed.getTime() + days * 86400000);
+  return next.toISOString().slice(0, 10);
+}
+
 const ACTION_TITLE: Record<PendingAction, string> = {
   qualification: "Record qualification",
   calibration: "Record calibration",
   maintenance: "Record maintenance",
   hold: "Place asset on hold",
   return_to_service: "Return asset to service",
+  reserve: "Reserve equipment",
+  retire: "Retire equipment",
+  relocate: "Relocate equipment",
 };
 
-/** One modal for all five equipment commands. Only `hold` requires a signature ceremony (Document 106
- * row 108), so the challenge is requested lazily on open for that action alone rather than for every
- * write. */
+/** One modal for all eight equipment commands. `hold` and `retire` require a signature ceremony
+ * (Document 106 rows 108 and, for `retire`, the new Client Topic 14 row), so the challenge is requested
+ * lazily on open for those two actions alone rather than for every write. */
 function ActionModal({
   asset,
   action,
@@ -450,13 +1025,78 @@ function ActionModal({
   const [standardReference, setStandardReference] = useState("");
   const [frequencyDays, setFrequencyDays] = useState("365");
   const [reviewerId, setReviewerId] = useState("");
+  const [calibrationType, setCalibrationType] = useState("internal");
+  const [providerSupplierId, setProviderSupplierId] = useState("");
+  const [providerName, setProviderName] = useState("");
+  const [certificateReference, setCertificateReference] = useState("");
+  const [serviceProviders, setServiceProviders] = useState<Supplier[]>([]);
+
+  // Client gap-analysis Phase 6: calibration/repair/test-lab vendors onboarded as a Supplier with
+  // role_type "service_provider"/"both" populate this picker; free-text `providerName` stays available
+  // for a provider not yet onboarded (fetched once per modal mount, same local-fetch pattern
+  // useEntityOptions's own comment describes for a dependent/filtered list).
+  useEffect(() => {
+    let cancelled = false;
+    listAll<Supplier>("/suppliers/v1").then((rows) => {
+      if (!cancelled) setServiceProviders(rows.filter((s) => s.role_type === "service_provider" || s.role_type === "both"));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Maintenance
   const [maintenanceType, setMaintenanceType] = useState("planned");
+  const [nonCritical, setNonCritical] = useState(false);
   const [faultDescription, setFaultDescription] = useState("");
   const [workPerformed, setWorkPerformed] = useState("");
   const [nextDueDate, setNextDueDate] = useState("");
   const [verified, setVerified] = useState(false);
+
+  // Reserve (Client Topic 14 / SG-112)
+  const [reserveBatchId, setReserveBatchId] = useState("");
+  const [reserveStartAt, setReserveStartAt] = useState("");
+  const [reserveEndAt, setReserveEndAt] = useState("");
+
+  // Relocate (Client Topic 14 / SG-112)
+  const [newLocationId, setNewLocationId] = useState("");
+
+  if (action === "retire") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`/equipment/v1/${asset.id}/signature-challenges`}
+        action="retire"
+        title={
+          <span className="flex items-center gap-2">
+            <Icon name="pen" /> {ACTION_TITLE.retire} - {asset.equipment_code}
+          </span>
+        }
+        summary="Permanently retiring this equipment is a Part 11 electronic signature attributable to you. Retired equipment is kept for historical record only and can never be modified or used again."
+        submitLabel="Sign and retire"
+        submitVariant="danger"
+        reason="none"
+        extraFields={
+          <Field label="Retirement reason" required hint="Recorded with the date and person who approved the retirement.">
+            <textarea className="input" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} required />
+          </Field>
+        }
+        disabled={!reason.trim()}
+        onSign={(p) =>
+          api.post<MutationReceipt>(`/equipment/v1/${asset.id}/retire`, {
+            idempotency_key: p.idempotency_key,
+            asset_id: asset.id,
+            expected_version: asset.version,
+            reason,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+          })
+        }
+      />
+    );
+  }
 
   if (action === "hold") {
     return (
@@ -523,6 +1163,10 @@ function ActionModal({
           standard_reference: standardReference || null,
           frequency_days: frequencyDays ? Number(frequencyDays) : null,
           reviewer_user_id: reviewerId || null,
+          calibration_type: calibrationType,
+          provider_name: calibrationType === "external" && !providerSupplierId ? providerName || null : null,
+          provider_supplier_id: calibrationType === "external" ? providerSupplierId || null : null,
+          certificate_reference: calibrationType === "external" ? certificateReference || null : null,
           reason: reason || null,
         });
       } else if (action === "maintenance") {
@@ -533,6 +1177,22 @@ function ActionModal({
           work_performed: workPerformed || null,
           next_due_date: nextDueDate || null,
           verified,
+          non_critical: maintenanceType === "breakdown" ? nonCritical : false,
+          reason: reason || null,
+        });
+      } else if (action === "reserve") {
+        await api.post<MutationReceipt>(`/equipment/v1/${asset.id}/reserve`, {
+          idempotency_key: base.idempotency_key,
+          asset_id: asset.id,
+          batch_id: reserveBatchId,
+          start_at: new Date(reserveStartAt).toISOString(),
+          end_at: new Date(reserveEndAt).toISOString(),
+          reason: reason || null,
+        });
+      } else if (action === "relocate") {
+        await api.post<MutationReceipt>(`/equipment/v1/${asset.id}/relocate`, {
+          ...base,
+          new_location_id: newLocationId,
           reason: reason || null,
         });
       } else {
@@ -549,7 +1209,14 @@ function ActionModal({
     }
   }
 
-  const canSubmit = !busy && (action !== "calibration" || (!!dueDate && !!performedDate));
+  const canSubmit =
+    !busy &&
+    (action !== "calibration" ||
+      (!!dueDate &&
+        !!performedDate &&
+        (calibrationType !== "external" || !!providerSupplierId || !!providerName.trim()))) &&
+    (action !== "reserve" || (!!reserveBatchId && !!reserveStartAt && !!reserveEndAt)) &&
+    (action !== "relocate" || !!newLocationId);
 
   return (
     <Modal
@@ -568,9 +1235,9 @@ function ActionModal({
             <div className="grid grid-cols-2 gap-4">
               <Field label="Qualification status" required>
                 <Select value={qualificationStatus} onChange={(e) => setQualificationStatus(e.target.value)}>
-                  <option value="qualified">qualified</option>
-                  <option value="requalification_due">requalification_due</option>
-                  <option value="not_qualified">not_qualified</option>
+                  <option value="qualified">Qualified</option>
+                  <option value="requalification_due">Requalification Due</option>
+                  <option value="not_qualified">Not Qualified</option>
                 </Select>
               </Field>
               <Field label="Qualified">
@@ -593,26 +1260,72 @@ function ActionModal({
 
         {action === "calibration" && (
           <>
-            <div className="grid grid-cols-3 gap-4">
-              <Field label="Performed date" required>
-                <Input type="date" value={performedDate} onChange={(e) => setPerformedDate(e.target.value)} required />
+            {/* Client gap-analysis Phase 7 (2026-10-05): field order follows the client's requested
+                sequence -- Performed date -> Internal/External -> SOP/Standard Reference (internal) or
+                Provider+Certificate (external) -> Result -> Next due date. "Approved/Not-Approved" stays
+                a separate second-step call (the existing approval ceremony below), not folded into this
+                same form -- that is a different actor/time, not just a field position. */}
+            <Field label="Performed date" required>
+              <Input type="date" value={performedDate} onChange={(e) => setPerformedDate(e.target.value)} required />
+            </Field>
+            <Field label="Calibration type" required>
+              <Select value={calibrationType} onChange={(e) => setCalibrationType(e.target.value)}>
+                <option value="internal">Internal</option>
+                <option value="external">External</option>
+              </Select>
+            </Field>
+            {calibrationType === "internal" ? (
+              <Field label="Standard/Traceable Reference" hint="Traceable standard used for this calibration.">
+                <Input value={standardReference} onChange={(e) => setStandardReference(e.target.value)} />
               </Field>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <Field label="Provider" required hint="Pick a known calibration/service provider, or type a name below if it's not onboarded yet.">
+                    <Select value={providerSupplierId} onChange={(e) => setProviderSupplierId(e.target.value)}>
+                      <option value="">— Not in the list / type a name —</option>
+                      {serviceProviders.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.legal_name} ({s.supplier_code})
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field label="Certificate reference">
+                    <Input value={certificateReference} onChange={(e) => setCertificateReference(e.target.value)} />
+                  </Field>
+                </div>
+                {!providerSupplierId && (
+                  <Field label="Provider name" required hint="Free-text name for a provider not yet onboarded as a Supplier.">
+                    <Input value={providerName} onChange={(e) => setProviderName(e.target.value)} required />
+                  </Field>
+                )}
+              </>
+            )}
+            <Field label="Result" required>
+              <Select value={result} onChange={(e) => setResult(e.target.value)}>
+                <option value="pass">Pass</option>
+                <option value="fail">Fail</option>
+                <option value="oot">OOT (out of tolerance)</option>
+              </Select>
+            </Field>
+            {(result === "fail" || result === "oot") && (
+              <Banner tone="warn" title="This result triggers impact assessment">
+                Work performed on this instrument since the last passing calibration may be affected.
+              </Banner>
+            )}
+            <div className="grid grid-cols-2 gap-4">
               <Field label="Next due date" required>
                 <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} required />
               </Field>
-              <Field label="Result" required>
-                <Select value={result} onChange={(e) => setResult(e.target.value)}>
-                  <option value="pass">pass</option>
-                  <option value="fail">fail</option>
- <option value="oot">oot out of tolerance</option>
-                </Select>
-              </Field>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Standard reference" hint="Traceable standard used for this calibration.">
-                <Input value={standardReference} onChange={(e) => setStandardReference(e.target.value)} />
-              </Field>
-              <Field label="Frequency (days)">
+              <Field
+                label="Frequency (days) (Optional)"
+                hint={
+                  frequencyDays && performedDate
+                    ? `Next due (calculated): ${computeNextDue(performedDate, frequencyDays)}`
+                    : "When set, the asset's next due date is calculated from this instead of the field above."
+                }
+              >
                 <Input
                   type="number"
                   min={1}
@@ -622,7 +1335,7 @@ function ActionModal({
               </Field>
             </div>
             <EntityPickerField
-              label="Reviewer"
+              label="Reviewer (Optional)"
               hint="Optional second-person reviewer for this calibration."
               value={reviewerId}
               onChange={setReviewerId}
@@ -630,11 +1343,6 @@ function ActionModal({
               status={entities.usersStatus}
               kind="user"
             />
-            {(result === "fail" || result === "oot") && (
-              <Banner tone="warn" title="This result triggers impact assessment">
-                Work performed on this instrument since the last passing calibration may be affected.
-              </Banner>
-            )}
           </>
         )}
 
@@ -645,12 +1353,20 @@ function ActionModal({
                 <Select value={maintenanceType} onChange={(e) => setMaintenanceType(e.target.value)}>
                   <option value="planned">planned</option>
                   <option value="corrective">corrective</option>
+                  <option value="breakdown">breakdown</option>
                 </Select>
               </Field>
               <Field label="Next due date">
                 <Input type="date" value={nextDueDate} onChange={(e) => setNextDueDate(e.target.value)} />
               </Field>
             </div>
+            {maintenanceType === "breakdown" && (
+              <label className="flex items-center gap-2 fs-2 mb-3">
+                <input type="checkbox" checked={nonCritical} onChange={(e) => setNonCritical(e.target.checked)} />
+                Non-critical (e.g. a mere power-supply failure) — skips the recalibration requirement a
+                breakdown otherwise defaults to
+              </label>
+            )}
             <Field label="Fault description">
               <textarea
                 className="input"
@@ -671,6 +1387,45 @@ function ActionModal({
               <input type="checkbox" checked={verified} onChange={(e) => setVerified(e.target.checked)} />
               Post-maintenance verification complete
             </label>
+          </>
+        )}
+
+        {action === "reserve" && (
+          <>
+            <EntityPickerField
+              label="Batch"
+              hint="The batch this reservation is for."
+              value={reserveBatchId}
+              onChange={setReserveBatchId}
+              options={entities.batches}
+              status={entities.batchesStatus}
+              kind="batch"
+            />
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Reserved from" required>
+                <Input type="datetime-local" value={reserveStartAt} onChange={(e) => setReserveStartAt(e.target.value)} required />
+              </Field>
+              <Field label="Reserved until" required>
+                <Input type="datetime-local" value={reserveEndAt} onChange={(e) => setReserveEndAt(e.target.value)} required />
+              </Field>
+            </div>
+          </>
+        )}
+
+        {action === "relocate" && (
+          <>
+            <Banner tone="warn" title="Equipment becomes unavailable">
+              The asset will require re-qualification before it can be used again at the new location.
+            </Banner>
+            <EntityPickerField
+              label="New location"
+              hint="The equipment area this asset is being moved to."
+              value={newLocationId}
+              onChange={setNewLocationId}
+              options={entities.areas}
+              status={entities.areasStatus}
+              kind="area"
+            />
           </>
         )}
 

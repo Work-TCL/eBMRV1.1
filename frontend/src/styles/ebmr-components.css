@@ -251,6 +251,47 @@ select.select{appearance:none;background-repeat:no-repeat;background-position:ri
 
 .input-measure{display:flex;align-items:center;gap:var(--space-2)}
 .input-measure .input{max-width:160px}
+
+/* Role permission editor (admin/roles/[id]/page.tsx) -- a module list + the selected module's own
+   permissions, side by side, replacing a long page of ~128 stacked collapsible module cards that made
+   the whole page scroll past several screens. Each pane scrolls independently within a fixed height
+   instead, so the page itself stays put. */
+.role-permissions-panel{display:grid;grid-template-columns:260px 1fr;gap:var(--space-4);align-items:start}
+.role-module-list{
+  display:flex;flex-direction:column;gap:2px;max-height:520px;overflow-y:auto;
+  border:1px solid var(--border-hairline);border-radius:var(--radius-md);padding:4px;
+}
+.role-module-row{
+  display:flex;align-items:center;gap:var(--space-2);width:100%;text-align:left;
+  padding:8px 10px;border:none;border-radius:var(--radius-sm);background:none;cursor:pointer;
+  font-family:var(--font-body);font-size:var(--fs-3);color:var(--ink-primary);
+}
+.role-module-row:hover{background:var(--surface-sunken)}
+.role-module-row[data-active="true"]{background:var(--brand-50);color:var(--brand-700)}
+.role-module-row-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.role-module-dot{width:8px;height:8px;border-radius:999px;flex-shrink:0;background:var(--gridline)}
+.role-module-dot-all{background:var(--status-good-solid)}
+.role-module-dot-some{background:var(--brand-500)}
+.role-module-detail{
+  border:1px solid var(--border-hairline);border-radius:var(--radius-md);padding:var(--space-4);
+  max-height:520px;overflow-y:auto;
+}
+
+/* CSV bulk-import upload step (CsvImportWizard) -- click-or-drag file picker, replacing a bare
+   unstyled <input type="file">. */
+.file-dropzone{
+  display:flex;flex-direction:column;align-items:center;gap:var(--space-2);text-align:center;
+  padding:var(--space-5) var(--space-4);border:2px dashed var(--border-hairline);border-radius:var(--radius-md);
+  background:var(--surface-sunken);color:var(--ink-muted);cursor:pointer;transition:border-color .12s,background .12s;
+}
+.file-dropzone:hover{border-color:var(--brand-300)}
+.file-dropzone[data-drag-over="true"]{border-color:var(--brand-500);background:var(--brand-50);color:var(--ink-primary)}
+.file-dropzone .icon{width:28px;height:28px;color:var(--brand-500)}
+.file-dropzone-title{font-size:var(--fs-4);font-weight:var(--fw-semibold);color:var(--ink-primary)}
+.file-dropzone-chosen{
+  display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);
+  padding:var(--space-3);border:1px solid var(--border-hairline);border-radius:var(--radius-md);background:var(--surface-card);
+}
 .input-measure .unit{font-size:var(--fs-3);font-weight:var(--fw-semibold);color:var(--ink-muted)}
 
 .spec-range{
@@ -346,6 +387,25 @@ table.data-table{width:100%;border-collapse:collapse;font-size:var(--fs-3);min-w
 .step-item[data-step-state="available"] .step-marker{color:var(--ink-secondary)}
 .step-title{font-size:var(--fs-4);font-weight:var(--fw-bold);color:var(--ink-primary)}
 .step-meta{font-size:var(--fs-2);color:var(--ink-muted);margin-top:2px}
+
+/* Horizontal variant (onboarding wizard header, CSV import's upload/map/preview header) -- same
+   .step-item/.step-marker building blocks as the vertical stepper above, just laid left-to-right with
+   a connecting line between markers instead of a bottom border per row. Scoped to .stepper-horizontal
+   so the existing vertical usages (DDCP, batch workspace) are untouched. */
+.stepper-horizontal{flex-direction:row;align-items:flex-start}
+.stepper-horizontal .step-item{
+  flex:1;min-width:0;flex-direction:column;align-items:center;text-align:center;
+  gap:var(--space-2);padding:0;border-bottom:none;
+}
+.stepper-horizontal .step-item::before,.stepper-horizontal .step-item::after{
+  content:"";position:absolute;top:15px;height:2px;background:var(--gridline);z-index:0;
+}
+.stepper-horizontal .step-item::before{left:0;right:50%}
+.stepper-horizontal .step-item::after{left:50%;right:0}
+.stepper-horizontal .step-item:first-child::before,.stepper-horizontal .step-item:last-child::after{display:none}
+.stepper-horizontal .step-marker{position:relative;z-index:1}
+.stepper-horizontal .step-title{font-size:var(--fs-3)}
+.stepper-horizontal .flex-1{flex:none}
 
 .progress-track{height:8px;border-radius:999px;background:var(--surface-sunken);overflow:hidden}
 .progress-fill{height:100%;background:var(--brand-500);border-radius:999px}
@@ -603,4 +663,17 @@ tr[data-just-added]{animation:row-in 1.6s ease}
   background:var(--surface-sunken);
 }
 .role-badge .k{font-size:var(--fs-1);color:var(--ink-muted);text-transform:uppercase;letter-spacing:.04em;display:block}
+
+/* Compact record list — a handful of records (id + state pill) inside a card, too short to justify a
+   full .table (headers, scroll container) but still needing to look like a designed list, not a raw
+   browser <ul>. Same border-bottom-per-row rhythm as .step-item, at a lighter weight since these rows
+   carry no marker/number. First used by the Batch Workspace's Release-blockers and Deviations/CAPA
+   cards (frontend/src/app/batch-workspace/[batchId]/page.tsx). */
+.record-list{list-style:none;margin:0;padding:0}
+.record-list li{
+  display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);
+  padding:var(--space-2) 2px;border-bottom:1px solid var(--gridline);font-size:var(--fs-2);
+}
+.record-list li:last-child{border-bottom:none}
+.record-list .record-list-label{color:var(--ink-primary);font-weight:var(--fw-semibold)}
 .role-badge .v{font-size:var(--fs-2);font-weight:var(--fw-semibold);color:var(--ink-primary);display:block;margin-top:1px}

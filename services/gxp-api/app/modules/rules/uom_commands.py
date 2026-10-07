@@ -60,10 +60,19 @@ async def _resolve_release_signature(
 ) -> uuid.UUID | None:
     """Same fail-closed pattern as `rules.commands.release_rule`: no Document 106 `(record_type,
     release)` policy row means `SIGNATURE_POLICY_UNRESOLVED`, never an implicit unsigned release
-    (SIGP-FR-004)."""
+    (SIGP-FR-004). Also mirrors `release_rule()`'s `enforce_signer_policy()` call (SG-211 follow-up,
+    2026-09-21) -- this helper previously resolved the policy and consumed a challenge/reauth but never
+    checked `policy.required_role_id`/`requires_independent_signer` against the actual signer, so any
+    caller holding the `rules.release` permission (not just a QA Releaser) could release a UOM/conversion
+    once a signature-policy row existed. `release_rule()` has always enforced this; this helper is shared
+    by both `release_uom()` and `release_uom_conversion()`, so both now get the same check."""
     policy = await signature_service.resolve_signature_requirement(session, record_type=record_type, action="release")
     if not policy.signature_required:
         return None
+    await signature_service.enforce_signer_policy(
+        session, policy=policy, actor_user_id=actor_user_id, site_id=None,
+        action_label=f"{record_type}.release",
+    )
     if challenge_id is None or not reauth_password:
         raise MissingSignatureError(f"Releasing a {record_type} requires a signature", required_meaning=policy.meaning)
     actor = await session.get(User, actor_user_id)
@@ -366,6 +375,19 @@ async def release_uom_conversion(
 async def list_uom_versions(session: AsyncSession, code: str) -> list[UnitOfMeasure]:
     return (
         (await session.execute(select(UnitOfMeasure).where(UnitOfMeasure.code == code).order_by(UnitOfMeasure.version)))
+        .scalars()
+        .all()
+    )
+
+
+async def list_all_uom_versions(session: AsyncSession) -> list[UnitOfMeasure]:
+    """Every UOM version regardless of status (draft/released), for the Rules page's own always-visible
+    table -- unlike `list_released_uoms()` (picker data for other modules), this is the authoring
+    surface's own view of everything that exists, so a freshly drafted code that's not released yet (and
+    therefore invisible to every other picker) is still visible here without having to already know and
+    type its exact code into a lookup box."""
+    return (
+        (await session.execute(select(UnitOfMeasure).order_by(UnitOfMeasure.code, UnitOfMeasure.version)))
         .scalars()
         .all()
     )

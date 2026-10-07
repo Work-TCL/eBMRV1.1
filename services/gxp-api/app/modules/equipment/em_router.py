@@ -39,13 +39,22 @@ def _sample_dict(sample: EmSampleOrReading) -> dict:
         "program_version_id": str(sample.program_version_id),
         "location_id": str(sample.location_id),
         "monitoring_type": sample.monitoring_type,
+        "batch_id": str(sample.batch_id) if sample.batch_id else None,
+        "aseptic_operation_id": str(sample.aseptic_operation_id) if sample.aseptic_operation_id else None,
+        "instrument_or_media_ref": sample.instrument_or_media_ref,
+        "scheduled_at": sample.scheduled_at.isoformat() if sample.scheduled_at else None,
+        "sampled_at": sample.sampled_at.isoformat() if sample.sampled_at else None,
+        "operator_user_id": str(sample.operator_user_id) if sample.operator_user_id else None,
+        "reviewer_user_id": str(sample.reviewer_user_id) if sample.reviewer_user_id else None,
         "state": sample.state,
         "result": sample.result,
         "alert_action_status": sample.alert_action_status,
         "media_reagent_ref": sample.media_reagent_ref,
         "incubation_conditions": sample.incubation_conditions,
         "requires_deviation": sample.requires_deviation,
+        "deviation_reference_id": str(sample.deviation_reference_id) if sample.deviation_reference_id else None,
         "version": sample.version,
+        "created_at": sample.created_at.isoformat() if sample.created_at else None,
     }
 
 
@@ -72,7 +81,11 @@ async def post_create_task(
 
 
 @router.get("/tasks/{sample_id}")
-async def get_task(sample_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_task(
+    sample_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     sample = await session.get(EmSampleOrReading, sample_id)
     if sample is None:
         raise NotFoundError("EM sample/reading not found")
@@ -142,7 +155,11 @@ async def post_record_result(
 
 
 @router.get("/results/{sample_id}")
-async def get_result(sample_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_result(
+    sample_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     sample = await session.get(EmSampleOrReading, sample_id)
     if sample is None:
         raise NotFoundError("EM sample/reading not found")
@@ -184,14 +201,21 @@ async def post_excursion_impact(
 
 
 @router.get("/areas/{area_id}/readiness")
-async def get_readiness(area_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
+async def get_readiness(
+    area_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
     async with session.begin():
         return await get_area_readiness(session, area_id)
 
 
 @router.get("/trends")
 async def get_trends_endpoint(
-    location_id: uuid.UUID, monitoring_type: str | None = None, session: AsyncSession = Depends(get_session)
+    location_id: uuid.UUID,
+    monitoring_type: str | None = None,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     async with session.begin():
         return await get_trends(session, location_id, monitoring_type)

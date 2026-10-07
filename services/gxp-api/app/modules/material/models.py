@@ -55,6 +55,10 @@ INVENTORY_TRANSACTION_TYPES = (
 CONTAINER_STATUSES = ("active", "split", "merged", "destroyed")
 RESERVATION_STATES = ("active", "released", "consumed", "expired", "cancelled")
 
+# Client requirement #4: captured, application-validated list -- same "no DB CHECK constraint" treatment
+# as INVENTORY_TRANSACTION_TYPES above.
+STORAGE_CONDITIONS = ("ambient", "cold_storage", "freezer", "refrigerator", "controlled_temperature", "warehouse")
+
 
 class Material(Base):
     """Raw material / component master (MAT-001-adjacent — the regulated identity a lot is received
@@ -75,6 +79,11 @@ class Material(Base):
     # actually-used BatchStep -> ebmr.recipe_steps path (SG-090); conditional-independence enforcement
     # itself is deferred, this flag is captured for a future pass.
     critical: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Client requirement #4: whether this material is manufactured/maintained in-house (vs. purchased),
+    # and its required storage condition -- a lot's own `storage_condition` (below) overrides this
+    # master-level default when set, resolved at read time rather than copied at write time.
+    is_in_house: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    default_storage_condition: Mapped[str | None] = mapped_column(String(40))
     version: Mapped[int] = mapped_column(nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
@@ -101,7 +110,11 @@ class MaterialLot(Base):
     available_quantity: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
     uom: Mapped[str] = mapped_column(String(20), nullable=False)
     uom_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("rules.gxp_uom.uom_id"))  # SG-146 (remainder)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="quarantine")
+    # String(20) -> String(40) (migration 0124): LOT_STATES itself already names "qc_disposition_pending"
+    # (22 chars) as a valid value -- VARCHAR(20) could never actually hold it, so any real write of that
+    # state would have failed closed with a DB error. Found incidentally while building Workflow Handoff
+    # Notifications (app/modules/notifications), not otherwise related to that feature.
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="quarantine")
     expiry_date: Mapped[date | None] = mapped_column()
     retest_date: Mapped[date | None] = mapped_column()
     received_by_user_id: Mapped[uuid.UUID] = mapped_column(
@@ -120,6 +133,26 @@ class MaterialLot(Base):
     manufacture_date: Mapped[date | None] = mapped_column()
     released_at: Mapped[datetime | None] = mapped_column()
     release_signature_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+
+    # Client requirement #4: where this lot is stored and under what condition -- optional overrides of
+    # the parent Material's own default_storage_condition.
+    storage_location_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("materials.warehouse_locations.id")
+    )
+    storage_condition: Mapped[str | None] = mapped_column(String(40))
+
+    # Client_Decisions_Neededanswers Topic 4 (2026-10-02, migration 0125): a lot created from a held
+    # receipt accepted-despite-discrepancy (`disposition_held_receipt`, decision="accepted") is flagged
+    # here rather than entering the normal quarantine flow unmarked -- per Q10, it still goes through the
+    # same quarantine/test/release path (no new `status` value), just visibly carrying the exception.
+    is_exception_release: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    exception_reason: Mapped[str | None] = mapped_column(String(2000))
+
+    # Client_Decisions_Neededanswers Topic 2 (2026-10-02, migration 0126): set when `release_material_lot`
+    # relied on the supplier's COA instead of an in-house required test (approved supplier + COA on file
+    # + QA-signed reason, enforced in `_disposition_material_lot_v2`/`_missing_required_tests`).
+    coa_reliance: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    coa_reliance_reason: Mapped[str | None] = mapped_column(String(2000))
 
 
 class MaterialLotDisposition(Base):
@@ -208,7 +241,16 @@ class MaterialReceipt(Base):
     state: Mapped[str] = mapped_column(String(40), nullable=False, default="received")
     labeling_ok: Mapped[bool | None] = mapped_column(Boolean)
     damage_observed: Mapped[bool | None] = mapped_column(Boolean)
+    # Client gap-analysis Phase 6 (2026-10-05, migration 0136): the client wanted the single generic
+    # "Damage Observed" question split into shipping/package damage vs. material container damage.
+    # `damage_observed` itself stays (MIG-FR-004 expand step) and is now derived as their OR in
+    # `examine_receipt` rather than being collected directly from the UI.
+    shipping_damage_observed: Mapped[bool | None] = mapped_column(Boolean)
+    container_damage_observed: Mapped[bool | None] = mapped_column(Boolean)
     seal_broken: Mapped[bool | None] = mapped_column(Boolean)
+    # Client gap-analysis Phase 6: "Contamination Observed" was dropped from the examination workflow at
+    # the client's request. Column stays (no data loss for historical receipts) but is never written by
+    # `examine_receipt` going forward.
     contamination_observed: Mapped[bool | None] = mapped_column(Boolean)
     examination_notes: Mapped[str | None] = mapped_column(String(2000))
     examined_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
@@ -221,6 +263,23 @@ class MaterialReceipt(Base):
     discrepancy_reason: Mapped[str | None] = mapped_column(String(2000))
     version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    # Client_Decisions_Neededanswers Topic 4 (2026-10-02, migration 0125): a receipt held at
+    # "discrepancy_hold" (above) previously had no forward path at all -- `disposition_held_receipt`
+    # moves it to "accepted"/"rejected"/"replacement_requested". `disposition_severity` governs whether a
+    # Deviation is required (Q7): "significant" requires `disposition_deviation_id`, "minor" does not.
+    # The disposition itself is always QA-Releaser-signed regardless of severity (Q8).
+    disposition_decision: Mapped[str | None] = mapped_column(String(30))
+    disposition_severity: Mapped[str | None] = mapped_column(String(20))
+    disposition_reason: Mapped[str | None] = mapped_column(String(2000))
+    disposition_deviation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("qms.deviation_record.id")
+    )
+    disposition_decided_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("iam.users.id")
+    )
+    disposition_decided_at: Mapped[datetime | None] = mapped_column()
+    disposition_signature_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
 
 
 class MaterialContainer(Base):
@@ -277,6 +336,15 @@ class WarehouseLocation(Base):
     zone_type: Mapped[str] = mapped_column(String(50), nullable=False)
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="active")
     environment_profile_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    # Client Topic 7 Q14 (SG-084, project-owner-directed): temporary lock during a physical count --
+    # "nobody else can move stock in or out" -- checked at the stock-movement choke points
+    # (create_inventory_transfer, complete_dispensing), deliberately NOT at create_cycle_count/
+    # create_inventory_adjustment_request, since the count/adjustment that justifies the lock must
+    # itself remain possible while it's active.
+    locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    lock_reason: Mapped[str | None] = mapped_column(String(1000))
+    locked_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
+    locked_at: Mapped[datetime | None] = mapped_column()
     version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
@@ -364,8 +432,11 @@ class InventoryBalanceProjection(Base):
 class InventoryReservation(Base):
     """Document 20 `inventory_reservation` -- INV-FR-010/011. Phase-1 scope: batch material requirement
     only -- the spec's prose "order" has no order entity anywhere in this codebase (same scope-narrowing
-    precedent as every prior document). The signed `release` action (Document 106 row 46) is the only
-    Document 20 signature -- see `release_inventory_reservation`."""
+    precedent as every prior document). The signed `release` action (Document 106 row 46) was the only
+    Document 20 signature until Client Topic 8 (SG-083, project-owner-directed) added a second: a
+    non-FEFO lot override now requires QA Releaser approval before the reservation actually holds stock
+    -- see `request_reservation_override`/`approve_reservation_override`/`reject_reservation_override`.
+    `status` gains `override_pending`/`override_rejected` alongside `active`/`released`."""
 
     __tablename__ = "inventory_reservations"
     __table_args__ = (
@@ -399,6 +470,15 @@ class InventoryReservation(Base):
     released_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     released_at: Mapped[datetime | None] = mapped_column()
     release_signature_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    # Client Topic 8 (SG-083): FEFO override audit trail -- "the material selected, the reason for the
+    # override, and the approval." fefo_default_lot_id records what the unmodified oldest-stock-first
+    # rule would have chosen, so both the override and the forgone default are on the record.
+    fefo_overridden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    override_reason: Mapped[str | None] = mapped_column(String(1000))
+    fefo_default_lot_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    override_approved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
+    override_approved_at: Mapped[datetime | None] = mapped_column()
+    override_signature_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
@@ -470,9 +550,12 @@ class DispensingOrder(Base):
     """Document 21 `dispensing_order` -- DSP-FR-001. `batch_step_id`/`material_spec_version_id` carry no
     FK -- no `material_requirement` entity exists anywhere in this codebase (SG-089), same unenforced-
     reference treatment as `MaterialLot.material_spec_version_id`. `target_qty`/`target_uom`/
-    `tolerance_low`/`tolerance_high` are caller-supplied captured values -- no target-calculation or
-    tolerance-rule execution mode exists (SG-089); `tolerance_rule_id`'s spec-declared field is dropped in
-    favor of the two explicit bound columns actually needed to evaluate against."""
+    `tolerance_low`/`tolerance_high` were originally caller-supplied captured values; SG-094
+    (project-owner-directed, Topic 5) now derives them from the batch's released recipe
+    `RecipeMaterialRequirement` at creation time -- `target_from_recipe` records which path produced the
+    stored values, and `override_reason`/`overridden_by_user_id`/`overridden_at` capture the
+    Supervisor/Admin-only manual override path (RBAC + mandatory reason, no signature, mirrors
+    `batch_step.role_override`), usable only while the order is still in `created` state."""
 
     __tablename__ = "dispensing_orders"
     __table_args__ = (
@@ -494,6 +577,10 @@ class DispensingOrder(Base):
     target_uom_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("rules.gxp_uom.uom_id"))  # SG-146 (remainder)
     tolerance_low: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
     tolerance_high: Mapped[Decimal] = mapped_column(Numeric(24, 8), nullable=False)
+    target_from_recipe: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    override_reason: Mapped[str | None] = mapped_column(String(1000))
+    overridden_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
+    overridden_at: Mapped[datetime | None] = mapped_column()
     state: Mapped[str] = mapped_column(String(40), nullable=False, default="created")
     # Set at `start`; the independence baseline `verify` (must not be performer) and `cancel` (must be
     # independent of the author, checked against requested_by_user_id instead) evaluate against.

@@ -8,22 +8,30 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
+from app.modules.material.models import Material
 from app.modules.policy.service import evaluate_policy
 from app.modules.qms.read_support import iso as _iso
 from app.modules.signature.service import create_challenge
 from app.modules.supplier_quality.commands import (
+    AddSupplierSiteCommand,
     ApproveSupplierQualificationCommand,
     CreateSupplierCommand,
     CreateSupplierQualificationCommand,
+    DeleteSupplierCommand,
+    UpdateSupplierCommand,
+    add_supplier_site,
     approve_supplier_qualification,
     create_supplier,
     create_supplier_qualification,
+    delete_supplier,
     qualification_record_hash,
+    update_supplier,
 )
 from app.modules.supplier_quality.models import (
     Supplier,
     SupplierQualification,
     SupplierQualificationEvidence,
+    SupplierQualificationScopeItem,
     SupplierSite,
 )
 from app.mutation.errors import NotFoundError, ValidationFailedError
@@ -40,7 +48,64 @@ async def post_create_supplier(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
+        # 2026-09-18, project-owner-directed: create_supplier() had no evaluate_policy() call at all —
+        # matching material.create's resolution (same session, same decision), Process Engineer + Admin.
+        # SG-213 reviewed: Supplier (models.py) explicitly has no site_id -- "a supplier is an org-wide
+        # legal identity" per the model's own docstring -- so site_id=None is correct, not a gap.
+        await evaluate_policy(session, actor.user_id, action="supplier.create", site_id=None)
         return await create_supplier(session, cmd, actor.user_id)
+
+
+@router.post("/suppliers/{supplier_id}/sites", response_model=MutationReceipt)
+async def post_add_supplier_site(
+    supplier_id: uuid.UUID,
+    cmd: AddSupplierSiteCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.supplier_id != supplier_id:
+        raise ValidationFailedError("supplier_id in the path and body must match")
+    async with session.begin():
+        # Same permission as create_supplier -- adding a site to an existing supplier is the same class
+        # of master-data-authoring action, not a new authorization decision.
+        await evaluate_policy(session, actor.user_id, action="supplier.create", site_id=None)
+        return await add_supplier_site(session, cmd, actor.user_id)
+
+
+# Project-owner-directed (2026-10-06): beyond Document 18 §7's two declared endpoints -- same "own
+# considered contract, not a guessed one" precedent as `POST /suppliers/{id}/sites` above (itself already
+# an addition beyond that list). Both reuse `supplier.create`: editing/deleting a supplier's OWN still-
+# draft record is the same class of authoring action as creating it, not a new authorization decision --
+# and both commands gate to `status == "draft"` themselves, so nothing past that point is reachable here.
+@router.put("/suppliers/v1/{supplier_id}", response_model=MutationReceipt)
+async def put_update_supplier(
+    supplier_id: uuid.UUID,
+    cmd: UpdateSupplierCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.supplier_id != supplier_id:
+        raise ValidationFailedError("supplier_id in the path and body must match")
+    async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="supplier.create", site_id=None)
+        return await update_supplier(session, cmd, actor.user_id)
+
+
+@router.delete("/suppliers/v1/{supplier_id}", response_model=MutationReceipt)
+async def delete_supplier_endpoint(
+    supplier_id: uuid.UUID,
+    cmd: DeleteSupplierCommand,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.supplier_id != supplier_id:
+        raise ValidationFailedError("supplier_id in the path and body must match")
+    async with session.begin():
+        # Deletion is gated stricter than create/update, same tiering `material.delete` (platform.
+        # administer, not material.create/update) already established -- a harder-to-reverse action
+        # warrants a narrower permission even though the command itself only ever touches a draft record.
+        await evaluate_policy(session, actor.user_id, action="platform.administer", site_id=None)
+        return await delete_supplier(session, cmd, actor.user_id)
 
 
 @router.post("/suppliers/{supplier_id}/qualifications", response_model=MutationReceipt)
@@ -53,6 +118,7 @@ async def post_create_supplier_qualification(
     if str(cmd.supplier_id) != supplier_id:
         raise ValidationFailedError("supplier_id in path and body must match")
     async with session.begin():
+        await evaluate_policy(session, actor.user_id, action="supplier_qualification.create", site_id=None)
         return await create_supplier_qualification(session, cmd, actor.user_id)
 
 
@@ -126,12 +192,15 @@ def _supplier_dict(supplier: Supplier) -> dict:
     }
 
 
-def _qualification_dict(qualification: SupplierQualification) -> dict:
+def _qualification_dict(
+    qualification: SupplierQualification, scope_items: list[dict] | None = None
+) -> dict:
     return {
         "id": str(qualification.id),
         "supplier_site_id": str(qualification.supplier_site_id),
         "requested_by_user_id": str(qualification.requested_by_user_id),
         "scope": qualification.scope,
+        "scope_items": scope_items if scope_items is not None else [],
         "risk_class": qualification.risk_class,
         "status": qualification.status,
         "justification": qualification.justification,
@@ -146,6 +215,24 @@ def _qualification_dict(qualification: SupplierQualification) -> dict:
     }
 
 
+async def _load_scope_items(
+    session: AsyncSession, qualification_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, list[dict]]:
+    if not qualification_ids:
+        return {}
+    rows = await session.execute(
+        select(SupplierQualificationScopeItem.supplier_qualification_id, Material.id, Material.code, Material.name)
+        .join(Material, Material.id == SupplierQualificationScopeItem.material_id)
+        .where(SupplierQualificationScopeItem.supplier_qualification_id.in_(qualification_ids))
+    )
+    by_qualification: dict[uuid.UUID, list[dict]] = {}
+    for qualification_id, material_id, code, name in rows.all():
+        by_qualification.setdefault(qualification_id, []).append(
+            {"material_id": str(material_id), "code": code, "name": name}
+        )
+    return by_qualification
+
+
 @router.get("/suppliers/v1")
 async def list_suppliers(
     session: AsyncSession = Depends(get_session),
@@ -153,6 +240,10 @@ async def list_suppliers(
     params: PageParams = Depends(page_params),
     status: str | None = None,
 ) -> dict:
+    # SG-213 reviewed: checked SupplierSite/SupplierQualification in models.py against the audit's premise
+    # that they carry a site_id -- they don't (SupplierSite has an address, no iam.sites.id FK at all;
+    # SupplierQualification only FKs to supplier_site_id). The whole module is org-wide, same as Supplier
+    # itself, so site_id=None is correct here and on get_supplier/get_supplier_qualification below.
     await evaluate_policy(session, actor.user_id, action="supplier.view", site_id=None)
     stmt = select(Supplier)
     if status:
@@ -176,6 +267,7 @@ async def get_supplier(
     supplier = await session.get(Supplier, supplier_id)
     if supplier is None:
         raise NotFoundError("Supplier not found")
+    # SG-213 reviewed: see list_suppliers' comment above -- org-wide, no site_id anywhere in this module.
     await evaluate_policy(session, actor.user_id, action="supplier.view", site_id=None)
     sites = (
         await session.execute(select(SupplierSite).where(SupplierSite.supplier_id == supplier_id))
@@ -190,6 +282,7 @@ async def get_supplier(
         if site_ids
         else []
     )
+    scope_items_by_qualification = await _load_scope_items(session, [q.id for q in qualifications])
     return {
         **_supplier_dict(supplier),
         "sites": [
@@ -209,7 +302,9 @@ async def get_supplier(
             }
             for s in sites
         ],
-        "qualifications": [_qualification_dict(q) for q in qualifications],
+        "qualifications": [
+            _qualification_dict(q, scope_items_by_qualification.get(q.id, [])) for q in qualifications
+        ],
     }
 
 
@@ -222,6 +317,7 @@ async def get_supplier_qualification(
     qualification = await session.get(SupplierQualification, qualification_id)
     if qualification is None:
         raise NotFoundError("Supplier qualification not found")
+    # SG-213 reviewed: see list_suppliers' comment above -- org-wide, no site_id anywhere in this module.
     await evaluate_policy(session, actor.user_id, action="supplier.view", site_id=None)
     evidence = (
         await session.execute(
@@ -230,8 +326,9 @@ async def get_supplier_qualification(
             )
         )
     ).scalars().all()
+    scope_items = (await _load_scope_items(session, [qualification.id])).get(qualification.id, [])
     return {
-        **_qualification_dict(qualification),
+        **_qualification_dict(qualification, scope_items),
         "evidence": [
             {
                 "id": str(e.id),

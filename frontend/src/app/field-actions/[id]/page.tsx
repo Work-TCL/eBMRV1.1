@@ -3,13 +3,13 @@
 import { use, useState } from "react";
 import {
   api,
-  canApproveQms,
-  canInvestigateQms,
+  hasPermission,
   formatDateTime,
   newIdempotencyKey,
   type FieldAction,
 } from "@/lib/api";
 import { useApiResource, useMe } from "@/lib/hooks";
+import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { QmsDetailShell, useCommand } from "@/components/qms/QmsDetailShell";
 import { Fact, IdFact } from "@/components/ui/FactGrid";
 import { Tabs } from "@/components/ui/Tabs";
@@ -81,7 +81,9 @@ const ALLOWED_FROM: Record<string, Transition[]> = {
   CLOSED: [],
 };
 
-// SG-138: no Document 106 policy rows for field_action reportability/approve/close.
+// SG-138 resolved 2026-09-10 (seed.py SIGNATURE_POLICY_FLOOR rows 103-105): reportability is signed by
+// Postmarket Regulatory Affairs, approve/close by QA Releaser. Go through the shared Part 11 ceremony
+// (challenge -> password re-entry -> signed mutation) below.
 const SIGNATURE_GATED: Transition[] = ["reportability", "approve", "close"];
 
 const LABEL: Record<Transition, string> = {
@@ -94,6 +96,21 @@ const LABEL: Record<Transition, string> = {
   close: "Close",
 };
 
+// The exact permission code app/modules/qms/field_action_router.py checks for each transition. Note
+// field_action.effectiveness is held by QA Releaser, NOT QA Reviewer (unlike scope/communications/
+// reconcile) -- the old code's SIGNATURE_GATED list omitted "effectiveness" from the approver bucket, so
+// it fell into the QA-Reviewer-class check instead and would have hidden the Effectiveness button from
+// the QA Releaser who actually holds it (audit finding 2026-09-18).
+const PERMISSION_FOR_TRANSITION: Record<Transition, string> = {
+  scope: "field_action.scope",
+  reportability: "field_action.reportability",
+  approve: "field_action.approve",
+  communications: "field_action.communications",
+  reconcile: "field_action.reconcile",
+  effectiveness: "field_action.effectiveness",
+  close: "field_action.close",
+};
+
 const REGIMES = ["FDA_21CFR806", "FDA_RECALL", "EU_MDR_FSCA", "HEALTH_CANADA", "NONE"];
 
 export default function FieldActionDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -103,8 +120,7 @@ export default function FieldActionDetailPage({ params }: { params: Promise<{ id
   const { data, loading, error, reload } = useApiResource<FieldActionDetail>(`/qms/v1/field-actions/${id}`);
 
   const allowed = data ? (ALLOWED_FROM[data.state] ?? []) : [];
-  const canDo = (t: Transition) =>
-    allowed.includes(t) && (SIGNATURE_GATED.includes(t) ? canApproveQms(me) : canInvestigateQms(me));
+  const canDo = (t: Transition) => allowed.includes(t) && hasPermission(me, PERMISSION_FOR_TRANSITION[t]);
 
   const rec = data?.reconciliation;
 
@@ -374,16 +390,6 @@ function TransitionModal({
             ],
             reason: reason || null,
           });
-        case "reportability":
-          return api.post(`${path}/reportability`, {
-            ...base,
-            applicable_regimes: regimes,
-            rationale,
-            decision,
-            due_date: dueDate ? new Date(dueDate).toISOString() : null,
-          });
-        case "approve":
-          return api.post(`${path}/approve`, { ...base, conclusion });
         case "communications":
           return api.post(`${path}/communications`, {
             ...base,
@@ -400,51 +406,30 @@ function TransitionModal({
           });
         case "effectiveness":
           return api.post(`${path}/effectiveness`, { ...base, result, evidence: { note: conclusion } });
-        case "close":
-          return api.post(`${path}/close`, { ...base, conclusion });
+        default:
+          // reportability/approve/close are signature-gated and never reach this form -- see the early
+          // returns below that render <SignatureCeremony> for them instead.
+          throw new Error(`${transition} does not submit through the plain form`);
       }
     });
   }
 
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      large={transition === "reconcile" || transition === "reportability"}
-      title={`${LABEL[transition]} - ${fieldAction.action_number}`}
-    >
-      <form onSubmit={submit}>
-        {SIGNATURE_GATED.includes(transition) && (
-          <Banner tone="warn" title="This transition requires an electronic signature">
-            This action needs a signature policy that hasn&apos;t been configured for this deployment yet, so it will be correctly refused rather than proceeding without one.
-          </Banner>
-        )}
-
-        {transition === "scope" && (
-          <>
-            <Field label="Lot / batch / serial reference" required>
-              <Input value={lotRef} onChange={(e) => setLotRef(e.target.value)} required autoFocus />
-            </Field>
-            <Field label="Action required" required>
-              <Select value={actionRequired} onChange={(e) => setActionRequired(e.target.value)}>
-                <option value="return">return</option>
-                <option value="destroy">destroy</option>
-                <option value="correct_in_place">correct in place</option>
-                <option value="quarantine">quarantine</option>
-              </Select>
-            </Field>
-            <label className="flex items-center gap-2 fs-2 mb-3">
-              <input
-                type="checkbox"
-                checked={distributionHold}
-                onChange={(e) => setDistributionHold(e.target.checked)}
-              />
-              Place a distribution hold on this scope
-            </label>
-          </>
-        )}
-
-        {transition === "reportability" && (
+  // Document 106 section 9 rows 103-105 (SG-138, resolved): reportability is signed by Postmarket
+  // Regulatory Affairs, approve/close by QA Releaser.
+  if (transition === "reportability") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`${path}/signature-challenges`}
+        action="reportability"
+        title={`Reportability - ${fieldAction.action_number}`}
+        summary="Records the regulatory reportability decision for this field action. Signer must hold Postmarket Regulatory Affairs authority."
+        submitLabel="Sign & record decision"
+        submitVariant="success"
+        disabled={regimes.length === 0 || !rationale.trim()}
+        extraFields={
           <>
             <Field label="Applicable regimes" required>
               <div className="flex flex-wrap gap-3">
@@ -476,6 +461,118 @@ function TransitionModal({
             <Field label="Rationale" required>
               <textarea className="input" rows={3} value={rationale} onChange={(e) => setRationale(e.target.value)} required />
             </Field>
+          </>
+        }
+        onSign={(p) =>
+          api.post(`${path}/reportability`, {
+            idempotency_key: p.idempotency_key,
+            field_action_id: fieldAction.id,
+            expected_version: fieldAction.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+            applicable_regimes: regimes,
+            rationale,
+            decision,
+            due_date: dueDate ? new Date(dueDate).toISOString() : null,
+          })
+        }
+      />
+    );
+  }
+
+  if (transition === "approve") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`${path}/signature-challenges`}
+        action="approve"
+        title={`Approve - ${fieldAction.action_number}`}
+        summary="Approves this field action for execution. This is a released quality decision - signer must be independent of the record's owner."
+        submitLabel="Sign & approve"
+        submitVariant="success"
+        disabled={!conclusion.trim()}
+        extraFields={
+          <Field label="Conclusion" required>
+            <textarea className="input" rows={3} value={conclusion} onChange={(e) => setConclusion(e.target.value)} required />
+          </Field>
+        }
+        onSign={(p) =>
+          api.post(`${path}/approve`, {
+            idempotency_key: p.idempotency_key,
+            field_action_id: fieldAction.id,
+            expected_version: fieldAction.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+            conclusion,
+          })
+        }
+      />
+    );
+  }
+
+  if (transition === "close") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`${path}/signature-challenges`}
+        action="close"
+        title={`Close - ${fieldAction.action_number}`}
+        summary="Closes the field action permanently. This is a released quality decision - signer must be independent of the record's owner."
+        submitLabel="Sign & close"
+        submitVariant="success"
+        disabled={!conclusion.trim()}
+        extraFields={
+          <Field label="Conclusion" required>
+            <textarea className="input" rows={3} value={conclusion} onChange={(e) => setConclusion(e.target.value)} required />
+          </Field>
+        }
+        onSign={(p) =>
+          api.post(`${path}/close`, {
+            idempotency_key: p.idempotency_key,
+            field_action_id: fieldAction.id,
+            expected_version: fieldAction.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+            conclusion,
+          })
+        }
+      />
+    );
+  }
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      large={transition === "reconcile"}
+      title={`${LABEL[transition]} - ${fieldAction.action_number}`}
+    >
+      <form onSubmit={submit}>
+        {transition === "scope" && (
+          <>
+            <Field label="Lot / batch / serial reference" required>
+              <Input value={lotRef} onChange={(e) => setLotRef(e.target.value)} required autoFocus />
+            </Field>
+            <Field label="Action required" required>
+              <Select value={actionRequired} onChange={(e) => setActionRequired(e.target.value)}>
+                <option value="return">return</option>
+                <option value="destroy">destroy</option>
+                <option value="correct_in_place">correct in place</option>
+                <option value="quarantine">quarantine</option>
+              </Select>
+            </Field>
+            <label className="flex items-center gap-2 fs-2 mb-3">
+              <input
+                type="checkbox"
+                checked={distributionHold}
+                onChange={(e) => setDistributionHold(e.target.checked)}
+              />
+              Place a distribution hold on this scope
+            </label>
           </>
         )}
 
@@ -542,12 +639,6 @@ function TransitionModal({
               <textarea className="input" rows={3} value={conclusion} onChange={(e) => setConclusion(e.target.value)} required />
             </Field>
           </>
-        )}
-
-        {(transition === "approve" || transition === "close") && (
-          <Field label="Conclusion" required>
-            <textarea className="input" rows={3} value={conclusion} onChange={(e) => setConclusion(e.target.value)} required />
-          </Field>
         )}
 
         {transition === "scope" && (

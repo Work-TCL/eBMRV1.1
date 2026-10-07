@@ -12,6 +12,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Icon } from "@/components/ui/Icon";
+import { OnboardingReturnLink } from "@/components/admin/OnboardingReturnLink";
 
 export default function SitesAdminPage() {
   const { isAdmin } = useRequireAdmin();
@@ -116,9 +117,12 @@ export default function SitesAdminPage() {
         title="Sites"
         subtitle="Manufacturing facilities under this company."
         action={
-          <Button variant="primary" onClick={() => setModalOpen(true)}>
-            <Icon name="plus" /> New site
-          </Button>
+          <div className="flex gap-2">
+            <OnboardingReturnLink />
+            <Button variant="primary" onClick={() => setModalOpen(true)}>
+              <Icon name="plus" /> New site
+            </Button>
+          </div>
         }
       />
 

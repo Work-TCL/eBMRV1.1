@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.core.security import AuthenticatedActor, get_current_actor
+from app.modules.batch_execution.models import Batch
+from app.modules.packaging.models import PackagingRun
 from app.modules.policy.service import evaluate_policy
 from app.modules.signature.service import create_challenge
 from app.modules.yield_reconciliation import commands as yr_commands
@@ -22,7 +24,10 @@ async def post_evaluate_yield(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="yield_calculation.evaluate", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="yield_calculation.evaluate", site_id=batch.site_id)
         return await yr_commands.evaluate_yield(session, cmd, actor.user_id)
 
 
@@ -32,7 +37,10 @@ async def post_evaluate_potency(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="yield_calculation.evaluate", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="yield_calculation.evaluate", site_id=batch.site_id)
         return await yr_commands.evaluate_potency(session, cmd, actor.user_id)
 
 
@@ -42,7 +50,10 @@ async def post_evaluate_material(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="reconciliation.evaluate", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="reconciliation.evaluate", site_id=batch.site_id)
         return await yr_commands.evaluate_material_reconciliation(session, cmd, actor.user_id)
 
 
@@ -52,7 +63,10 @@ async def post_evaluate_packaging(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="reconciliation.evaluate", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="reconciliation.evaluate", site_id=batch.site_id)
         return await yr_commands.evaluate_packaging_reconciliation(session, cmd, actor.user_id)
 
 
@@ -62,7 +76,10 @@ async def post_evaluate_labels(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="reconciliation.evaluate", site_id=None)
+        run = await session.get(PackagingRun, cmd.packaging_run_id)
+        if run is None:
+            raise NotFoundError("Packaging run not found")
+        await evaluate_policy(session, actor.user_id, action="reconciliation.evaluate", site_id=run.site_id)
         return await yr_commands.evaluate_label_reconciliation(session, cmd, actor.user_id)
 
 
@@ -72,7 +89,10 @@ async def post_evaluate_components(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> MutationReceipt:
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="reconciliation.evaluate", site_id=None)
+        batch = await session.get(Batch, cmd.batch_id)
+        if batch is None:
+            raise NotFoundError("Batch not found")
+        await evaluate_policy(session, actor.user_id, action="reconciliation.evaluate", site_id=batch.site_id)
         return await yr_commands.evaluate_component_reconciliation(session, cmd, actor.user_id)
 
 
@@ -113,7 +133,15 @@ async def post_verify_record(
     if cmd.record_id != record_id:
         raise ValidationFailedError("record_id in path and body must match")
     async with session.begin():
-        await evaluate_policy(session, actor.user_id, action="reconciliation.verify", site_id=None)
+        if cmd.record_kind == "CALCULATION":
+            record = await session.get(ManufacturingCalculation, record_id)
+        elif cmd.record_kind == "RECONCILIATION":
+            record = await session.get(ReconciliationRecord, record_id)
+        else:
+            raise ValidationFailedError("record_kind must be CALCULATION or RECONCILIATION")
+        if record is None:
+            raise NotFoundError("Record not found")
+        await evaluate_policy(session, actor.user_id, action="reconciliation.verify", site_id=record.site_id)
         return await yr_commands.verify_record(session, cmd, actor.user_id)
 
 

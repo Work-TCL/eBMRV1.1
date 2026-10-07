@@ -1,6 +1,6 @@
 {
  "package": "eBMR / eDHR platform build status",
- "generated": "2026-09-15",
+ "generated": "2026-09-29",
  "baseline": "Documents 01-115",
  "stage_model": [
   "NOT_STARTED",
@@ -690,9 +690,9 @@
     "RUL-FR-032": "IN_PROGRESS"
    },
    "entities": 2,
-   "apis": 6,
+   "apis": 7,
    "events": 0,
-   "test_cases": 134,
+   "test_cases": 135,
    "stage": "IN_DEVELOPMENT",
    "stage_history": [
     {
@@ -706,12 +706,17 @@
      "at": "2026-08-27",
      "by": "Claude Code",
      "note": "SG-143 closure: app/modules/rules/precision.py implements Document 110 (SPEC-GXP-008) \u00a71/\u00a72's ten calculation classes table-driven. precision_policy.calculation_class is now required and validated at draft time (PRECISION_POLICY_UNRESOLVED, 409). evaluate_rule()/simulate_rule() round comparisons at the class's declared precision (N4) and, for a presentation-stage class (CC-4/CC-5/CC-9), the final COMPUTED result, retaining the raw pre-rounding value and applied Document 110 policy version on the persisted evaluation (new nullable RuleEvaluation.raw_result/.applied_policy_version columns, migration f3a8c1e5b7d2). Division by zero raises a typed DivisionUndefinedError (CALC-FR-010). A new rules.gxp_uom/gxp_uom_conversion released/versioned master (Document 110 \u00a73) is validated by the evaluator's unit_policy (UOM_UNKNOWN/UOM_CONVERSION_UNAVAILABLE). Module remains IN_DEVELOPMENT, not CODE_COMPLETE: yield/reconciliation/time-window/sequence rule types, deviation-trigger linkage, independent verification, decision explanation, engine versioning, caching, external-result rules, release-path integration, a UOM master authoring command surface, and migration of the pre-existing free-text UOM columns elsewhere in the platform remain out of scope (SG-145, SG-146)."
+    },
+    {
+     "at": "2026-09-17",
+     "by": "Claude Code",
+     "note": "Closed a real functionality gap found while auditing docs/testing/DDCP_Client_Demo_Guide_Gujarati.md #9.6: GET /uom/{code}/versions could look up one already-known released UOM code, but nothing let a caller discover which codes exist at all, so Recipe Master's parameter/material/batch-size UOM fields stayed free text despite rules.gxp_uom already existing as released reference data. New read-only rules_service.list_released_uoms() + GET /rules/v1/uom (SG-081 read-side precedent -- a plain GET listing doesn't conflict with any future write/CRUD contract), wired into those 3 frontend fields as <datalist> suggestions (not a hard-validated select, so a legacy/free-typed value that predates a code's release stays typeable). Module remains IN_DEVELOPMENT -- this is additive picker/discoverability, not the yield/reconciliation/time-window/sequence/deviation-trigger/independent-verification/engine-versioning/caching/external-result-rules/release-path-integration work still open from the prior entries. TC-008-008-04 added; test-cases/WP-01/Document_08_SPEC-GXP-006_TEST_CASES.md and services/gxp-api/tests/test_rules.py (79/79 full-module regression, no dedicated endpoint test added this pass)."
     }
    ],
    "owner": "Claude Code",
    "started_at": "2026-08-22",
    "completed_at": null,
-   "test_pass": 43,
+   "test_pass": 44,
    "test_fail": 0,
    "test_blocked": 83,
    "open_defects": 0,
@@ -884,8 +889,8 @@
     "BAT-FR-009": "IN_PROGRESS",
     "BAT-FR-010": "BLOCKED",
     "BAT-FR-011": "IN_PROGRESS",
-    "BAT-FR-012": "BLOCKED",
-    "BAT-FR-013": "BLOCKED",
+    "BAT-FR-012": "VERIFIED",
+    "BAT-FR-013": "VERIFIED",
     "BAT-FR-014": "VERIFIED",
     "BAT-FR-015": "IN_PROGRESS",
     "BAT-FR-016": "IN_PROGRESS",
@@ -945,14 +950,26 @@
      "by": "Claude Code",
      "stage": "IN_DEVELOPMENT",
      "note": "WP-11 Stage 5 (ADR-0011, SG-183/SG-048): BAT-FR-029 restart/recovery proven for the one real workflow this codebase runs (StepStuckDetectionWorkflow, Stage 2) -- a real Worker instance starts the workflow and is stopped while it is durably asleep with zero worker connected (simulated app restart); a completely independent fresh Worker instance then resumes it, completing correctly with exactly one WorkflowStuckDetected signal (not lost, not duplicated). A second test proves the resumed run re-reads live authoritative state (AG-10) rather than anything stale from before the restart -- the step is completed during the simulated outage and the resumed workflow correctly emits no signal. Tests: tests/test_workflowops_restart_recovery.py, 2 real tests against the live Temporal server, 2/2 passed, none mocked. TC-011-029-01 moved BLOCKED -> PASS. Scope: the one real workflow only -- the other 19 still-open SG-048 items (each entangled with a different unbuilt module) remain untouched."
+    },
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-23",
+     "by": "Claude Code",
+     "note": "SG-044/SG-149/SG-173 Phase 4/contract executed 2026-09-23: retired app/modules/{product,recipe,batch} entirely (routers unmounted from app/main.py, models removed from app/all_models.py, directories deleted, migration a1b2c3d4e5f6_0120 drops ebmr.{products,recipes,recipe_steps,batches,batch_steps,batch_reviews,batch_releases} plus one previously-missed external FK equipment.aseptic_profile_versions.product_id -> ebmr.products). tests/test_batch_flow.py deleted (superseded by this module's own test_batch_execution.py coverage of the same mandatory negative/failure set); tests/test_tenancy.py's cross-organization isolation test ported onto this module's endpoints instead of lost. Porting that test surfaced a new, unrelated finding logged as SG-213: this module's own step-start/view/execute endpoints authorize via evaluate_policy(site_id=None) -- any actor holding the role at ANY site can act on ANY site's batch (reproduced deterministically, 21/22 of this router's evaluate_policy call sites affected, only POST /batches/v1 create is site-scoped) -- left as a real, documented xfail(strict=True), not fixed (platform-wide pattern across ~24 modules, a project-owner authorization-model decision per SG-213, not an in-scope fix for this legacy-retirement pass). Full regression suite re-run after these changes."
+    },
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-23",
+     "by": "Claude Code",
+     "note": "SG-044/SG-149/SG-173 follow-up (2026-09-23, same day): the full project test suite caught 4 more test files with bare '/products'/'/recipes'/'/batches' HTTP string literals my initial grep-for-Python-imports search missed (tests/test_master_data_crud.py, test_pagination.py, test_policy_engine.py, test_audit_review.py). Two obsolete tests removed (legacy product/recipe PATCH/DELETE has no product_master/recipe_master equivalent -- deliberately superseded by the immutable version lifecycle, not a coverage loss); the rest ported onto product_master/recipe_master/batch_execution/materials. 18 tests, all passing. Full suite re-run clean afterward."
     }
    ],
    "owner": "Claude Code",
    "started_at": "2026-08-24",
    "completed_at": null,
-   "test_pass": 40,
+   "test_pass": 42,
    "test_fail": 0,
-   "test_blocked": 88,
+   "test_blocked": 86,
    "open_defects": 0,
    "blockers": [],
    "prompt": "prompts/WP-02/11_SPEC-EBMR-002.md",
@@ -1047,7 +1064,7 @@
     "GEN-FR-012": "IN_PROGRESS",
     "GEN-FR-013": "IN_PROGRESS",
     "GEN-FR-014": "IN_PROGRESS",
-    "GEN-FR-015": "IN_PROGRESS",
+    "GEN-FR-015": "VERIFIED",
     "GEN-FR-016": "IN_PROGRESS",
     "GEN-FR-017": "IN_PROGRESS",
     "GEN-FR-018": "IN_PROGRESS",
@@ -1075,14 +1092,20 @@
      "at": "2026-08-24",
      "by": "Claude Code",
      "note": "Partial build (WP-03 Document 13): a real, net-new Genealogy & Traceability Engine (app/modules/genealogy/) -- the graph engine itself: typed node/edge creation (4 of the catalogued 17 node types and 4 of the 13 edge types exercised), self-loop/duplicate-exact-edge/ancestry-cycle prevention, controlled correction (state-flip + supersedes_edge_id, never edit/delete), and the 5 read-only query APIs (lookup, ancestors, descendants, full-trace, affected-products) via a bounded BFS traversal (MAX_TRAVERSAL_DEPTH=50; the spec's own suggestion of a recursive CTE, section 7, was not used -- an ordinary engineering substitution, not a regulated-behaviour decision). Both owned entities are DDL-ready -- the best ratio of any module yet -- and were typed directly. Full pre-existing 104-test suite passes unmodified alongside 8 new genealogy tests (112 total). Per Document 13 SS8, genealogy writes are meant to come from domain events (MaterialConsumed, DrugBatchProduced, DeviceComponentAssembled, ...) emitted by other modules; none of those producers exist yet (Material Service is WP-04; batch_execution/device emit differently-named events), so this pass built the write path as internal service functions exercised directly by tests, standing in for the consumer that doesn't exist yet -- no real production data flows into genealogy this pass (SG-052, which also covers the complaint-query dependency on WP-09, the undefined node-type-transition matrix, the unexercised migration-provenance path, and unbenchmarked performance targets). 2 of Document 13's 8 APIs (impact-assessments, exports) have no backing entity anywhere in its own 2-entity data model and were not built (SG-051). Found and fixed two real bugs during this pass: a missing TRUNCATE grant on both new tables (migration corrected in place, both DBs re-migrated), and an idempotency/duplicate-edge check that initially treated two source-event-less duplicate edges as the same idempotent replay instead of rejecting the second as a genuine duplicate (GEN-FR-023)."
+    },
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-23",
+     "by": "Claude Code",
+     "note": "SG-085 Task 2 (2026-09-23): split_container() (app/modules/material/commands.py) now writes a SPLIT_FROM genealogy edge per child container -- GEN-FR-015's 'one lot split into many' clause. Merge investigated (AGGREGATED_INTO ruled out via GEN-FR-012 cross-check -- it's reserved for package/carton/pallet aggregation, not a same-lot container merge); no confirmed edge type, left open. Transfer investigated and confirmed genuinely out of scope for genealogy (same-container location change, no new node). Tested: tests/test_inventory_flow.py::test_split_container_wires_split_from_genealogy_edge."
     }
    ],
    "owner": "Claude Code",
    "started_at": "2026-08-24",
    "completed_at": null,
-   "test_pass": 24,
+   "test_pass": 25,
    "test_fail": 0,
-   "test_blocked": 64,
+   "test_blocked": 63,
    "open_defects": 0,
    "blockers": [],
    "prompt": "prompts/WP-03/13_SPEC-EBMR-004.md",
@@ -1326,7 +1349,7 @@
     "YLD-FR-027": "VERIFIED",
     "YLD-FR-028": "VERIFIED",
     "YLD-FR-029": "VERIFIED",
-    "YLD-FR-030": "BLOCKED",
+    "YLD-FR-030": "VERIFIED",
     "YLD-FR-031": "VERIFIED",
     "YLD-FR-032": "BLOCKED"
    },
@@ -1557,6 +1580,12 @@
      "at": "2026-08-24",
      "by": "Claude Code",
      "note": "WP-04 Document 20 (SPEC-MAT-002B) built extending the already-built materials module (migration 0028_inventory_warehouse_schema). Added warehouse_location (seed-only, no CRUD API in Document 20's own list, SG-081), inventory_transaction (append-only ledger, numeric(24,8) per the spec's own explicit precision for this table family), inventory_balance_projection (transactionally-maintained aggregate, not an AG-11 read model despite the name) and inventory_reservation entities, plus material_containers split/merge provenance columns (parent_container_id/source_container_ids/container_status). Built and tested: put-away (transfer with no from_location, this module's own bootstrap for a container's first ledger entry) -> transfer between locations with zone/status compatibility -> reservation (server-side FEFO baseline selection) -> signed release (Document 106 row 46: QA Releaser, independent of the requester) -> container split/merge with quantity conservation -> cycle count (unsigned, no Document 106 row resolves an approval signature, SG-084) -> availability/ledger/ERP-reconciliation reads (ERP side deliberately null, no WP-07 integration exists, SG-082). 20 new integration tests in test_inventory_flow.py, all passing; the pre-existing test_material_flow.py/test_material_receipt_flow.py suites still pass unmodified. All 98 pre-written P1 test cases resolved (see traceability for the PASS/NOT_APPLICABLE/BLOCKED breakdown), none fabricated. Five new SPEC_GAP entries (SG-081 warehouse_location has no CRUD API, SG-082 barcode/environment-monitoring/label-reprint/ERP infrastructure missing, SG-083 FEFO-deviation/spec-version/alternative-material need a deviation and material-spec-version entity (SG-057 family), SG-084 cycle-count has no Document 106 signature row despite spec prose implying approval + no physical-count-freeze operation, SG-085 genealogy wiring and true cross-site transfer deferred), referencing SG-057/077 rather than duplicating them."
+    },
+    {
+     "stage": "CODE_COMPLETE",
+     "at": "2026-09-23",
+     "by": "Claude Code",
+     "note": "SG-085 Task 2 (2026-09-23): split_container()'s SPLIT_FROM genealogy wiring (see SPEC-EBMR-004's matching note). merge_containers() and create_inventory_transfer() investigated, not wired -- see SG-085's register entry."
     }
    ],
    "owner": "Claude Code",
@@ -1624,6 +1653,12 @@
      "at": "2026-08-25",
      "by": "Claude Code",
      "note": "WP-04 Document 21 (SPEC-MAT-002C) built extending the materials module Document 20 just extended. Added dispensing_orders/dispensing_sources/weighing_sessions/weighing_readings/dispensed_containers entities (migration 0029) and materials.critical (DSP-FR-018 conditional-independence trigger, material half only). Built and tested: create order (unsigned -- Document 106 row 47 signs a create operation for the first time in this codebase, no established binding pattern exists, SG-092) -> select-source (signed, reuses Document 20's eligibility/FEFO logic, supports multi-lot DSP-FR-017) -> start (signed, wires up iam.Qualification for real -- first module to enforce Document 07's dormant execution-time qualification gate) -> readings/manual-reading (signed, append-only, multiple additions summed) -> verify (signed, independent-of-performer) -> complete (signed, posts DISPENSE inventory_transaction reusing Document 20's ledger, creates dispensed_container, tolerance-blocks completion) -> cancel (signed, independent-of-author, reason required, returns any active reservation). 17 new integration tests in test_dispensing_flow.py, all passing; full project regression 327/327 passing. Found and partially corrected a pre-existing project-wide gap this pass: signature_policies.reason_required existed as a schema column enforced by zero command handlers anywhere, including Document 20's own inventory_reservation.release row -- fixed for that one row (code this session owns) and built correctly for all 7 of Document 21's new signed rows; SG-091 documents the remaining ~15 pre-existing rows as a dedicated remediation item. Six new SPEC_GAP entries (SG-091 reason_required, SG-092 create-signature architecture, SG-093 balance/Edge/potency infrastructure, SG-094 target/tolerance calculation authority, SG-095 conditional-independence schema limit, SG-096 label/clearance/genealogy), referencing existing SG-057/082/085 families rather than duplicating them. All 102 pre-written P1 test cases resolved with real, non-fabricated results."
+    },
+    {
+     "stage": "CODE_COMPLETE",
+     "at": "2026-09-23",
+     "by": "Claude Code",
+     "note": "SG-096 Task 2 (2026-09-23): complete_dispensing() now writes a DERIVED_FROM genealogy edge from each source material_lot to the new dispensed_container (many-to-one, DSP-FR-017 multi-lot dispensing). Tested: tests/test_dispensing_flow.py::test_multi_lot_dispensing_conserves_genealogy_per_source. Label printing/line-clearance (DSP-FR-020/021/027) remain open."
     }
    ],
    "owner": "Claude Code",
@@ -1681,9 +1716,9 @@
     "CON-FR-032": "IN_PROGRESS"
    },
    "entities": 5,
-   "apis": 8,
-   "events": 9,
-   "test_cases": 109,
+   "apis": 9,
+   "events": 10,
+   "test_cases": 111,
    "stage": "CODE_COMPLETE",
    "stage_history": [
     {
@@ -1697,12 +1732,18 @@
      "by": "Claude Code",
      "stage": "CODE_COMPLETE",
      "note": "WP-11 Stage 4 (ADR-0011, SG-183/SG-098): CON-FR-025's required-behaviour clause (post consumption after GxP commit, idempotent retries) is now real -- app/modules/erp/consumer.py subscribes to MaterialConsumed and calls the pre-existing queue_erp_command(POST_CONSUMPTION), scoped to ERPNext only (no vendor-neutral payload mapping exists for SAP/Oracle/Dynamics anywhere in this codebase). Migration 0103 adds ErpInstance.service_actor_user_id (mirrors lims_instance's own SG-067 stand-in) for the audit actor a background consumer otherwise has none of. Tests: tests/test_erp_consumer.py, 3 real tests against the live broker + real Postgres through the real dispense-to-consume REST flow, 3/3 passed, none mocked. TC-022-025-01 moved BLOCKED -> PASS. CON-FR-025-02/03 (inbound replay/timeout-uncertain lookup) and all of CON-FR-026 (discrepancy reconciliation) remain open, SG-098 stays PARTIALLY_RESOLVED for those pieces."
+    },
+    {
+     "at": "2026-09-17",
+     "by": "Claude Code",
+     "stage": "CODE_COMPLETE",
+     "note": "Closed a real functionality gap found while auditing docs/testing/DDCP_Client_Demo_Guide_Gujarati.md #19 #7: reject_inventory_adjustment_request() built as approve_inventory_adjustment_request()'s missing counterpart -- until this pass a wrong/unwanted adjustment request had no path out of \"requested\" at all. Signed (Rejected meaning, independent QA Releaser -- Document 106 has no dedicated reject row, reuses row 55's approve shape + P1's own principle + this codebase's material_lot.reject precedent), no InventoryTransaction/balance side effect. Also fixed a latent bug found wiring this in: POST .../signature-challenges always issued an Approved-meaning challenge regardless of the requested action. New: POST /inventory/v1/adjustments/{request_id}/reject, InventoryAdjustmentRejected event. Tests: services/gxp-api/tests/test_material_consumption_flow.py, 2 new (test_adjustment_request_create_and_reject, test_adjustment_self_rejection_denied), 36/36 module tests pass. TC-022-013-03/TC-022-014-04 added."
     }
    ],
    "owner": "Claude Code",
    "started_at": "2026-08-25",
    "completed_at": null,
-   "test_pass": 68,
+   "test_pass": 70,
    "test_fail": 0,
    "test_blocked": 21,
    "open_defects": 0,
@@ -1776,14 +1817,26 @@
      "at": "2026-09-12",
      "by": "Claude Code",
      "note": "Phase 4 (wp17-phase4-wp04-qc-method-master, SG-066): QcMethodVersion built (migration dd78daa66970) mirroring MaterialSpecificationVersion's master+immutable-version split -- QC-FR-004's Method-master entity, which Document 23 never itself defines. qc_test_definition.method_version_id added as an additive nullable FK (MIG-FR-004 expand step, same pattern as uom_id). modification_reason required (VALIDATION_FAILED otherwise) on any version after the first. Release correctly fails closed pending a Document 106 policy row -- new gap SG-186, not guessed. Verified: tests/test_qc_method.py 10/10 passed (new file), plus tests/test_qc.py/test_qc_oos.py/test_qc_uom.py (14/14) as an untouched-module control."
+    },
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-23",
+     "by": "Claude Code",
+     "note": "SG-076 partial resolution: scope_type=\"material\" unblocked in create_test_specification_draft (BUILDABLE_SCOPE_TYPES + SCOPE_TABLE_BY_TYPE now include material -> MaterialSpecificationVersion, the entity SG-057 built). A material-scoped qc_test_specification can now be authored and released. New tests: test_material_scope_accepted_and_round_trips, test_material_scope_unknown_scope_version_id_not_found; test_material_scope_rejected renamed to test_unknown_scope_type_rejected (now proves the generic-unknown-type path, not material specifically). 17/17 in tests/test_qc.py + tests/test_material_specification.py pass. Required-test-blocks-release enforcement (RCV-FR-023/024/025's other half) stays open."
+    },
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-23",
+     "by": "Claude Code",
+     "note": "QC-FR-011 Task 4 (2026-09-23): start_test_order's router now gates on a fixed iam.Qualification.qualification_code='qc_analyst' (mirroring material/commands.py::_check_dispensing_qualification, not batch_execution's field-driven check -- no per-test qualification field exists in the QC schema), applied only at the router (not inside start_test_order itself, so lims_integration's internal non-human-actor call path is unaffected). GET /qc/v1/dashboard and /export added (QC-FR-036/037). Tested: tests/test_qc.py (4 new tests). QC-FR-012 (WP-06 instrument eligibility) untouched, as instructed."
     }
    ],
    "owner": "Claude Code",
    "started_at": "2026-08-24",
    "completed_at": null,
-   "test_pass": 44,
+   "test_pass": 45,
    "test_fail": 0,
-   "test_blocked": 101,
+   "test_blocked": 100,
    "open_defects": 0,
    "blockers": [],
    "prompt": "prompts/WP-04/23_SPEC-QC-001.md",
@@ -1896,7 +1949,7 @@
     "OOT-FR-003": "VERIFIED",
     "OOT-FR-004": "VERIFIED",
     "OOT-FR-005": "VERIFIED",
-    "OOT-FR-006": "BLOCKED",
+    "OOT-FR-006": "IN_PROGRESS",
     "OOT-FR-007": "VERIFIED",
     "OOT-FR-008": "VERIFIED",
     "OOT-FR-009": "VERIFIED",
@@ -1920,14 +1973,20 @@
      "at": "2026-08-24",
      "by": "Claude Code",
      "note": "Partial build (WP-04 Document 25). Extends the already-built qc module (Document 23) -- docs/generated/04_DATA_MODEL_CATALOGUE.md names qc as owner service for all 5 Document 25 entities, and QcResult already carried unenforced oos_record_id/oot_record_id columns placed there in anticipation of this document. Built and tested: full OOS lifecycle (open from result, lab investigation, assignable/no-assignable-cause classification, signed extended investigation with SoD, retest/resample plan authorization gated on investigation state, impact assessment, signed disposition, signed close with SoD), OOT evaluation reusing the rules module's acceptance/trend classification exactly as Document 23's own record_result, and signed OOT close with SoD. All 5 signed operations Document 106 rows 65-69 resolve are wired (from-result unsigned-unless-critical; extended-investigation/disposition/close/oot-close signed). qc_result stays append-only (AG-08, no UPDATE grant) -- oos_record_id/oot_record_id are never backfilled onto an already-committed result row; the queryable relationship is the reverse FK on oos_record.source_result_id/oot_record.source_result_id. Real gaps (SG-074, new): OOS-FR-020/021 (CAPA/Change Control link -- no schema declared anywhere in Document 25's own data model), OOS-FR-023/029/030 (reopen/dashboard/export -- none in Document 25's own API list), OOS-FR-027 (QA Review package wiring, cross-module), OOS-FR-028/OOT-FR-006 (release-engine blocker wiring, cross-module), RETEST_LIMIT_REACHED (no numeric retest-count policy value anywhere in the baseline). OOS-FR-003/009/011 and OOT-FR-003/005/007/009/010 are documented partial limitations (hold_status/root_cause_code/baseline_ref fields and rule-version reuse exist; real notification, batch/material hold enforcement, historical-comparison display, repeat-OOT escalation and external-trend-source ingestion are not built this pass) -- not full blocks, not listed as blocked requirement ids. Full pre-existing suite plus 4 new test_qc_oos.py tests pass unmodified."
+    },
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-23",
+     "by": "Claude Code",
+     "note": "SG-074 Task 3 (2026-09-23): OotRecord now blocks release/qa_review the same way OosRecord already did (release/service.py, qa_review/service.py _qc_signals(), joined via source_result_id since OotRecord has no batch_id column). POST /quality/oot/v1/{id}/reopen added (reopen_history JSONB column, migration 0121) mirroring qms.reopen_deviation()/reopen_capa()'s shape. GET .../dashboard and .../export added for both OOS and OOT. OOS reopen investigated and NOT built -- oos_record's DDL-frozen 17-column schema has no column for a history array, and its multi-stage investigation state machine has no Document-25-defined landing state after 'closed' (unlike OOT's flat open/closed model) -- left open, not guessed. Tested: tests/test_qc_oos.py (6 new tests)."
     }
    ],
    "owner": "Claude Code",
    "started_at": "2026-08-24",
    "completed_at": null,
-   "test_pass": 69,
+   "test_pass": 70,
    "test_fail": 0,
-   "test_blocked": 19,
+   "test_blocked": 18,
    "open_defects": 0,
    "blockers": [],
    "prompt": "prompts/WP-04/25_SPEC-QC-003.md",
@@ -2159,6 +2218,12 @@
      "at": "2026-08-29",
      "by": "Claude Code",
      "note": "Event-schema first slice (SG-013 event half): committed contracts/events/event-qms-003.json (JSON Schema draft 2020-12) covering every SPEC-SPEC-QMS-003-declared event type actually emitted by this module's command layer, cross-referenced against real event_type= literals/dynamic ternary assignments in the code (not the catalogue alone). Divergences from 07_EVENT_CATALOGUE.yaml, if any, are recorded in the file's own description rather than silently normalized. Verified via tooling/events/validate.py: PASS, 0 violations (platform-wide: 13 files, 84 event entries). Uses the shared contracts/events/event-data-005.json envelope. No application code changed by this pass -- contract-only."
+    },
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-28",
+     "by": "Claude Code",
+     "note": "Frontend signature-ceremony wiring fix (SG-138 live-defect follow-up): the record-detail page(s) for this module still carried a stale \"no signature policy configured yet\" banner and posted signature-gated transitions unsigned (no challenge_id/reauth_password), even though the Document 106 policy rows and signature-challenges endpoints for this module were already resolved 2026-09-10/11. Wired to the shared SignatureCeremony component (challenge -> password re-entry -> signed mutation), matching the capa/deviations reference pattern. No backend code changed. Verified: relevant pytest module 100% pass (177/177 across all 8 affected suites combined), plus live challenge->sign round trips against the demo DB for internal_audit/start, the training_assignment signed-CREATE flow, and complaint_record/reportability, each returning a real signature_id. Stage unchanged -- this closes a UI-reachability defect on already-implemented requirements, not new requirement coverage."
     }
    ],
    "owner": "Claude Code",
@@ -2240,6 +2305,12 @@
      "at": "2026-08-29",
      "by": "Claude Code",
      "note": "Event-schema first slice (SG-013 event half): committed contracts/events/event-qms-004.json (JSON Schema draft 2020-12) covering every SPEC-SPEC-QMS-004-declared event type actually emitted by this module's command layer, cross-referenced against real event_type= literals/dynamic ternary assignments in the code (not the catalogue alone). Divergences from 07_EVENT_CATALOGUE.yaml, if any, are recorded in the file's own description rather than silently normalized. Verified via tooling/events/validate.py: PASS, 0 violations (platform-wide: 13 files, 84 event entries). Uses the shared contracts/events/event-data-005.json envelope. No application code changed by this pass -- contract-only."
+    },
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-28",
+     "by": "Claude Code",
+     "note": "Frontend signature-ceremony wiring fix (SG-138 live-defect follow-up): the record-detail page(s) for this module still carried a stale \"no signature policy configured yet\" banner and posted signature-gated transitions unsigned (no challenge_id/reauth_password), even though the Document 106 policy rows and signature-challenges endpoints for this module were already resolved 2026-09-10/11. Wired to the shared SignatureCeremony component (challenge -> password re-entry -> signed mutation), matching the capa/deviations reference pattern. No backend code changed. Verified: relevant pytest module 100% pass (177/177 across all 8 affected suites combined), plus live challenge->sign round trips against the demo DB for internal_audit/start, the training_assignment signed-CREATE flow, and complaint_record/reportability, each returning a real signature_id. Stage unchanged -- this closes a UI-reachability defect on already-implemented requirements, not new requirement coverage."
     }
    ],
    "owner": "Claude Code",
@@ -2408,6 +2479,12 @@
      "at": "2026-08-29",
      "by": "Claude Code",
      "note": "SG-138 follow-up: fixed the training_assignment/create signature-ordering defect documented in this module's earlier SG-138 note. Added create_qms_signature_challenge_for_new_record() to signature_support.py; CreateTrainingAssignmentCommand gained an optional assignment_id field that create_assignment() now honours; new endpoint POST /training/v1/assignments/signature-challenges pregenerates the assignment id server-side, binds the challenge to (id, version=1) before the row exists, and returns the id to the caller for the subsequent create call. Proven with a real challenge-then-create round trip: test_create_assignment_round_trip_signs_create asserts the returned aggregate_id matches the pregenerated id and that the persisted row's actual id/version match, plus 4 more new tests (fail-closed on unresolved policy, unknown action rejected, stale challenge rejected after expiry, challenge returns pregenerated id). test_qms_training_qualification.py in full: 25/25 passed (real run, 2026-08-29). Policy-data half of SG-138 (the Document 106 policy rows themselves) remains fully open -- this fix does not and cannot resolve it; create's transition is still unsatisfiable via SIGNATURE_POLICY_UNRESOLVED until Head of Quality + Regulatory Affairs supply the row."
+    },
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-28",
+     "by": "Claude Code",
+     "note": "Frontend signature-ceremony wiring fix (SG-138 live-defect follow-up): the record-detail page(s) for this module still carried a stale \"no signature policy configured yet\" banner and posted signature-gated transitions unsigned (no challenge_id/reauth_password), even though the Document 106 policy rows and signature-challenges endpoints for this module were already resolved 2026-09-10/11. Wired to the shared SignatureCeremony component (challenge -> password re-entry -> signed mutation), matching the capa/deviations reference pattern. No backend code changed. Verified: relevant pytest module 100% pass (177/177 across all 8 affected suites combined), plus live challenge->sign round trips against the demo DB for internal_audit/start, the training_assignment signed-CREATE flow, and complaint_record/reportability, each returning a real signature_id. Stage unchanged -- this closes a UI-reachability defect on already-implemented requirements, not new requirement coverage."
     }
    ],
    "owner": "Claude Code",
@@ -2485,6 +2562,12 @@
      "at": "2026-08-29",
      "by": "Claude Code",
      "note": "Event-schema first slice (SG-013 event half): committed contracts/events/event-qms-007.json (JSON Schema draft 2020-12) covering every SPEC-SPEC-QMS-007-declared event type actually emitted by this module's command layer, cross-referenced against real event_type= literals/dynamic ternary assignments in the code (not the catalogue alone). Divergences from 07_EVENT_CATALOGUE.yaml, if any, are recorded in the file's own description rather than silently normalized. Verified via tooling/events/validate.py: PASS, 0 violations (platform-wide: 13 files, 84 event entries). Uses the shared contracts/events/event-data-005.json envelope. No application code changed by this pass -- contract-only."
+    },
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-28",
+     "by": "Claude Code",
+     "note": "Frontend signature-ceremony wiring fix (SG-138 live-defect follow-up): the record-detail page(s) for this module still carried a stale \"no signature policy configured yet\" banner and posted signature-gated transitions unsigned (no challenge_id/reauth_password), even though the Document 106 policy rows and signature-challenges endpoints for this module were already resolved 2026-09-10/11. Wired to the shared SignatureCeremony component (challenge -> password re-entry -> signed mutation), matching the capa/deviations reference pattern. No backend code changed. Verified: relevant pytest module 100% pass (177/177 across all 8 affected suites combined), plus live challenge->sign round trips against the demo DB for internal_audit/start, the training_assignment signed-CREATE flow, and complaint_record/reportability, each returning a real signature_id. Stage unchanged -- this closes a UI-reachability defect on already-implemented requirements, not new requirement coverage."
     }
    ],
    "owner": "Claude Code",
@@ -2558,6 +2641,12 @@
      "at": "2026-08-29",
      "by": "Claude Code",
      "note": "Event-schema first slice (SG-013 event half): committed contracts/events/event-qms-008.json (JSON Schema draft 2020-12) covering every SPEC-SPEC-QMS-008-declared event type actually emitted by this module's command layer, cross-referenced against real event_type= literals/dynamic ternary assignments in the code (not the catalogue alone). Divergences from 07_EVENT_CATALOGUE.yaml, if any, are recorded in the file's own description rather than silently normalized. Verified via tooling/events/validate.py: PASS, 0 violations (platform-wide: 13 files, 84 event entries). Uses the shared contracts/events/event-data-005.json envelope. No application code changed by this pass -- contract-only."
+    },
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-28",
+     "by": "Claude Code",
+     "note": "Frontend signature-ceremony wiring fix (SG-138 live-defect follow-up): the record-detail page(s) for this module still carried a stale \"no signature policy configured yet\" banner and posted signature-gated transitions unsigned (no challenge_id/reauth_password), even though the Document 106 policy rows and signature-challenges endpoints for this module were already resolved 2026-09-10/11. Wired to the shared SignatureCeremony component (challenge -> password re-entry -> signed mutation), matching the capa/deviations reference pattern. No backend code changed. Verified: relevant pytest module 100% pass (177/177 across all 8 affected suites combined), plus live challenge->sign round trips against the demo DB for internal_audit/start, the training_assignment signed-CREATE flow, and complaint_record/reportability, each returning a real signature_id. Stage unchanged -- this closes a UI-reachability defect on already-implemented requirements, not new requirement coverage."
     }
    ],
    "owner": "Claude Code",
@@ -2631,6 +2720,12 @@
      "at": "2026-08-29",
      "by": "Claude Code",
      "note": "Event-schema first slice (SG-013 event half): committed contracts/events/event-qms-009.json (JSON Schema draft 2020-12) covering every SPEC-SPEC-QMS-009-declared event type actually emitted by this module's command layer, cross-referenced against real event_type= literals/dynamic ternary assignments in the code (not the catalogue alone). Divergences from 07_EVENT_CATALOGUE.yaml, if any, are recorded in the file's own description rather than silently normalized. Verified via tooling/events/validate.py: PASS, 0 violations (platform-wide: 13 files, 84 event entries). Uses the shared contracts/events/event-data-005.json envelope. No application code changed by this pass -- contract-only."
+    },
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-28",
+     "by": "Claude Code",
+     "note": "Frontend signature-ceremony wiring fix (SG-138 live-defect follow-up): the record-detail page(s) for this module still carried a stale \"no signature policy configured yet\" banner and posted signature-gated transitions unsigned (no challenge_id/reauth_password), even though the Document 106 policy rows and signature-challenges endpoints for this module were already resolved 2026-09-10/11. Wired to the shared SignatureCeremony component (challenge -> password re-entry -> signed mutation), matching the capa/deviations reference pattern. No backend code changed. Verified: relevant pytest module 100% pass (177/177 across all 8 affected suites combined), plus live challenge->sign round trips against the demo DB for internal_audit/start, the training_assignment signed-CREATE flow, and complaint_record/reportability, each returning a real signature_id. Stage unchanged -- this closes a UI-reachability defect on already-implemented requirements, not new requirement coverage."
     }
    ],
    "owner": "Claude Code",
@@ -2711,6 +2806,12 @@
      "at": "2026-08-29",
      "by": "Claude Code",
      "note": "Event-schema first slice (SG-013 event half): committed contracts/events/event-qms-010.json (JSON Schema draft 2020-12) covering every SPEC-SPEC-QMS-010-declared event type actually emitted by this module's command layer, cross-referenced against real event_type= literals/dynamic ternary assignments in the code (not the catalogue alone). Divergences from 07_EVENT_CATALOGUE.yaml, if any, are recorded in the file's own description rather than silently normalized. Verified via tooling/events/validate.py: PASS, 0 violations (platform-wide: 13 files, 84 event entries). Uses the shared contracts/events/event-data-005.json envelope. No application code changed by this pass -- contract-only."
+    },
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-28",
+     "by": "Claude Code",
+     "note": "Frontend signature-ceremony wiring fix (SG-138 live-defect follow-up): the record-detail page(s) for this module still carried a stale \"no signature policy configured yet\" banner and posted signature-gated transitions unsigned (no challenge_id/reauth_password), even though the Document 106 policy rows and signature-challenges endpoints for this module were already resolved 2026-09-10/11. Wired to the shared SignatureCeremony component (challenge -> password re-entry -> signed mutation), matching the capa/deviations reference pattern. No backend code changed. Verified: relevant pytest module 100% pass (177/177 across all 8 affected suites combined), plus live challenge->sign round trips against the demo DB for internal_audit/start, the training_assignment signed-CREATE flow, and complaint_record/reportability, each returning a real signature_id. Stage unchanged -- this closes a UI-reachability defect on already-implemented requirements, not new requirement coverage."
     }
    ],
    "owner": "Claude Code",
@@ -2787,6 +2888,12 @@
      "at": "2026-08-29",
      "by": "Claude Code",
      "note": "Event-schema first slice (SG-013 event half): committed contracts/events/event-qms-011.json (JSON Schema draft 2020-12) covering every SPEC-SPEC-QMS-011-declared event type actually emitted by this module's command layer, cross-referenced against real event_type= literals/dynamic ternary assignments in the code (not the catalogue alone). Divergences from 07_EVENT_CATALOGUE.yaml, if any, are recorded in the file's own description rather than silently normalized. Verified via tooling/events/validate.py: PASS, 0 violations (platform-wide: 13 files, 84 event entries). Uses the shared contracts/events/event-data-005.json envelope. No application code changed by this pass -- contract-only."
+    },
+    {
+     "stage": "IN_DEVELOPMENT",
+     "at": "2026-09-28",
+     "by": "Claude Code",
+     "note": "Frontend signature-ceremony wiring fix (SG-138 live-defect follow-up): the record-detail page(s) for this module still carried a stale \"no signature policy configured yet\" banner and posted signature-gated transitions unsigned (no challenge_id/reauth_password), even though the Document 106 policy rows and signature-challenges endpoints for this module were already resolved 2026-09-10/11. Wired to the shared SignatureCeremony component (challenge -> password re-entry -> signed mutation), matching the capa/deviations reference pattern. No backend code changed. Verified: relevant pytest module 100% pass (177/177 across all 8 affected suites combined), plus live challenge->sign round trips against the demo DB for internal_audit/start, the training_assignment signed-CREATE flow, and complaint_record/reportability, each returning a real signature_id. Stage unchanged -- this closes a UI-reachability defect on already-implemented requirements, not new requirement coverage."
     }
    ],
    "owner": "Claude Code",
@@ -7633,7 +7740,7 @@
  "totals": {
   "modules": 103,
   "requirements": 2965,
-  "test_cases": 9150,
+  "test_cases": 9153,
   "modules_started": 100,
   "modules_released": 0
  },

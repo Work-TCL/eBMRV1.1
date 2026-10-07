@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { api, ApiError, holdsAnyRole, newIdempotencyKey, type Me, type MutationReceipt } from "@/lib/api";
-import { useMe, useSiteId } from "@/lib/hooks";
+import { api, ApiError, hasPermission, newIdempotencyKey, type Me, type MutationReceipt } from "@/lib/api";
+import { useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -14,6 +14,7 @@ import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
+import { EntityPickerField } from "@/components/shared/EntityPicker";
 import { KeyValueRows, buildKvObject, type KvRow } from "@/components/shared/RepeatableFields";
 
 // em_models.py ALERT_ACTION_STATUSES
@@ -33,9 +34,22 @@ interface EmSample {
   version: number;
 }
 
-const canCollect = (me: Me | null) =>
-  holdsAnyRole(me, ["Admin", "EM Technician", "Microbiology Analyst", "Operator", "Supervisor"]);
-const canReview = (me: Me | null) => holdsAnyRole(me, ["Admin", "QA Reviewer", "Microbiology Analyst"]);
+// em_program.create / em_sample.create (Document 41) — Admin + EM Technician only per scripts/seed.py.
+// em_sample.record_result additionally includes Microbiology Analyst (the role that actually records lab
+// results), so it gets its own, broader helper. Audit finding 2026-09-18: canCollect previously covered
+// all three with one over-broad list (Operator/Supervisor hold none of these grants; Microbiology
+// Analyst holds only record_result, not the two create actions).
+const canCreateEm = (me: Me | null) => hasPermission(me, "em_program.create");
+const canRecordEmResult = (me: Me | null) => hasPermission(me, "em_sample.record_result");
+// em_sample.review (Document 41, Document 106 row 115) — Admin + QA Reviewer + QC Reviewer per
+// scripts/seed.py. em_excursion.impact is narrower — Admin + QA Reviewer only — so it gets its own
+// helper. Audit finding 2026-09-18: canReview previously granted both to Admin/QA Reviewer/Microbiology
+// Analyst, which let Microbiology Analyst attempt em_sample.review (violates the documented SoD — the
+// analyst who records a result must not also independently review it) while hiding em_sample.review from
+// QC Reviewer, who actually holds it (SG-204 bug class), and wrongly including QC Reviewer on
+// em_excursion.impact, which QC Reviewer does not hold.
+const canReview = (me: Me | null) => hasPermission(me, "em_sample.review");
+const canImpactExcursion = (me: Me | null) => hasPermission(me, "em_excursion.impact");
 
 export default function EmPage() {
   const { me } = useMe();
@@ -69,10 +83,10 @@ export default function EmPage() {
       />
 
       <div className="grid grid-cols-2 gap-4 mb-4">
-        {canCollect(me) && <CreateProgramCard siteId={siteId} />}
-        {canCollect(me) && <CreateTaskCard siteId={siteId} onCreated={(id) => load(id)} />}
-        {canCollect(me) && <RecordResultCard onDone={() => load()} />}
-        {canReview(me) && <RecordExcursionImpactCard onDone={() => load()} />}
+        {canCreateEm(me) && <CreateProgramCard siteId={siteId} />}
+        {canCreateEm(me) && <CreateTaskCard siteId={siteId} onCreated={(id) => load(id)} />}
+        {canRecordEmResult(me) && <RecordResultCard onDone={() => load()} />}
+        {canImpactExcursion(me) && <RecordExcursionImpactCard onDone={() => load()} />}
       </div>
 
       <TrendsCard />
@@ -170,6 +184,7 @@ export default function EmPage() {
 }
 
 function CreateTaskCard({ siteId, onCreated }: { siteId: string | null; onCreated: (id: string) => void }) {
+  const entities = useEntityOptions();
   const [programVersionId, setProgramVersionId] = useState("");
   const [locationId, setLocationId] = useState("");
   const [monitoringType, setMonitoringType] = useState("viable_air");
@@ -203,9 +218,15 @@ function CreateTaskCard({ siteId, onCreated }: { siteId: string | null; onCreate
         <Field label="Program version ID" required>
           <Input value={programVersionId} onChange={(e) => setProgramVersionId(e.target.value)} required />
         </Field>
-        <Field label="Location ID" required>
-          <Input value={locationId} onChange={(e) => setLocationId(e.target.value)} required />
-        </Field>
+        <EntityPickerField
+          label="Location ID"
+          required
+          value={locationId}
+          onChange={setLocationId}
+          options={entities.areas}
+          status={entities.areasStatus}
+          kind="equipment area"
+        />
         <Field label="Monitoring type" required>
           <Input value={monitoringType} onChange={(e) => setMonitoringType(e.target.value)} required />
         </Field>

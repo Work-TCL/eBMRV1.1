@@ -8,9 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.referential import find_blocking_reference
 from app.core.security import verify_password
 from app.modules.batch_execution.models import Batch, BatchStep
+from app.modules.codegen import service as codegen_service
+from app.modules.genealogy import service as genealogy_service
 from app.modules.iam.models import Qualification, User
 from app.modules.material.models import (
     PRE_DISPOSITION_LOT_STATES,
+    STORAGE_CONDITIONS,
     DestructionRecord,
     DispensedContainer,
     DispensingOrder,
@@ -22,9 +25,7 @@ from app.modules.material.models import (
     Material,
     MaterialConsumption,
     MaterialContainer,
-    MaterialIssue,
     MaterialLot,
-    MaterialLotDisposition,
     MaterialQualityDisposition,
     MaterialReceipt,
     MaterialReconciliation,
@@ -34,9 +35,14 @@ from app.modules.material.models import (
     WeighingReading,
     WeighingSession,
 )
+from app.modules.material_specification.models import MaterialSpecificationVersion
 from app.modules.policy.service import evaluate_policy
 from app.modules.qc import commands as qc_commands
+from app.modules.qc.models import QcResult, QcSample, QcTestDefinition, QcTestOrder, QcTestSpecification
 from app.modules.qms import commands as qms_commands
+from app.modules.qms.models import DeviationRecord
+from app.modules.recipe_master import service as recipe_master_service
+from app.modules.recipe_master.models import RecipeMaterialRequirement
 from app.modules.rules import commands as rules_commands
 from app.modules.rules import service as rules_service
 from app.modules.signature import service as signature_service
@@ -48,6 +54,7 @@ from app.mutation.errors import (
     ContainerIneligibleError,
     DestructionNotAuthorizedError,
     InvalidTransitionError,
+    LocationLockedError,
     LotIneligibleError,
     MissingSignatureError,
     NotFoundError,
@@ -76,6 +83,10 @@ def lot_record_hash(lot: MaterialLot) -> str:
     return sha256_hex({"id": str(lot.id), "version": lot.version, "status": lot.status})
 
 
+def receipt_record_hash(receipt: MaterialReceipt) -> str:
+    return sha256_hex({"id": str(receipt.id), "version": receipt.version, "state": receipt.state})
+
+
 def reservation_record_hash(reservation: InventoryReservation) -> str:
     return sha256_hex(
         {"id": str(reservation.id), "version": reservation.version, "status": reservation.status}
@@ -96,6 +107,20 @@ async def _resolve_uom_id(session: AsyncSession, uom: str | None) -> uuid.UUID |
     return row.uom_id
 
 
+async def _resolve_uom_id_strict(session: AsyncSession, uom: str | None) -> uuid.UUID | None:
+    """Client requirements #2/#3: the UI's UomSelect only ever submits a code drawn from the released
+    UOM list, so an unresolvable non-empty code here means a caller (this UI or a direct API call) sent
+    something outside it -- reject instead of silently leaving uom_id NULL. Scoped to the specific
+    user-facing commands whose UI now sources this value from UomSelect; every other, purely internal or
+    derived `_resolve_uom_id` call site in this module is untouched."""
+    if not uom:
+        return None
+    uom_id = await _resolve_uom_id(session, uom)
+    if uom_id is None:
+        raise ValidationFailedError("Unrecognized or unreleased UOM code", uom=uom)
+    return uom_id
+
+
 def _receipt_from_existing(existing) -> MutationReceipt:
     return MutationReceipt(
         command_id=existing.id,
@@ -113,9 +138,11 @@ def _receipt_from_existing(existing) -> MutationReceipt:
 
 class CreateMaterialCommand(CommandEnvelope):
     site_id: uuid.UUID
-    code: str
+    code: str | None = None
     name: str
     uom: str
+    is_in_house: bool = False
+    default_storage_condition: str | None = None
 
 
 async def create_material(
@@ -126,8 +153,26 @@ async def create_material(
     if existing is not None:
         return _receipt_from_existing(existing)
 
+    if cmd.code:
+        clash = (
+            await session.execute(select(Material.id).where(Material.site_id == cmd.site_id, Material.code == cmd.code))
+        ).scalar_one_or_none()
+        if clash is not None:
+            raise ValidationFailedError("Material code already exists for this site", code=cmd.code)
+        code = cmd.code
+    else:
+        code = await codegen_service.next_code(session, entity_type="MATERIAL", prefix="MAT", site_id=cmd.site_id)
+
+    if cmd.default_storage_condition is not None and cmd.default_storage_condition not in STORAGE_CONDITIONS:
+        raise ValidationFailedError(
+            "default_storage_condition must be one of the controlled list",
+            default_storage_condition=cmd.default_storage_condition, allowed=list(STORAGE_CONDITIONS),
+        )
+
     material = Material(
-        site_id=cmd.site_id, code=cmd.code, name=cmd.name, uom=cmd.uom, uom_id=await _resolve_uom_id(session, cmd.uom),
+        site_id=cmd.site_id, code=code, name=cmd.name, uom=cmd.uom,
+        uom_id=await _resolve_uom_id_strict(session, cmd.uom),
+        is_in_house=cmd.is_in_house, default_storage_condition=cmd.default_storage_condition,
         status="active", version=1,
     )
     session.add(material)
@@ -192,6 +237,8 @@ class ReceiveMaterialLotCommand(CommandEnvelope):
     uom: str
     expiry_date: date | None = None
     retest_date: date | None = None
+    storage_location_id: uuid.UUID | None = None
+    storage_condition: str | None = None
 
 
 async def receive_material_lot(
@@ -213,6 +260,15 @@ async def receive_material_lot(
             "A material lot with this internal lot number already exists", internal_lot=cmd.internal_lot
         )
 
+    if cmd.storage_condition is not None and cmd.storage_condition not in STORAGE_CONDITIONS:
+        raise ValidationFailedError(
+            "storage_condition must be one of the controlled list",
+            storage_condition=cmd.storage_condition, allowed=list(STORAGE_CONDITIONS),
+        )
+    if cmd.storage_location_id is not None and await session.get(WarehouseLocation, cmd.storage_location_id) is None:
+        raise NotFoundError("Warehouse location not found", storage_location_id=str(cmd.storage_location_id))
+
+    lot_uom_id = await _resolve_uom_id_strict(session, cmd.uom)
     lot = MaterialLot(
         material_id=cmd.material_id,
         site_id=cmd.site_id,
@@ -223,15 +279,33 @@ async def receive_material_lot(
         received_quantity=cmd.received_quantity,
         available_quantity=cmd.received_quantity,
         uom=cmd.uom,
-        uom_id=await _resolve_uom_id(session, cmd.uom),
+        uom_id=lot_uom_id,
         status="quarantine",
         expiry_date=cmd.expiry_date,
         retest_date=cmd.retest_date,
+        storage_location_id=cmd.storage_location_id,
+        storage_condition=cmd.storage_condition,
         received_by_user_id=actor_user_id,
         version=1,
     )
     session.add(lot)
     await session.flush()
+
+    # Same container-creation shape `examine_receipt()` uses (a lot is never usable by Transfer/Split/
+    # Sampling Order without at least one MaterialContainer) -- this quick-create path has no
+    # container-count input of its own, so it creates exactly one container holding the full received
+    # quantity, matching the single-container case of the receipt/examine flow's own loop.
+    session.add(
+        MaterialContainer(
+            material_lot_id=lot.id,
+            container_code=f"{cmd.internal_lot}-C001",
+            received_quantity=cmd.received_quantity,
+            current_quantity=cmd.received_quantity,
+            uom=cmd.uom,
+            uom_id=lot_uom_id,
+            version=1,
+        )
+    )
 
     correlation_id = uuid.uuid4()
     audit_event = await write_audit_event(
@@ -277,289 +351,32 @@ async def receive_material_lot(
 
 
 # ---------------------------------------------------------------------------
-# DispositionMaterialLot — MAT-011: QC release/reject, signed, requires QC Reviewer role.
+# DispositionMaterialLot (legacy, Document 18, QC Reviewer-signed) — RETIRED 2026-09-22, SG-075
+# (project-owner-directed). Superseded entirely by `release_material_lot`/`reject_material_lot`
+# (`_disposition_material_lot_v2` below), the Document-106-compliant path (QA Releaser, rows 44/45),
+# which is a strict superset: same quarantine-state guard (via `PRE_DISPOSITION_LOT_STATES`), same
+# release-gate rule hook, same signature ceremony, same vault snapshot — plus an independence check
+# (`_independence_violation`) and `container_ids` support this legacy path never had. Two live paths
+# with mismatched signer authorization on the same quality-status transition was the SG-075 finding
+# itself; retiring this one removes the mismatch rather than reconciling it. The historical
+# `materials.material_lot_dispositions` table (and its `MaterialLotDisposition` model) is left in place
+# for any pre-existing rows — only the command/endpoint that wrote new ones is removed.
 # ---------------------------------------------------------------------------
 
 
-class DispositionMaterialLotCommand(CommandEnvelope):
-    lot_id: uuid.UUID
-    expected_version: int
-    decision: str  # "released" | "rejected"
-    reason: str | None = None
-    challenge_id: uuid.UUID
-    reauth_password: str
-
-
-async def disposition_material_lot(
-    session: AsyncSession, cmd: DispositionMaterialLotCommand, actor_user_id: uuid.UUID, site_id: uuid.UUID
-) -> MutationReceipt:
-    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
-    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
-    if existing is not None:
-        return _receipt_from_existing(existing)
-
-    if cmd.decision not in ("released", "rejected"):
-        raise ValidationFailedError("decision must be 'released' or 'rejected'")
-
-    result = await session.execute(select(MaterialLot).where(MaterialLot.id == cmd.lot_id).with_for_update())
-    lot = result.scalar_one_or_none()
-    if lot is None:
-        raise NotFoundError("Material lot not found")
-    if lot.version != cmd.expected_version:
-        raise StaleVersionError(
-            "Material lot was modified by another actor since it was read",
-            expected_version=cmd.expected_version,
-            current_version=lot.version,
-        )
-    if lot.status != "quarantine":
-        raise InvalidTransitionError("Only a lot in quarantine can be dispositioned", current_status=lot.status)
-
-    await evaluate_policy(session, actor_user_id, action="material_lot.disposition", site_id=site_id)
-
-    # MUT-FR-014/RUL-FR-016: optional release-gating rule. A no-op until a deployment authors and
-    # releases a rule at this rule_id -- see app/modules/rules/commands.py::evaluate_release_gate.
-    if cmd.decision == "released":
-        await rules_commands.evaluate_release_gate(
-            session,
-            rule_id=f"material-lot-release-eligibility:{lot.material_id}",
-            inputs={
-                "available_quantity": str(lot.available_quantity),
-                "received_quantity": str(lot.received_quantity),
-            },
-            aggregate_type="material_lot",
-            aggregate_id=lot.id,
-            aggregate_version=lot.version,
-            actor_user_id=actor_user_id,
-        )
-
-    policy = await signature_service.resolve_signature_requirement(
-        session, record_type="material_lot", action="disposition"
-    )
-    signature_id = None
-    if policy.signature_required:
-        actor = await session.get(User, actor_user_id)
-        if actor is None or not verify_password(cmd.reauth_password, actor.password_hash):
-            raise MissingSignatureError("Fresh step-up authentication failed")
-        challenge = await signature_service.consume_challenge(
-            session,
-            challenge_id=cmd.challenge_id,
-            user_id=actor_user_id,
-            record_version=lot.version,
-            record_hash=lot_record_hash(lot),
-        )
-        signature = await signature_service.sign(
-            session, challenge=challenge, auth_context={"method": "password_reauth"}
-        )
-        signature_id = signature.id
-
-    session.add(
-        MaterialLotDisposition(
-            material_lot_id=lot.id,
-            decision=cmd.decision,
-            reason=cmd.reason,
-            signature_id=signature_id,
-            disposed_by_user_id=actor_user_id,
-        )
-    )
-    old_status = lot.status
-    lot.status = cmd.decision
-    if cmd.decision == "released":
-        lot.released_at = datetime.now(timezone.utc)
-        lot.release_signature_id = signature_id
-    lot.version += 1
-
-    # Document 06 (VLT-FR-001/006): a QC disposition is a "regulated final record" too — same immutable
-    # vault snapshot pattern as release_batch, in the same transaction, not itself signature-gated (the
-    # disposition's own authorization/signature already happened above).
-    await vault_service.release_master(
-        session,
-        object_type="material_lot",
-        business_id=lot.internal_lot,
-        site_id=site_id,
-        actor_user_id=actor_user_id,
-        canonical_payload={
-            "lot_id": str(lot.id),
-            "internal_lot": lot.internal_lot,
-            "material_id": str(lot.material_id),
-            "supplier_lot": lot.supplier_lot,
-            "manufacturer_lot": lot.manufacturer_lot,
-            "received_quantity": str(lot.received_quantity),
-            "uom": lot.uom,
-            "decision": cmd.decision,
-            "reason": cmd.reason,
-            "signature_id": str(signature_id) if signature_id else None,
-        },
-    )
-
-    correlation_id = uuid.uuid4()
-    audit_event = await write_audit_event(
-        session,
-        site_id=site_id,
-        aggregate_type="material_lot",
-        aggregate_id=lot.id,
-        aggregate_version=lot.version,
-        action="StatusChanged",
-        actor_id=actor_user_id,
-        correlation_id=correlation_id,
-        old_value={"status": old_status},
-        new_value={"status": lot.status},
-        signature_id=signature_id,
-        reason=cmd.reason,
-    )
-    await write_outbox_event(
-        session,
-        event_type="MaterialLotDispositioned",
-        aggregate_type="material_lot",
-        aggregate_id=lot.id,
-        aggregate_version=lot.version,
-        payload={"id": str(lot.id), "status": lot.status},
-        correlation_id=correlation_id,
-    )
-    receipt = await record_command_receipt(
-        session,
-        site_id=site_id,
-        command_type="DispositionMaterialLot",
-        aggregate_type="material_lot",
-        aggregate_id=lot.id,
-        expected_version=cmd.expected_version,
-        resulting_version=lot.version,
-        idempotency_key=cmd.idempotency_key,
-        command_hash=payload_hash,
-        actor_user_id=actor_user_id,
-        payload_hash=payload_hash,
-    )
-    return MutationReceipt(
-        command_id=receipt.id,
-        aggregate_id=lot.id,
-        resulting_version=lot.version,
-        audit_event_id=audit_event.id,
-        signature_id=signature_id,
-        correlation_id=correlation_id,
-    )
-
-
 # ---------------------------------------------------------------------------
-# IssueMaterialToBatch — MAT-013/MAT-015: only released, unexpired lots are eligible.
+# IssueMaterialToBatch -- retired 2026-09-22, project-owner-directed. Never called by any frontend
+# page and reachable only via the legacy `/batches/{id}/material-issues` router with no permission
+# check at all (any authenticated user could issue any lot to any batch). It also duplicated the real,
+# permission-gated batch-consumption path (`RecordConsumption` below, via Dispensing -> `/dispensing`)
+# with a second, disconnected `MaterialLot.available_quantity` writer -- the direct cause of the Material
+# Lots page showing a quantity that never changed once material was actually dispensed and consumed.
+# Its two useful pieces of logic were ported rather than dropped: the released/unexpired eligibility +
+# over-issue guard already matched `complete_dispensing`'s own checks and needed no porting, and its
+# genealogy `CONSUMED_IN` edge (material_lot -> drug_batch) was ported into `record_consumption()`, which
+# never had one. The historical `materials.material_issues` table (and `MaterialIssue` model) is left in
+# place for any pre-existing rows -- only the command/endpoints that wrote new ones are removed.
 # ---------------------------------------------------------------------------
-
-
-class IssueMaterialToBatchCommand(CommandEnvelope):
-    lot_id: uuid.UUID
-    expected_version: int
-    batch_id: uuid.UUID
-    batch_step_id: uuid.UUID | None = None
-    quantity: Decimal
-
-
-async def issue_material_to_batch(
-    session: AsyncSession, cmd: IssueMaterialToBatchCommand, actor_user_id: uuid.UUID, site_id: uuid.UUID
-) -> MutationReceipt:
-    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
-    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
-    if existing is not None:
-        return _receipt_from_existing(existing)
-
-    if cmd.quantity <= 0:
-        raise ValidationFailedError("quantity must be positive")
-
-    result = await session.execute(select(MaterialLot).where(MaterialLot.id == cmd.lot_id).with_for_update())
-    lot = result.scalar_one_or_none()
-    if lot is None:
-        raise NotFoundError("Material lot not found")
-    if lot.version != cmd.expected_version:
-        raise StaleVersionError(
-            "Material lot was modified by another actor since it was read",
-            expected_version=cmd.expected_version,
-            current_version=lot.version,
-        )
-
-    # MAT-013 eligibility: released, not expired, sufficient available quantity.
-    if lot.status != "released":
-        raise InvalidTransitionError(
-            "Only a released lot is eligible for issue", current_status=lot.status
-        )
-    if lot.expiry_date is not None and lot.expiry_date < datetime.now(timezone.utc).date():
-        raise InvalidTransitionError("Lot has passed its expiry date and is not eligible for issue")
-    if cmd.quantity > lot.available_quantity:
-        raise ValidationFailedError(
-            "Requested quantity exceeds available lot quantity",
-            available=str(lot.available_quantity),
-            requested=str(cmd.quantity),
-        )
-
-    batch = await session.get(Batch, cmd.batch_id)
-    if batch is None:
-        raise NotFoundError("Batch not found")
-    if cmd.batch_step_id is not None:
-        step = await session.get(BatchStep, cmd.batch_step_id)
-        if step is None or step.batch_id != batch.id:
-            raise NotFoundError("Batch step not found")
-
-    old_available = lot.available_quantity
-    lot.available_quantity -= cmd.quantity
-    if lot.available_quantity == 0:
-        lot.status = "consumed"
-    lot.version += 1
-
-    session.add(
-        MaterialIssue(
-            material_lot_id=lot.id,
-            batch_id=cmd.batch_id,
-            batch_step_id=cmd.batch_step_id,
-            quantity=cmd.quantity,
-            uom=lot.uom,
-            uom_id=lot.uom_id,  # copied from the lot's own already-resolved value, not re-queried
-            issued_by_user_id=actor_user_id,
-        )
-    )
-
-    correlation_id = uuid.uuid4()
-    audit_event = await write_audit_event(
-        session,
-        site_id=site_id,
-        aggregate_type="material_lot",
-        aggregate_id=lot.id,
-        aggregate_version=lot.version,
-        action="Consumed",
-        actor_id=actor_user_id,
-        correlation_id=correlation_id,
-        old_value={"available_quantity": str(old_available)},
-        new_value={"available_quantity": str(lot.available_quantity), "issued_to_batch_id": str(cmd.batch_id)},
-    )
-    await write_outbox_event(
-        session,
-        event_type="MaterialIssued",
-        aggregate_type="material_lot",
-        aggregate_id=lot.id,
-        aggregate_version=lot.version,
-        payload={
-            "lot_id": str(lot.id),
-            "batch_id": str(cmd.batch_id),
-            "quantity": str(cmd.quantity),
-        },
-        correlation_id=correlation_id,
-    )
-    receipt = await record_command_receipt(
-        session,
-        site_id=site_id,
-        command_type="IssueMaterialToBatch",
-        aggregate_type="material_lot",
-        aggregate_id=lot.id,
-        expected_version=cmd.expected_version,
-        resulting_version=lot.version,
-        idempotency_key=cmd.idempotency_key,
-        command_hash=payload_hash,
-        actor_user_id=actor_user_id,
-        payload_hash=payload_hash,
-    )
-    return MutationReceipt(
-        command_id=receipt.id,
-        aggregate_id=lot.id,
-        resulting_version=lot.version,
-        audit_event_id=audit_event.id,
-        correlation_id=correlation_id,
-    )
-
 
 # ---------------------------------------------------------------------------
 # UpdateMaterial / DeleteMaterial — code, site_id and uom are immutable once created (uom changes would
@@ -569,8 +386,11 @@ async def issue_material_to_batch(
 
 class UpdateMaterialCommand(CommandEnvelope):
     material_id: uuid.UUID
+    expected_version: int
     name: str
     status: str
+    is_in_house: bool | None = None
+    default_storage_condition: str | None = None
 
 
 async def update_material(
@@ -581,13 +401,34 @@ async def update_material(
     if existing_receipt is not None:
         return _receipt_from_existing(existing_receipt)
 
-    material = await session.get(Material, cmd.material_id)
+    result = await session.execute(select(Material).where(Material.id == cmd.material_id).with_for_update())
+    material = result.scalar_one_or_none()
     if material is None:
         raise NotFoundError("Material not found")
+    if material.version != cmd.expected_version:
+        raise StaleVersionError(
+            "Material was modified by another actor since it was read",
+            expected_version=cmd.expected_version,
+            current_version=material.version,
+        )
 
-    old_value = {"name": material.name, "status": material.status}
+    if cmd.default_storage_condition is not None and cmd.default_storage_condition not in STORAGE_CONDITIONS:
+        raise ValidationFailedError(
+            "default_storage_condition must be one of the controlled list",
+            default_storage_condition=cmd.default_storage_condition, allowed=list(STORAGE_CONDITIONS),
+        )
+
+    old_value = {
+        "name": material.name, "status": material.status, "is_in_house": material.is_in_house,
+        "default_storage_condition": material.default_storage_condition,
+    }
     material.name = cmd.name
     material.status = cmd.status
+    if cmd.is_in_house is not None:
+        material.is_in_house = cmd.is_in_house
+    if cmd.default_storage_condition is not None:
+        material.default_storage_condition = cmd.default_storage_condition
+    material.version += 1
 
     correlation_id = uuid.uuid4()
     audit_event = await write_audit_event(
@@ -600,7 +441,10 @@ async def update_material(
         actor_id=actor_user_id,
         correlation_id=correlation_id,
         old_value=old_value,
-        new_value={"name": material.name, "status": material.status},
+        new_value={
+            "name": material.name, "status": material.status, "is_in_house": material.is_in_house,
+            "default_storage_condition": material.default_storage_condition,
+        },
     )
     await write_outbox_event(
         session,
@@ -617,7 +461,7 @@ async def update_material(
         command_type="UpdateMaterial",
         aggregate_type="material",
         aggregate_id=material.id,
-        expected_version=None,
+        expected_version=cmd.expected_version,
         resulting_version=material.version,
         idempotency_key=cmd.idempotency_key,
         command_hash=payload_hash,
@@ -780,7 +624,7 @@ async def create_material_receipt(
         received_net_quantity=cmd.received_net_quantity,
         accepted_quantity=cmd.accepted_quantity,
         uom=cmd.uom,
-        uom_id=await _resolve_uom_id(session, cmd.uom),
+        uom_id=await _resolve_uom_id_strict(session, cmd.uom),
         manufacture_date=cmd.manufacture_date,
         expiry_date=cmd.expiry_date,
         retest_date=cmd.retest_date,
@@ -848,14 +692,19 @@ class ExamineReceiptCommand(CommandEnvelope):
     receipt_id: uuid.UUID
     expected_version: int
     labeling_ok: bool
-    damage_observed: bool
+    # Client gap-analysis Phase 6 (2026-10-05): the generic "Damage Observed" question split into
+    # shipping/package damage vs. material container damage; "Contamination Observed" dropped from the
+    # workflow entirely (no field here anymore -- the column on the model is simply never written).
+    shipping_damage_observed: bool
+    container_damage_observed: bool
     seal_broken: bool
-    contamination_observed: bool
     examination_notes: str | None = None
     identity_confirmed: bool
     internal_lot: str
     container_count: int = 1
     discrepancy_reason: str | None = None
+    storage_location_id: uuid.UUID | None = None
+    storage_condition: str | None = None
 
 
 async def examine_receipt(
@@ -894,23 +743,23 @@ async def examine_receipt(
         if supplier is None or supplier.status != "approved":
             supplier_not_approved = True
 
+    damage_observed = cmd.shipping_damage_observed or cmd.container_damage_observed
     discrepancy_type = None
     if not cmd.identity_confirmed:
         discrepancy_type = "identity_mismatch"
-    elif cmd.damage_observed:
+    elif damage_observed:
         discrepancy_type = "damaged"
     elif cmd.seal_broken:
         discrepancy_type = "seal_broken"
-    elif cmd.contamination_observed:
-        discrepancy_type = "contamination"
     elif supplier_not_approved:
         discrepancy_type = "source_not_approved"
 
     old_state = receipt_row.state
     receipt_row.labeling_ok = cmd.labeling_ok
-    receipt_row.damage_observed = cmd.damage_observed
+    receipt_row.shipping_damage_observed = cmd.shipping_damage_observed
+    receipt_row.container_damage_observed = cmd.container_damage_observed
+    receipt_row.damage_observed = damage_observed
     receipt_row.seal_broken = cmd.seal_broken
-    receipt_row.contamination_observed = cmd.contamination_observed
     receipt_row.examination_notes = cmd.examination_notes
     receipt_row.examined_by_user_id = actor_user_id
     receipt_row.examined_at = datetime.now(timezone.utc)
@@ -934,6 +783,13 @@ async def examine_receipt(
             raise ValidationFailedError(
                 "A material lot with this internal lot number already exists", internal_lot=cmd.internal_lot
             )
+        if cmd.storage_condition is not None and cmd.storage_condition not in STORAGE_CONDITIONS:
+            raise ValidationFailedError(
+                "storage_condition must be one of the controlled list",
+                storage_condition=cmd.storage_condition, allowed=list(STORAGE_CONDITIONS),
+            )
+        if cmd.storage_location_id is not None and await session.get(WarehouseLocation, cmd.storage_location_id) is None:
+            raise NotFoundError("Warehouse location not found", storage_location_id=str(cmd.storage_location_id))
 
         receipt_row.state = "examined"
         accepted_qty = receipt_row.accepted_quantity or receipt_row.received_gross_quantity
@@ -951,6 +807,8 @@ async def examine_receipt(
             status="quarantine",
             expiry_date=receipt_row.expiry_date,
             retest_date=receipt_row.retest_date,
+            storage_location_id=cmd.storage_location_id,
+            storage_condition=cmd.storage_condition,
             received_by_user_id=receipt_row.receiver_subject_id,
             version=1,
             receipt_id=receipt_row.id,
@@ -1017,6 +875,253 @@ async def examine_receipt(
         aggregate_id=receipt_row.id,
         resulting_version=receipt_row.version,
         audit_event_id=audit_event.id,
+        correlation_id=correlation_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# DispositionHeldReceipt — Client_Decisions_Neededanswers Topic 4 (2026-10-02, project-owner-directed):
+# a receipt examined into "discrepancy_hold" above had no forward path at all; this adds one. Beyond
+# Document 19 §5's originally declared 9 operations, same "own considered contract, not a guessed one"
+# precedent as warehouse_location.create (SG-081)/aseptic_profile_version.create -- a real need found
+# while implementing the client's own answer, not invented speculatively.
+#
+# Q7: severity determines whether a Deviation is required alongside the disposition ("significant" does,
+# "minor" does not) -- NOT whether the disposition itself is signed; Q8 is unconditional on that: every
+# disposition is QA-Releaser-signed, same role/independence precedent as material_lot.release/reject
+# above. Q9: "accepted"/"rejected"/"replacement_requested" are the three decisions this pass builds;
+# "conditional acceptance"/"disposal" are named as examples of other outcomes the client said may apply
+# "when appropriate" but are not concretely specified -- not added here, left for a future decision if
+# the client names a concrete trigger/workflow for them (not guessed). Q10: an "accepted" decision creates
+# a MaterialLot the same way a clean `examine_receipt` does, flagged `is_exception_release=True` -- it
+# still enters normal quarantine, not released stock.
+# ---------------------------------------------------------------------------
+
+
+_HELD_RECEIPT_DECISIONS = {"accepted", "rejected", "replacement_requested"}
+_HELD_RECEIPT_SEVERITIES = {"minor", "significant"}
+
+
+class DispositionHeldReceiptCommand(CommandEnvelope):
+    receipt_id: uuid.UUID
+    expected_version: int
+    decision: str  # "accepted" | "rejected" | "replacement_requested"
+    severity: str  # "minor" | "significant" -- governs whether deviation_id is required (Q7)
+    reason: str
+    deviation_id: uuid.UUID | None = None
+    challenge_id: uuid.UUID
+    reauth_password: str
+    # Only consulted when decision == "accepted" (a lot must be created, same inputs examine_receipt's
+    # clean path needs).
+    internal_lot: str | None = None
+    container_count: int = 1
+    storage_location_id: uuid.UUID | None = None
+    storage_condition: str | None = None
+
+
+_HELD_RECEIPT_STATE_BY_DECISION = {
+    "accepted": "disposition_accepted",
+    "rejected": "disposition_rejected",
+    "replacement_requested": "disposition_replacement_requested",
+}
+
+
+async def disposition_held_receipt(
+    session: AsyncSession, cmd: DispositionHeldReceiptCommand, actor_user_id: uuid.UUID, site_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    result = await session.execute(
+        select(MaterialReceipt).where(MaterialReceipt.id == cmd.receipt_id).with_for_update()
+    )
+    receipt_row = result.scalar_one_or_none()
+    if receipt_row is None:
+        raise NotFoundError("Material receipt not found")
+    if receipt_row.version != cmd.expected_version:
+        raise StaleVersionError(
+            "Material receipt was modified by another actor since it was read",
+            expected_version=cmd.expected_version,
+            current_version=receipt_row.version,
+        )
+    if receipt_row.state != "discrepancy_hold":
+        raise InvalidTransitionError(
+            "Only a receipt on discrepancy hold can be dispositioned", current_status=receipt_row.state
+        )
+    if cmd.decision not in _HELD_RECEIPT_DECISIONS:
+        raise ValidationFailedError("decision must be one of accepted, rejected, replacement_requested")
+    if cmd.severity not in _HELD_RECEIPT_SEVERITIES:
+        raise ValidationFailedError("severity must be one of minor, significant")
+    if not cmd.reason:
+        raise ValidationFailedError("reason is required to disposition a held receipt")
+
+    deviation = None
+    if cmd.severity == "significant":
+        if cmd.deviation_id is None:
+            raise ValidationFailedError(
+                "A significant-severity disposition requires a linked Deviation (deviation_id)"
+            )
+        deviation = await session.get(DeviationRecord, cmd.deviation_id)
+        if deviation is None:
+            raise NotFoundError("Deviation record not found", deviation_id=str(cmd.deviation_id))
+
+    await evaluate_policy(session, actor_user_id, action="material_receipt.disposition", site_id=site_id)
+
+    # Same independence precedent as material_lot.release/reject's _independence_violation: the signer
+    # must be independent of whoever received/examined this delivery.
+    if actor_user_id in (receipt_row.receiver_subject_id, receipt_row.examined_by_user_id):
+        raise ValidationFailedError(
+            "Signer must be independent of the receipt's receiver/examiner"
+        )
+
+    policy = await signature_service.resolve_signature_requirement(
+        session, record_type="material_receipt", action="disposition"
+    )
+    signature_id = None
+    if policy.signature_required:
+        actor = await session.get(User, actor_user_id)
+        if actor is None or not verify_password(cmd.reauth_password, actor.password_hash):
+            raise MissingSignatureError("Fresh step-up authentication failed")
+        challenge = await signature_service.consume_challenge(
+            session,
+            challenge_id=cmd.challenge_id,
+            user_id=actor_user_id,
+            record_version=receipt_row.version,
+            record_hash=receipt_record_hash(receipt_row),
+        )
+        signature = await signature_service.sign(
+            session, challenge=challenge, auth_context={"method": "password_reauth"}
+        )
+        signature_id = signature.id
+
+    lot_id = None
+    if cmd.decision == "accepted":
+        if not cmd.internal_lot:
+            raise ValidationFailedError("internal_lot is required when accepting a held receipt")
+        if cmd.container_count < 1:
+            raise ValidationFailedError("container_count must be at least 1")
+        existing_lot = (
+            await session.execute(select(MaterialLot).where(MaterialLot.internal_lot == cmd.internal_lot))
+        ).scalar_one_or_none()
+        if existing_lot is not None:
+            raise ValidationFailedError(
+                "A material lot with this internal lot number already exists", internal_lot=cmd.internal_lot
+            )
+        if cmd.storage_condition is not None and cmd.storage_condition not in STORAGE_CONDITIONS:
+            raise ValidationFailedError(
+                "storage_condition must be one of the controlled list",
+                storage_condition=cmd.storage_condition, allowed=list(STORAGE_CONDITIONS),
+            )
+        if cmd.storage_location_id is not None and await session.get(WarehouseLocation, cmd.storage_location_id) is None:
+            raise NotFoundError("Warehouse location not found", storage_location_id=str(cmd.storage_location_id))
+
+        accepted_qty = receipt_row.accepted_quantity or receipt_row.received_gross_quantity
+        lot = MaterialLot(
+            material_id=receipt_row.material_id,
+            site_id=receipt_row.site_id,
+            supplier_id=receipt_row.supplier_id,
+            supplier_lot=receipt_row.supplier_lot,
+            manufacturer_lot=receipt_row.manufacturer_lot,
+            internal_lot=cmd.internal_lot,
+            received_quantity=accepted_qty,
+            available_quantity=accepted_qty,
+            uom=receipt_row.uom,
+            uom_id=receipt_row.uom_id,
+            status="quarantine",
+            expiry_date=receipt_row.expiry_date,
+            retest_date=receipt_row.retest_date,
+            storage_location_id=cmd.storage_location_id,
+            storage_condition=cmd.storage_condition,
+            received_by_user_id=receipt_row.receiver_subject_id,
+            version=1,
+            receipt_id=receipt_row.id,
+            manufacture_date=receipt_row.manufacture_date,
+            is_exception_release=True,
+            exception_reason=cmd.reason,
+        )
+        session.add(lot)
+        await session.flush()
+        lot_id = lot.id
+
+        precision = Decimal("0.000001")
+        per_container_qty = (accepted_qty / cmd.container_count).quantize(precision)
+        remainder = accepted_qty - (per_container_qty * cmd.container_count)
+        for i in range(cmd.container_count):
+            qty = per_container_qty + (remainder if i == cmd.container_count - 1 else Decimal("0"))
+            session.add(
+                MaterialContainer(
+                    material_lot_id=lot.id,
+                    container_code=f"{cmd.internal_lot}-C{i + 1:03d}",
+                    received_quantity=qty,
+                    current_quantity=qty,
+                    uom=receipt_row.uom,
+                    uom_id=receipt_row.uom_id,
+                    version=1,
+                )
+            )
+
+    old_state = receipt_row.state
+    receipt_row.state = _HELD_RECEIPT_STATE_BY_DECISION[cmd.decision]
+    receipt_row.disposition_decision = cmd.decision
+    receipt_row.disposition_severity = cmd.severity
+    receipt_row.disposition_reason = cmd.reason
+    receipt_row.disposition_deviation_id = cmd.deviation_id if cmd.severity == "significant" else None
+    receipt_row.disposition_decided_by_user_id = actor_user_id
+    receipt_row.disposition_decided_at = datetime.now(timezone.utc)
+    receipt_row.disposition_signature_id = signature_id
+    receipt_row.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session,
+        site_id=receipt_row.site_id,
+        aggregate_type="material_receipt",
+        aggregate_id=receipt_row.id,
+        aggregate_version=receipt_row.version,
+        action="StatusChanged",
+        actor_id=actor_user_id,
+        correlation_id=correlation_id,
+        old_value={"state": old_state},
+        new_value={
+            "state": receipt_row.state, "decision": cmd.decision, "severity": cmd.severity,
+            "deviation_id": str(cmd.deviation_id) if cmd.deviation_id else None, "lot_id": str(lot_id) if lot_id else None,
+        },
+        signature_id=signature_id,
+        reason=cmd.reason,
+    )
+    await write_outbox_event(
+        session,
+        event_type="ReceiptDispositioned",
+        aggregate_type="material_receipt",
+        aggregate_id=receipt_row.id,
+        aggregate_version=receipt_row.version,
+        payload={
+            "id": str(receipt_row.id), "state": receipt_row.state, "decision": cmd.decision,
+            "lot_id": str(lot_id) if lot_id else None,
+        },
+        correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session,
+        site_id=receipt_row.site_id,
+        command_type="DispositionHeldReceipt",
+        aggregate_type="material_receipt",
+        aggregate_id=receipt_row.id,
+        expected_version=cmd.expected_version,
+        resulting_version=receipt_row.version,
+        idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash,
+        actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id,
+        aggregate_id=receipt_row.id,
+        resulting_version=receipt_row.version,
+        audit_event_id=audit_event.id,
+        signature_id=signature_id,
         correlation_id=correlation_id,
     )
 
@@ -1252,6 +1357,78 @@ async def collect_sample(
 # ---------------------------------------------------------------------------
 
 
+async def _missing_required_tests(session: AsyncSession, lot: MaterialLot) -> list[str]:
+    """Client_Decisions_Neededanswers Topic 1 (SG-076 required-test half): the test_code of every
+    required+release_blocking QcTestDefinition, scoped to this lot's material's current released
+    MaterialSpecificationVersion, that does NOT yet have a passing (`outcome == "pass"`), reviewed
+    (`state == "reviewed"`, same terminal-accepted state `cancel_sample`'s own
+    `blocking_reviewed` check already uses) QcResult for a QcSample sourced from this lot
+    (`QcSample.source_type == "material_lot"`). Empty list = nothing outstanding -- either no
+    material-scoped test specification is released for this material at all (nothing to require), or
+    every required test has a passing reviewed result."""
+    spec_version = (
+        await session.execute(
+            select(MaterialSpecificationVersion)
+            .where(
+                MaterialSpecificationVersion.material_id == lot.material_id,
+                MaterialSpecificationVersion.lifecycle_state == "released",
+            )
+            .order_by(MaterialSpecificationVersion.version_no.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if spec_version is None:
+        return []
+
+    test_spec = (
+        await session.execute(
+            select(QcTestSpecification)
+            .where(
+                QcTestSpecification.scope_type == "material",
+                QcTestSpecification.scope_version_id == spec_version.id,
+                QcTestSpecification.status == "released",
+            )
+            .order_by(QcTestSpecification.version_no.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if test_spec is None:
+        return []
+
+    required_tests = (
+        await session.execute(
+            select(QcTestDefinition).where(
+                QcTestDefinition.specification_id == test_spec.id,
+                QcTestDefinition.required.is_(True),
+                QcTestDefinition.release_blocking.is_(True),
+            )
+        )
+    ).scalars().all()
+    if not required_tests:
+        return []
+
+    missing: list[str] = []
+    for definition in required_tests:
+        passing = (
+            await session.execute(
+                select(QcResult.id)
+                .join(QcTestOrder, QcTestOrder.id == QcResult.test_order_id)
+                .join(QcSample, QcSample.id == QcTestOrder.sample_id)
+                .where(
+                    QcTestOrder.test_definition_id == definition.id,
+                    QcTestOrder.state == "reviewed",
+                    QcResult.outcome == "pass",
+                    QcSample.source_type == "material_lot",
+                    QcSample.source_id == lot.id,
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if passing is None:
+            missing.append(definition.test_code)
+    return missing
+
+
 async def _independence_violation(session: AsyncSession, lot: MaterialLot, actor_user_id: uuid.UUID) -> bool:
     if lot.receipt_id is not None:
         receipt_row = await session.get(MaterialReceipt, lot.receipt_id)
@@ -1311,6 +1488,7 @@ async def _disposition_material_lot_v2(
 
     # MUT-FR-014/RUL-FR-016: same no-op-until-authored release-gate hook `disposition_material_lot`
     # already uses — RCV-FR-023/024/025's material-scoped QC requirement stays a SPEC_GAP, not guessed.
+    coa_reliance = False
     if decision == "released":
         await rules_commands.evaluate_release_gate(
             session,
@@ -1324,6 +1502,38 @@ async def _disposition_material_lot_v2(
             aggregate_version=lot.version,
             actor_user_id=actor_user_id,
         )
+
+        # Client_Decisions_Neededanswers Topic 1/2 (SG-076 required-test half, resolved 2026-10-02):
+        # block release until every required+release_blocking test has a passing reviewed result,
+        # unless QA explicitly relies on the supplier's COA instead (Q2 -- only for an approved
+        # supplier, with an actual COA on file, and a documented reason; relying on a non-existent COA
+        # or an unapproved supplier is rejected, not silently allowed).
+        missing_tests = await _missing_required_tests(session, lot)
+        coa_reliance = bool(getattr(cmd, "coa_reliance", False))
+        if missing_tests:
+            if not coa_reliance:
+                raise LotIneligibleError(
+                    "Required test(s) have not passed review; release is blocked (Client Topic 1)",
+                    lot_id=str(lot.id), missing_test_codes=missing_tests,
+                )
+            if lot.receipt_id is None:
+                raise ValidationFailedError(
+                    "No receipt/COA is on file for this lot; supplier-COA reliance is not available"
+                )
+            receipt_row = await session.get(MaterialReceipt, lot.receipt_id)
+            if receipt_row is None or receipt_row.coa_document_hash is None:
+                raise ValidationFailedError(
+                    "A supplier Certificate of Analysis must be on file to rely on it instead of in-house testing (Client Topic 2)"
+                )
+            supplier = await session.get(Supplier, receipt_row.supplier_id) if receipt_row.supplier_id else None
+            if supplier is None or supplier.status != "approved":
+                raise ValidationFailedError(
+                    "Supplier-COA reliance requires an approved supplier (Client Topic 2)"
+                )
+            if not cmd.reason:
+                raise ValidationFailedError(
+                    "A documented reason is required when relying on the supplier's COA instead of in-house testing"
+                )
 
     policy = await signature_service.resolve_signature_requirement(session, record_type="material_lot", action=action)
     signature_id = None
@@ -1348,7 +1558,7 @@ async def _disposition_material_lot_v2(
             material_lot_id=lot.id,
             container_ids={"ids": [str(c) for c in cmd.container_ids]} if cmd.container_ids else None,
             decision=decision,
-            evidence_refs=None,
+            evidence_refs={"coa_reliance": True} if coa_reliance else None,
             reason=cmd.reason,
             signature_id=signature_id,
             disposed_by_user_id=actor_user_id,
@@ -1356,6 +1566,9 @@ async def _disposition_material_lot_v2(
     )
 
     old_status = lot.status
+    if coa_reliance:
+        lot.coa_reliance = True
+        lot.coa_reliance_reason = cmd.reason
     is_partial = bool(cmd.container_ids)
     if is_partial:
         for container_id in cmd.container_ids:
@@ -1439,6 +1652,10 @@ class ReleaseMaterialLotCommand(CommandEnvelope):
     container_ids: list[uuid.UUID] | None = None
     challenge_id: uuid.UUID
     reauth_password: str
+    # Client_Decisions_Neededanswers Topic 2: only consulted when a required test hasn't passed
+    # review -- QA relies on the supplier's COA instead (approved supplier + COA on file + reason
+    # required, enforced in _disposition_material_lot_v2). Ignored on a clean release.
+    coa_reliance: bool = False
 
 
 async def release_material_lot(
@@ -1627,6 +1844,12 @@ async def get_release_readiness(session: AsyncSession, lot_id: uuid.UUID) -> dic
     today = datetime.now(timezone.utc).date()
     not_expired = lot.expiry_date is None or lot.expiry_date >= today
 
+    # Client_Decisions_Neededanswers Topic 1 (SG-076 required-test half, resolved 2026-10-02): this is
+    # now the real, hard-enforced gate release_material_lot checks -- surfaced here too so the UI can
+    # show why release is blocked (or that COA reliance would be needed) before the signer even opens
+    # the release ceremony, not just advisory `qc_sample_ids` as before.
+    missing_required_tests = await _missing_required_tests(session, lot)
+
     return {
         "lot_id": str(lot.id),
         "status": lot.status,
@@ -1635,9 +1858,9 @@ async def get_release_readiness(session: AsyncSession, lot_id: uuid.UUID) -> dic
         "receipt_discrepancy_clear": receipt_clean,
         "sampling_complete": sampling_complete,
         "not_expired": not_expired,
-        # RCV-FR-023/025: whether QC evidence exists cannot be enforced as a required-test rule (no
-        # material-scoped QC specification exists, SG-057/SG-063) — surfaced as advisory information only.
         "qc_sample_ids": [str(o.qc_sample_id) for o in sampling_orders if o.qc_sample_id is not None],
+        "missing_required_tests": missing_required_tests,
+        "coa_reliance_available": bool(missing_required_tests) and lot.receipt_id is not None,
     }
 
 
@@ -1750,6 +1973,299 @@ async def create_warehouse_location(
     )
 
 
+# ---------------------------------------------------------------------------
+# UpdateWarehouseLocation / RetireWarehouseLocation — SG-081 (2026-09-22, project-owner-directed): Document
+# 20 §7 declares 9 operations and warehouse_location itself has none (create was added 2026-09-07,
+# read-only otherwise). A location referenced by MaterialLot.storage_location_id (req #4, 2026-09-21)
+# makes a hard delete unsafe -- soft-retire via `status="retired"` instead, matching how list_
+# warehouse_locations already filters on `status == "active"` (that filter's own existence already implied
+# a non-active status was anticipated). Rename covers location_code/zone_type/environment_profile_id only
+# -- warehouse_code + site_id are the row's identity (see the duplicate check in create_warehouse_location
+# above) and are not mutable here.
+# ---------------------------------------------------------------------------
+
+
+class UpdateWarehouseLocationCommand(CommandEnvelope):
+    warehouse_location_id: uuid.UUID
+    expected_version: int
+    location_code: str | None = None
+    zone_type: str | None = None
+    environment_profile_id: uuid.UUID | None = None
+
+
+async def update_warehouse_location(
+    session: AsyncSession, cmd: UpdateWarehouseLocationCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    location = await session.get(WarehouseLocation, cmd.warehouse_location_id)
+    if location is None:
+        raise NotFoundError("Warehouse location not found")
+    if location.version != cmd.expected_version:
+        raise StaleVersionError(
+            "Warehouse location was modified by another actor since it was read",
+            expected_version=cmd.expected_version, current_version=location.version,
+        )
+    if location.status != "active":
+        raise InvalidTransitionError("Only an active warehouse location can be updated", current_status=location.status)
+
+    new_location_code = cmd.location_code if cmd.location_code is not None else location.location_code
+    new_zone_type = cmd.zone_type if cmd.zone_type is not None else location.zone_type
+    if not new_location_code.strip() or not new_zone_type.strip():
+        raise ValidationFailedError("location_code and zone_type cannot be blank")
+
+    if cmd.location_code is not None and cmd.location_code != location.location_code:
+        duplicate = (
+            await session.execute(
+                select(WarehouseLocation).where(
+                    WarehouseLocation.site_id == location.site_id,
+                    WarehouseLocation.warehouse_code == location.warehouse_code,
+                    WarehouseLocation.location_code == cmd.location_code,
+                    WarehouseLocation.id != location.id,
+                )
+            )
+        ).scalar_one_or_none()
+        if duplicate is not None:
+            raise ValidationFailedError(
+                "A location with this warehouse code and location code already exists at this site",
+                existing_id=str(duplicate.id),
+            )
+
+    old_value = {
+        "location_code": location.location_code, "zone_type": location.zone_type,
+        "environment_profile_id": str(location.environment_profile_id) if location.environment_profile_id else None,
+    }
+    location.location_code = new_location_code
+    location.zone_type = new_zone_type
+    if cmd.environment_profile_id is not None:
+        location.environment_profile_id = cmd.environment_profile_id
+    location.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=location.site_id, aggregate_type="warehouse_location", aggregate_id=location.id,
+        aggregate_version=location.version, action="Changed", actor_id=actor_user_id, correlation_id=correlation_id,
+        old_value=old_value,
+        new_value={
+            "location_code": location.location_code, "zone_type": location.zone_type,
+            "environment_profile_id": str(location.environment_profile_id) if location.environment_profile_id else None,
+        },
+    )
+    await write_outbox_event(
+        session, event_type="WarehouseLocationChanged", aggregate_type="warehouse_location", aggregate_id=location.id,
+        aggregate_version=location.version, payload={"id": str(location.id)}, correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=location.site_id, command_type="UpdateWarehouseLocation", aggregate_type="warehouse_location",
+        aggregate_id=location.id, expected_version=cmd.expected_version, resulting_version=location.version,
+        idempotency_key=cmd.idempotency_key, command_hash=payload_hash, actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=location.id, resulting_version=location.version,
+        audit_event_id=audit_event.id, correlation_id=correlation_id,
+    )
+
+
+class RetireWarehouseLocationCommand(CommandEnvelope):
+    warehouse_location_id: uuid.UUID
+    expected_version: int
+    reason: str
+
+
+async def retire_warehouse_location(
+    session: AsyncSession, cmd: RetireWarehouseLocationCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    location = await session.get(WarehouseLocation, cmd.warehouse_location_id)
+    if location is None:
+        raise NotFoundError("Warehouse location not found")
+    if location.version != cmd.expected_version:
+        raise StaleVersionError(
+            "Warehouse location was modified by another actor since it was read",
+            expected_version=cmd.expected_version, current_version=location.version,
+        )
+    if location.status != "active":
+        raise InvalidTransitionError("Only an active warehouse location can be retired", current_status=location.status)
+    if not cmd.reason.strip():
+        raise ValidationFailedError("reason is required to retire a warehouse location")
+
+    # A location currently holding material (via storage_location_id, req #4) or an open reservation
+    # cannot be retired out from under it.
+    occupied = (
+        await session.execute(
+            select(MaterialLot.id).where(
+                MaterialLot.storage_location_id == location.id, MaterialLot.status.notin_(("rejected",)),
+            ).limit(1)
+        )
+    ).scalar_one_or_none()
+    if occupied is not None:
+        raise ValidationFailedError("Cannot retire a warehouse location that still has material stored in it")
+
+    old_status = location.status
+    location.status = "retired"
+    location.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=location.site_id, aggregate_type="warehouse_location", aggregate_id=location.id,
+        aggregate_version=location.version, action="StatusChanged", actor_id=actor_user_id,
+        correlation_id=correlation_id, reason=cmd.reason,
+        old_value={"status": old_status}, new_value={"status": "retired"},
+    )
+    await write_outbox_event(
+        session, event_type="WarehouseLocationRetired", aggregate_type="warehouse_location", aggregate_id=location.id,
+        aggregate_version=location.version, payload={"id": str(location.id)}, correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=location.site_id, command_type="RetireWarehouseLocation", aggregate_type="warehouse_location",
+        aggregate_id=location.id, expected_version=cmd.expected_version, resulting_version=location.version,
+        idempotency_key=cmd.idempotency_key, command_hash=payload_hash, actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=location.id, resulting_version=location.version,
+        audit_event_id=audit_event.id, correlation_id=correlation_id,
+    )
+
+
+# LockLocation/UnlockLocation -- Client Topic 7 Q14 (SG-084, project-owner-directed): "temporarily lock a
+# location or specific inventory item so that no one can move stock in or out of it while a physical
+# count is being done... lock and unlock actions should be recorded for traceability." No signature --
+# the client asked for traceability (an audited action), not a Part-11 approval, and Document 106 has no
+# row for this (consistent with warehouse_location.create/update/retire, all unsigned RBAC-gated master-
+# data actions). Checked at the stock-movement choke points (create_inventory_transfer,
+# complete_dispensing) -- deliberately NOT at create_cycle_count/create_inventory_adjustment_request,
+# since the count that justifies the lock must itself remain possible while it's active.
+class LockLocationCommand(CommandEnvelope):
+    expected_version: int
+    reason: str
+
+
+async def lock_location(
+    session: AsyncSession, location_id: uuid.UUID, cmd: LockLocationCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    location = await session.get(WarehouseLocation, location_id)
+    if location is None:
+        raise NotFoundError("Warehouse location not found")
+    if location.version != cmd.expected_version:
+        raise StaleVersionError(
+            "Warehouse location was modified by another actor since it was read",
+            expected_version=cmd.expected_version, current_version=location.version,
+        )
+    if location.locked:
+        raise InvalidTransitionError("Location is already locked", current_status="locked")
+    if not cmd.reason.strip():
+        raise ValidationFailedError("reason is required to lock a warehouse location")
+
+    location.locked = True
+    location.lock_reason = cmd.reason
+    location.locked_by_user_id = actor_user_id
+    location.locked_at = datetime.now(timezone.utc)
+    location.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=location.site_id, aggregate_type="warehouse_location", aggregate_id=location.id,
+        aggregate_version=location.version, action="StatusChanged", actor_id=actor_user_id,
+        correlation_id=correlation_id, reason=cmd.reason,
+        old_value={"locked": False}, new_value={"locked": True, "lock_reason": cmd.reason},
+    )
+    await write_outbox_event(
+        session, event_type="WarehouseLocationLocked", aggregate_type="warehouse_location", aggregate_id=location.id,
+        aggregate_version=location.version, payload={"id": str(location.id)}, correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=location.site_id, command_type="LockLocation", aggregate_type="warehouse_location",
+        aggregate_id=location.id, expected_version=cmd.expected_version, resulting_version=location.version,
+        idempotency_key=cmd.idempotency_key, command_hash=payload_hash, actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=location.id, resulting_version=location.version,
+        audit_event_id=audit_event.id, correlation_id=correlation_id,
+    )
+
+
+class UnlockLocationCommand(CommandEnvelope):
+    expected_version: int
+    reason: str
+
+
+async def unlock_location(
+    session: AsyncSession, location_id: uuid.UUID, cmd: UnlockLocationCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    location = await session.get(WarehouseLocation, location_id)
+    if location is None:
+        raise NotFoundError("Warehouse location not found")
+    if location.version != cmd.expected_version:
+        raise StaleVersionError(
+            "Warehouse location was modified by another actor since it was read",
+            expected_version=cmd.expected_version, current_version=location.version,
+        )
+    if not location.locked:
+        raise InvalidTransitionError("Location is not locked", current_status="unlocked")
+    if not cmd.reason.strip():
+        raise ValidationFailedError("reason is required to unlock a warehouse location")
+
+    old_lock_reason = location.lock_reason
+    location.locked = False
+    location.lock_reason = None
+    location.locked_by_user_id = None
+    location.locked_at = None
+    location.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=location.site_id, aggregate_type="warehouse_location", aggregate_id=location.id,
+        aggregate_version=location.version, action="StatusChanged", actor_id=actor_user_id,
+        correlation_id=correlation_id, reason=cmd.reason,
+        old_value={"locked": True, "lock_reason": old_lock_reason}, new_value={"locked": False},
+    )
+    await write_outbox_event(
+        session, event_type="WarehouseLocationUnlocked", aggregate_type="warehouse_location", aggregate_id=location.id,
+        aggregate_version=location.version, payload={"id": str(location.id)}, correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=location.site_id, command_type="UnlockLocation", aggregate_type="warehouse_location",
+        aggregate_id=location.id, expected_version=cmd.expected_version, resulting_version=location.version,
+        idempotency_key=cmd.idempotency_key, command_hash=payload_hash, actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=location.id, resulting_version=location.version,
+        audit_event_id=audit_event.id, correlation_id=correlation_id,
+    )
+
+
+async def _assert_location_unlocked(session: AsyncSession, location_id: uuid.UUID | None) -> None:
+    if location_id is None:
+        return
+    location = await session.get(WarehouseLocation, location_id)
+    if location is not None and location.locked:
+        raise LocationLockedError(
+            "Location is locked for a physical count; stock cannot move in or out until it is unlocked (SG-084)",
+            location_id=str(location_id), lock_reason=location.lock_reason,
+        )
+
+
 # Section 6 selection algorithm's zone-compatibility rule (INV-FR-002/008): ordinary engineering decision
 # -- the spec gives no explicit status->zone_type compatibility table. A zone_type not in this map (return/
 # destruction/controlled_temperature/sterile_component/other) has no additional constraint.
@@ -1770,12 +2286,35 @@ def _effective_status(lot: MaterialLot, container: MaterialContainer | None) -> 
     return lot.status
 
 
-def _is_eligible(lot: MaterialLot, container: MaterialContainer | None, today: date) -> bool:
+async def _supplier_status_for_lot(session: AsyncSession, lot: MaterialLot | None) -> str | None:
+    """SG-097 (MAT-013 half). Single-lot counterpart to the `Supplier.status` outer-join used by the
+    joined-query `_is_eligible` callers -- for a caller that already has one `MaterialLot` in hand."""
+    if lot is None or lot.supplier_id is None:
+        return None
+    supplier = await session.get(Supplier, lot.supplier_id)
+    return supplier.status if supplier is not None else None
+
+
+def _is_eligible(
+    lot: MaterialLot, container: MaterialContainer | None, today: date, supplier_status: str | None = None
+) -> bool:
+    """MAT-013. `supplier_status` is the lot's `Supplier.status` at evaluation time, or `None` when the
+    lot has no `supplier_id` or the caller has not looked one up -- a missing value never blocks (same
+    "no info, no check" treatment `_effective_status`'s own container-override already uses), so this
+    stays backward compatible for any caller not yet updated to pass it.
+
+    SG-097 (MAT-013 half, 2026-09-22): reuses the exact `!= "approved"` inequality RCV-FR-005's own
+    `examine_receipt()` check already established for the same `Supplier.status` field (draft/
+    under_qualification/suspended/disqualified all block), rather than special-casing only "suspended" --
+    consistent with the one precedent this codebase already has for this exact comparison, not a new
+    regulated rule invented here."""
     if _effective_status(lot, container) != "released":
         return False
     if lot.expiry_date is not None and lot.expiry_date < today:
         return False
     if lot.retest_date is not None and lot.retest_date < today:
+        return False
+    if supplier_status is not None and supplier_status != "approved":
         return False
     return True
 
@@ -1820,7 +2359,7 @@ async def get_inventory_availability(
     today = datetime.now(timezone.utc).date()
     rows = (
         await session.execute(
-            select(MaterialLot, MaterialContainer, InventoryBalanceProjection, WarehouseLocation)
+            select(MaterialLot, MaterialContainer, InventoryBalanceProjection, WarehouseLocation, Supplier.status)
             .join(MaterialContainer, MaterialContainer.material_lot_id == MaterialLot.id)
             .join(
                 InventoryBalanceProjection,
@@ -1828,6 +2367,7 @@ async def get_inventory_availability(
                 & (InventoryBalanceProjection.container_id == MaterialContainer.id),
             )
             .join(WarehouseLocation, WarehouseLocation.id == InventoryBalanceProjection.location_id)
+            .outerjoin(Supplier, Supplier.id == MaterialLot.supplier_id)
             .where(
                 MaterialLot.material_id == material_id,
                 MaterialLot.site_id == site_id,
@@ -1848,8 +2388,8 @@ async def get_inventory_availability(
             "uom": container.uom,
             "expiry_date": lot.expiry_date.isoformat() if lot.expiry_date else None,
         }
-        for lot, container, balance, location in rows
-        if _is_eligible(lot, container, today)
+        for lot, container, balance, location, supplier_status in rows
+        if _is_eligible(lot, container, today, supplier_status)
     ]
 
 
@@ -1865,6 +2405,42 @@ class CreateInventoryReservationCommand(CommandEnvelope):
     site_id: uuid.UUID
     quantity: Decimal
     uom: str
+    # Client Topic 8 (SG-083, project-owner-directed): a documented, justified exception to the default
+    # oldest-approved-stock-first rotation. Supplying override_lot_id skips FEFO in favor of this lot, but
+    # the reservation lands in "override_pending" -- no stock is actually held -- until a QA Releaser
+    # approves it via approve_reservation_override (see below).
+    override_lot_id: uuid.UUID | None = None
+    override_reason: str | None = None
+
+
+async def _fefo_default_candidate(
+    session: AsyncSession, *, material_id: uuid.UUID, site_id: uuid.UUID, quantity: Decimal, today
+) -> uuid.UUID | None:
+    """What the unmodified oldest-approved-stock-first rule would pick -- used both as the normal
+    selection path and, when overridden, as the audit-trail record of the forgone default (Topic 8)."""
+    candidates = (
+        await session.execute(
+            select(MaterialLot, MaterialContainer, InventoryBalanceProjection, Supplier.status)
+            .join(MaterialContainer, MaterialContainer.material_lot_id == MaterialLot.id)
+            .join(
+                InventoryBalanceProjection,
+                (InventoryBalanceProjection.material_lot_id == MaterialLot.id)
+                & (InventoryBalanceProjection.container_id == MaterialContainer.id),
+            )
+            .outerjoin(Supplier, Supplier.id == MaterialLot.supplier_id)
+            .where(
+                MaterialLot.material_id == material_id,
+                MaterialLot.site_id == site_id,
+                MaterialContainer.container_status == "active",
+                InventoryBalanceProjection.available >= quantity,
+            )
+            .order_by(MaterialLot.expiry_date.asc().nullslast(), MaterialLot.received_at.asc())
+        )
+    ).all()
+    for lot, container, _balance, supplier_status in candidates:
+        if _is_eligible(lot, container, today, supplier_status):
+            return lot.id
+    return None
 
 
 async def create_inventory_reservation(
@@ -1883,15 +2459,122 @@ async def create_inventory_reservation(
         raise NotFoundError("Batch not found")
 
     today = datetime.now(timezone.utc).date()
+
+    if cmd.override_lot_id is not None:
+        if not cmd.override_reason or not cmd.override_reason.strip():
+            raise ValidationFailedError("override_reason is required to override the FEFO rotation (Client Topic 8)")
+
+        overridden_lot = await session.get(MaterialLot, cmd.override_lot_id)
+        if overridden_lot is None or overridden_lot.material_id != cmd.material_id or overridden_lot.site_id != cmd.site_id:
+            raise NotFoundError("Override lot not found for this material/site")
+
+        eligible_candidate = (
+            await session.execute(
+                select(MaterialContainer, InventoryBalanceProjection, Supplier.status)
+                .join(
+                    InventoryBalanceProjection,
+                    (InventoryBalanceProjection.material_lot_id == MaterialContainer.material_lot_id)
+                    & (InventoryBalanceProjection.container_id == MaterialContainer.id),
+                )
+                .outerjoin(Supplier, Supplier.id == overridden_lot.supplier_id)
+                .where(
+                    MaterialContainer.material_lot_id == overridden_lot.id,
+                    MaterialContainer.container_status == "active",
+                    InventoryBalanceProjection.available >= cmd.quantity,
+                )
+            )
+        ).first()
+        if eligible_candidate is None or not _is_eligible(overridden_lot, eligible_candidate[0], today, eligible_candidate[2]):
+            raise ValidationFailedError(
+                "Override lot is not eligible (released/non-expired/non-retest-due) or lacks sufficient "
+                "available quantity"
+            )
+        chosen_container, balance_row, _supplier_status = eligible_candidate
+
+        fefo_default_lot_id = await _fefo_default_candidate(
+            session, material_id=cmd.material_id, site_id=cmd.site_id, quantity=cmd.quantity, today=today
+        )
+
+        cmd_uom_id = await _resolve_uom_id_strict(session, cmd.uom)
+        reservation = InventoryReservation(
+            site_id=cmd.site_id,
+            batch_id=cmd.batch_id,
+            material_id=cmd.material_id,
+            material_lot_id=overridden_lot.id,
+            container_id=chosen_container.id,
+            location_id=balance_row.location_id,
+            quantity=cmd.quantity,
+            uom=cmd.uom,
+            uom_id=cmd_uom_id,
+            status="override_pending",
+            fefo_overridden=True,
+            override_reason=cmd.override_reason,
+            fefo_default_lot_id=fefo_default_lot_id,
+            requested_by_user_id=actor_user_id,
+            version=1,
+        )
+        session.add(reservation)
+        await session.flush()
+
+        correlation_id = uuid.uuid4()
+        audit_event = await write_audit_event(
+            session,
+            site_id=cmd.site_id,
+            aggregate_type="inventory_reservation",
+            aggregate_id=reservation.id,
+            aggregate_version=1,
+            action="Created",
+            actor_id=actor_user_id,
+            correlation_id=correlation_id,
+            new_value={
+                "material_lot_id": str(overridden_lot.id),
+                "container_id": str(chosen_container.id),
+                "quantity": str(cmd.quantity),
+                "fefo_overridden": True,
+                "fefo_default_lot_id": str(fefo_default_lot_id) if fefo_default_lot_id else None,
+            },
+            reason=cmd.override_reason,
+        )
+        await write_outbox_event(
+            session,
+            event_type="InventoryReservationOverrideRequested",
+            aggregate_type="inventory_reservation",
+            aggregate_id=reservation.id,
+            aggregate_version=1,
+            payload={"id": str(reservation.id), "batch_id": str(cmd.batch_id), "quantity": str(cmd.quantity)},
+            correlation_id=correlation_id,
+        )
+        receipt = await record_command_receipt(
+            session,
+            site_id=cmd.site_id,
+            command_type="CreateInventoryReservation",
+            aggregate_type="inventory_reservation",
+            aggregate_id=reservation.id,
+            expected_version=None,
+            resulting_version=1,
+            idempotency_key=cmd.idempotency_key,
+            command_hash=payload_hash,
+            actor_user_id=actor_user_id,
+            payload_hash=payload_hash,
+        )
+        return MutationReceipt(
+            command_id=receipt.id,
+            aggregate_id=reservation.id,
+            resulting_version=1,
+            audit_event_id=audit_event.id,
+            correlation_id=correlation_id,
+        )
+
     candidates = (
         await session.execute(
-            select(MaterialLot, MaterialContainer, InventoryBalanceProjection)
+            select(MaterialLot, MaterialContainer, InventoryBalanceProjection, Supplier.status)
             .join(MaterialContainer, MaterialContainer.material_lot_id == MaterialLot.id)
             .join(
                 InventoryBalanceProjection,
                 (InventoryBalanceProjection.material_lot_id == MaterialLot.id)
                 & (InventoryBalanceProjection.container_id == MaterialContainer.id),
             )
+            .outerjoin(Supplier, Supplier.id == MaterialLot.supplier_id)
             .where(
                 MaterialLot.material_id == cmd.material_id,
                 MaterialLot.site_id == cmd.site_id,
@@ -1905,8 +2588,8 @@ async def create_inventory_reservation(
     chosen_balance_id = None
     chosen_lot = None
     chosen_container = None
-    for lot, container, balance in candidates:
-        if _is_eligible(lot, container, today):
+    for lot, container, balance, supplier_status in candidates:
+        if _is_eligible(lot, container, today, supplier_status):
             chosen_balance_id = balance.id
             chosen_lot = lot
             chosen_container = container
@@ -1935,7 +2618,7 @@ async def create_inventory_reservation(
     balance.available -= cmd.quantity
     balance.version += 1
 
-    cmd_uom_id = await _resolve_uom_id(session, cmd.uom)
+    cmd_uom_id = await _resolve_uom_id_strict(session, cmd.uom)
     txn = InventoryTransaction(
         site_id=cmd.site_id,
         material_lot_id=chosen_lot.id,
@@ -2184,6 +2867,284 @@ async def release_inventory_reservation(
     )
 
 
+# ApproveReservationOverride/RejectReservationOverride -- Client Topic 8 (SG-083, project-owner-directed):
+# "approval from an authorized Quality/QA person or designated quality approver" -- same QA Releaser,
+# independent-of-requester, signed shape `release_inventory_reservation` (Document 106 row 46) already
+# uses, applied to a new application-level signature-policy row (no Document 106 row names this action
+# either, but the client's own answer is the authorization to require one, same precedent as every other
+# client-decision-adds-a-signature case this session). Approval is where the actual stock hold happens --
+# an unapproved override never touched the ledger.
+class ApproveReservationOverrideCommand(CommandEnvelope):
+    expected_version: int
+    reason: str
+    challenge_id: uuid.UUID
+    reauth_password: str
+
+
+async def approve_reservation_override(
+    session: AsyncSession,
+    reservation_id: uuid.UUID,
+    cmd: ApproveReservationOverrideCommand,
+    actor_user_id: uuid.UUID,
+    site_id: uuid.UUID,
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    result = await session.execute(
+        select(InventoryReservation).where(InventoryReservation.id == reservation_id).with_for_update()
+    )
+    reservation = result.scalar_one_or_none()
+    if reservation is None:
+        raise NotFoundError("Inventory reservation not found")
+    if reservation.version != cmd.expected_version:
+        raise StaleVersionError(
+            "Inventory reservation was modified by another actor since it was read",
+            expected_version=cmd.expected_version,
+            current_version=reservation.version,
+        )
+    if reservation.status != "override_pending":
+        raise InvalidTransitionError(
+            "Only a pending FEFO override can be approved", current_status=reservation.status
+        )
+
+    await evaluate_policy(session, actor_user_id, action="inventory_reservation.approve_override", site_id=site_id)
+    if actor_user_id == reservation.requested_by_user_id:
+        raise ValidationFailedError(
+            "Approver must be independent of the requester of this override (Client Topic 8)"
+        )
+
+    policy = await signature_service.resolve_signature_requirement(
+        session, record_type="inventory_reservation", action="approve_override"
+    )
+    if policy.reason_required and not cmd.reason:
+        raise ValidationFailedError("reason is required to approve this FEFO override")
+    signature_id = None
+    if policy.signature_required:
+        actor = await session.get(User, actor_user_id)
+        if actor is None or not verify_password(cmd.reauth_password, actor.password_hash):
+            raise MissingSignatureError("Fresh step-up authentication failed")
+        challenge = await signature_service.consume_challenge(
+            session,
+            challenge_id=cmd.challenge_id,
+            user_id=actor_user_id,
+            record_version=reservation.version,
+            record_hash=reservation_record_hash(reservation),
+        )
+        signature = await signature_service.sign(
+            session, challenge=challenge, auth_context={"method": "password_reauth"}
+        )
+        signature_id = signature.id
+
+    balance = await _lock_or_create_balance(
+        session,
+        site_id=site_id,
+        material_lot_id=reservation.material_lot_id,
+        container_id=reservation.container_id,
+        location_id=reservation.location_id,
+    )
+    if balance.available < reservation.quantity:
+        raise ValidationFailedError(
+            "Available quantity changed since the override was requested; reject and resubmit",
+            available=str(balance.available),
+            requested=str(reservation.quantity),
+        )
+    balance.reserved += reservation.quantity
+    balance.available -= reservation.quantity
+    balance.version += 1
+
+    txn = InventoryTransaction(
+        site_id=site_id,
+        material_lot_id=reservation.material_lot_id,
+        container_id=reservation.container_id,
+        transaction_type="RESERVE",
+        quantity=reservation.quantity,
+        uom=reservation.uom,
+        uom_id=reservation.uom_id,
+        to_location_id=reservation.location_id,
+        reference_type="batch",
+        reference_id=reservation.batch_id,
+        actor_type="human",
+        actor_id=str(actor_user_id),
+    )
+    session.add(txn)
+    await session.flush()
+    balance.last_transaction_id = txn.id
+
+    old_status = reservation.status
+    reservation.status = "active"
+    reservation.override_approved_by_user_id = actor_user_id
+    reservation.override_approved_at = datetime.now(timezone.utc)
+    reservation.override_signature_id = signature_id
+    reservation.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session,
+        site_id=site_id,
+        aggregate_type="inventory_reservation",
+        aggregate_id=reservation.id,
+        aggregate_version=reservation.version,
+        action="Approved",
+        actor_id=actor_user_id,
+        correlation_id=correlation_id,
+        old_value={"status": old_status},
+        new_value={"status": reservation.status},
+        signature_id=signature_id,
+        reason=cmd.reason,
+    )
+    await write_outbox_event(
+        session,
+        event_type="InventoryReservationOverrideApproved",
+        aggregate_type="inventory_reservation",
+        aggregate_id=reservation.id,
+        aggregate_version=reservation.version,
+        payload={"id": str(reservation.id)},
+        correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session,
+        site_id=site_id,
+        command_type="ApproveReservationOverride",
+        aggregate_type="inventory_reservation",
+        aggregate_id=reservation.id,
+        expected_version=cmd.expected_version,
+        resulting_version=reservation.version,
+        idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash,
+        actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id,
+        aggregate_id=reservation.id,
+        resulting_version=reservation.version,
+        audit_event_id=audit_event.id,
+        signature_id=signature_id,
+        correlation_id=correlation_id,
+    )
+
+
+class RejectReservationOverrideCommand(CommandEnvelope):
+    expected_version: int
+    reason: str
+    challenge_id: uuid.UUID
+    reauth_password: str
+
+
+async def reject_reservation_override(
+    session: AsyncSession,
+    reservation_id: uuid.UUID,
+    cmd: RejectReservationOverrideCommand,
+    actor_user_id: uuid.UUID,
+    site_id: uuid.UUID,
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    result = await session.execute(
+        select(InventoryReservation).where(InventoryReservation.id == reservation_id).with_for_update()
+    )
+    reservation = result.scalar_one_or_none()
+    if reservation is None:
+        raise NotFoundError("Inventory reservation not found")
+    if reservation.version != cmd.expected_version:
+        raise StaleVersionError(
+            "Inventory reservation was modified by another actor since it was read",
+            expected_version=cmd.expected_version,
+            current_version=reservation.version,
+        )
+    if reservation.status != "override_pending":
+        raise InvalidTransitionError(
+            "Only a pending FEFO override can be rejected", current_status=reservation.status
+        )
+
+    await evaluate_policy(session, actor_user_id, action="inventory_reservation.reject_override", site_id=site_id)
+    if actor_user_id == reservation.requested_by_user_id:
+        raise ValidationFailedError(
+            "Rejecter must be independent of the requester of this override (Client Topic 8)"
+        )
+
+    policy = await signature_service.resolve_signature_requirement(
+        session, record_type="inventory_reservation", action="reject_override"
+    )
+    if policy.reason_required and not cmd.reason:
+        raise ValidationFailedError("reason is required to reject this FEFO override")
+    signature_id = None
+    if policy.signature_required:
+        actor = await session.get(User, actor_user_id)
+        if actor is None or not verify_password(cmd.reauth_password, actor.password_hash):
+            raise MissingSignatureError("Fresh step-up authentication failed")
+        challenge = await signature_service.consume_challenge(
+            session,
+            challenge_id=cmd.challenge_id,
+            user_id=actor_user_id,
+            record_version=reservation.version,
+            record_hash=reservation_record_hash(reservation),
+        )
+        signature = await signature_service.sign(
+            session, challenge=challenge, auth_context={"method": "password_reauth"}
+        )
+        signature_id = signature.id
+
+    old_status = reservation.status
+    reservation.status = "override_rejected"
+    reservation.override_approved_by_user_id = actor_user_id
+    reservation.override_approved_at = datetime.now(timezone.utc)
+    reservation.override_signature_id = signature_id
+    reservation.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session,
+        site_id=site_id,
+        aggregate_type="inventory_reservation",
+        aggregate_id=reservation.id,
+        aggregate_version=reservation.version,
+        action="Rejected",
+        actor_id=actor_user_id,
+        correlation_id=correlation_id,
+        old_value={"status": old_status},
+        new_value={"status": reservation.status},
+        signature_id=signature_id,
+        reason=cmd.reason,
+    )
+    await write_outbox_event(
+        session,
+        event_type="InventoryReservationOverrideRejected",
+        aggregate_type="inventory_reservation",
+        aggregate_id=reservation.id,
+        aggregate_version=reservation.version,
+        payload={"id": str(reservation.id)},
+        correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session,
+        site_id=site_id,
+        command_type="RejectReservationOverride",
+        aggregate_type="inventory_reservation",
+        aggregate_id=reservation.id,
+        expected_version=cmd.expected_version,
+        resulting_version=reservation.version,
+        idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash,
+        actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id,
+        aggregate_id=reservation.id,
+        resulting_version=reservation.version,
+        audit_event_id=audit_event.id,
+        signature_id=signature_id,
+        correlation_id=correlation_id,
+    )
+
+
 # ---------------------------------------------------------------------------
 # CreateInventoryTransfer — INV-FR-008/009. `from_location_id=None` is this container's first ledger
 # entry (put-away after Document 19 quarantine — no dedicated "record receipt into a location" endpoint
@@ -2231,6 +3192,8 @@ async def create_inventory_transfer(
             "True inter-site transfer with destination-site re-identification is not built this pass "
             "(SG-085) -- destination location must be at the lot's own site"
         )
+    await _assert_location_unlocked(session, cmd.to_location_id)
+    await _assert_location_unlocked(session, cmd.from_location_id)
 
     effective_status = _effective_status(lot, container)
     required_zone = _ZONE_STATUS_COMPAT.get(effective_status)
@@ -2481,6 +3444,24 @@ async def split_container(
     container.container_status = "split"
     container.version += 1
 
+    # SG-085 (Task 2, 2026-09-23): GEN-FR-015 "one lot split into many" -> SPLIT_FROM, a direct catalogue
+    # match (Document 13 SS5), unlike merge/transfer (see SG-085's register entry for why those two are
+    # not built here). Same get_or_create_node/create_edge shape as record_consumption()'s existing
+    # material_lot -> drug_batch wiring.
+    parent_node = await genealogy_service.get_or_create_node(
+        session, site_id=site_id, node_type="material_container", authoritative_record_type="material_container",
+        authoritative_record_id=container.id, business_ref=container.container_code, actor_user_id=actor_user_id,
+    )
+    for child, qty in children:
+        child_node = await genealogy_service.get_or_create_node(
+            session, site_id=site_id, node_type="material_container", authoritative_record_type="material_container",
+            authoritative_record_id=child.id, business_ref=child.container_code, actor_user_id=actor_user_id,
+        )
+        await genealogy_service.create_edge(
+            session, from_node_id=parent_node.id, to_node_id=child_node.id, edge_type="SPLIT_FROM",
+            quantity=qty, uom=container.uom, source_event_id=child.id, actor_user_id=actor_user_id,
+        )
+
     correlation_id = uuid.uuid4()
     audit_event = await write_audit_event(
         session,
@@ -2601,6 +3582,8 @@ async def merge_containers(
     session.add(merged)
     await session.flush()
 
+    original_quantities = {c.id: c.current_quantity for c in containers}
+
     for c in containers:
         balances = (
             await session.execute(
@@ -2628,6 +3611,25 @@ async def merge_containers(
         c.current_quantity = Decimal("0")
         c.container_status = "merged"
         c.version += 1
+
+    # Client_Decisions_Neededanswers Topic 2 (2026-10-02, project-owner-directed): closes SG-085's
+    # "merge investigated, not built" gap -- a MERGED_FROM edge from the new container's genealogy node
+    # back to each source container's node, quantity-tagged, same get_or_create_node/create_edge shape
+    # split_container already established (mirrored, not reinvented).
+    merged_node = await genealogy_service.get_or_create_node(
+        session, site_id=site_id, node_type="material_container", authoritative_record_type="material_container",
+        authoritative_record_id=merged.id, business_ref=merged.container_code, actor_user_id=actor_user_id,
+    )
+    for c in containers:
+        source_node = await genealogy_service.get_or_create_node(
+            session, site_id=site_id, node_type="material_container", authoritative_record_type="material_container",
+            authoritative_record_id=c.id, business_ref=c.container_code, actor_user_id=actor_user_id,
+        )
+        await genealogy_service.create_edge(
+            session, from_node_id=source_node.id, to_node_id=merged_node.id, edge_type="MERGED_FROM",
+            quantity=original_quantities[c.id], uom=c.uom, source_event_id=merged.id,
+            actor_user_id=actor_user_id,
+        )
 
     correlation_id = uuid.uuid4()
     audit_event = await write_audit_event(
@@ -2673,9 +3675,15 @@ async def merge_containers(
 
 
 # ---------------------------------------------------------------------------
-# CreateCycleCount — INV-FR-020/022. No Document 106 row resolves an "adjustment approval" signature
-# despite the spec's own prose implying one -- built unsigned/RBAC-gated only (SG-084), matching this
-# project's hard "no Document 106 row = unsigned" precedent rather than guessing a role/meaning.
+# CreateCycleCount — INV-FR-020/022. Client Topic 7 Q13 (SG-084, project-owner-directed): "Inventory count
+# adjustments should require a second authorized person's review and electronic approval before the
+# correction is finalized. The system should record the original quantity, counted quantity, adjustment
+# made, reason, and both users involved." Rather than invent a parallel signed approval flow (there is no
+# Document 106 row for "cycle count approval" specifically), a counted quantity that differs from on-hand
+# now opens an `InventoryAdjustmentRequest` -- the already-built, already-signed (Document 106 row 55,
+# CON-FR-013/014 independence-checked) request/approve path that already captures exactly the fields the
+# client asked for. A matching count (no variance) still records a plain unsigned "Counted" audit event,
+# since there is nothing to approve.
 # ---------------------------------------------------------------------------
 
 
@@ -2708,34 +3716,22 @@ async def create_cycle_count(
 
     old_on_hand = balance.on_hand
     delta = cmd.counted_quantity - old_on_hand
-    txn = None
     if delta != 0:
-        new_available = balance.available + delta
-        if new_available < 0:
+        if not cmd.reason:
             raise ValidationFailedError(
-                "Counted quantity is less than the quantity currently reserved at this location",
-                available_after_count=str(new_available),
+                "reason is required when the counted quantity differs from on-hand (CON-FR-013)"
             )
-        txn = InventoryTransaction(
-            site_id=site_id,
+        adjustment_cmd = CreateInventoryAdjustmentRequestCommand(
+            idempotency_key=cmd.idempotency_key,
             material_lot_id=cmd.material_lot_id,
             container_id=cmd.container_id,
-            transaction_type="ADJUST_POSITIVE" if delta > 0 else "ADJUST_NEGATIVE",
-            quantity=abs(delta),
-            uom="unit",
-            uom_id=await _resolve_uom_id(session, "unit"),
-            to_location_id=cmd.location_id if delta > 0 else None,
-            from_location_id=cmd.location_id if delta < 0 else None,
-            reference_type="cycle_count",
-            actor_type="human",
-            actor_id=str(actor_user_id),
+            location_id=cmd.location_id,
+            expected_quantity=old_on_hand,
+            observed_quantity=cmd.counted_quantity,
+            reason=cmd.reason,
+            evidence={"source": "cycle_count"},
         )
-        session.add(txn)
-        await session.flush()
-        balance.on_hand = cmd.counted_quantity
-        balance.available = new_available
-        balance.last_transaction_id = txn.id
-        balance.version += 1
+        return await create_inventory_adjustment_request(session, adjustment_cmd, actor_user_id, site_id)
 
     correlation_id = uuid.uuid4()
     audit_event = await write_audit_event(
@@ -2744,20 +3740,20 @@ async def create_cycle_count(
         aggregate_type="inventory_balance_projection",
         aggregate_id=balance.id,
         aggregate_version=balance.version,
-        action="Adjusted" if delta != 0 else "Counted",
+        action="Counted",
         actor_id=actor_user_id,
         correlation_id=correlation_id,
         old_value={"on_hand": str(old_on_hand)},
-        new_value={"on_hand": str(balance.on_hand), "delta": str(delta)},
+        new_value={"on_hand": str(balance.on_hand), "delta": "0"},
         reason=cmd.reason,
     )
     await write_outbox_event(
         session,
-        event_type="InventoryAdjusted" if delta != 0 else "InventoryCounted",
+        event_type="InventoryCounted",
         aggregate_type="inventory_balance_projection",
         aggregate_id=balance.id,
         aggregate_version=balance.version,
-        payload={"balance_id": str(balance.id), "delta": str(delta)},
+        payload={"balance_id": str(balance.id), "delta": "0"},
         correlation_id=correlation_id,
     )
     receipt = await record_command_receipt(
@@ -2906,22 +3902,58 @@ def _assert_dispensing_version(order: DispensingOrder, expected_version: int) ->
 
 
 # ---------------------------------------------------------------------------
-# CreateDispensingOrder — DSP-FR-001. Unsigned (SG-087). target_qty/tolerance_low/tolerance_high are
-# caller-supplied captured values -- no target-calculation or tolerance-rule execution mode exists
-# anywhere in this codebase (SG-089), only the rules engine's PASS/FAIL gate evaluation.
+# CreateDispensingOrder — DSP-FR-001. Unsigned (SG-087). SG-094 (project-owner-directed, Topic 5):
+# target_qty/target_uom/tolerance_low/tolerance_high are no longer caller-supplied -- they are derived
+# from the batch's released recipe `RecipeMaterialRequirement` at creation time, the same resolution
+# chain `_recipe_material_requirements_for_step` (batch_execution/commands.py) already uses for the live
+# execution path confirmed to be the real `recipe_master` system (not a disconnected stub). A manual
+# value is only reachable afterward via `override_dispensing_order_target` (Supervisor/Admin, mandatory
+# reason, no signature -- mirrors `batch_step.role_override`), and only while state == "created".
 # ---------------------------------------------------------------------------
+
+
+async def _recipe_material_requirement_for_dispensing(
+    session: AsyncSession, batch: Batch, batch_step: BatchStep, material_id: uuid.UUID
+) -> RecipeMaterialRequirement | None:
+    """Same stable_step_code lookup `_recipe_material_requirements_for_step`
+    (batch_execution/commands.py:863-876) uses, narrowed to the single requirement whose
+    `material_spec_version_id` (or `alternative_material_spec_version_id` when
+    `substitution_allowed`) resolves to `material_id`."""
+    graph = await recipe_master_service.get_graph(session, batch.recipe_version_id)
+    code_by_step_id = {s.id: s.stable_step_code for s in graph["steps"]}
+    step_id_by_code = {code: sid for sid, code in code_by_step_id.items()}
+    recipe_step_id = step_id_by_code.get(batch_step.recipe_step_code)
+    candidates = [m for m in graph["material_requirements"] if m.step_id == recipe_step_id]
+    if not candidates:
+        return None
+    spec_version_ids = {m.material_spec_version_id for m in candidates}
+    spec_version_ids |= {
+        m.alternative_material_spec_version_id for m in candidates if m.alternative_material_spec_version_id
+    }
+    spec_versions = (
+        await session.execute(
+            select(MaterialSpecificationVersion).where(MaterialSpecificationVersion.id.in_(spec_version_ids))
+        )
+    ).scalars().all()
+    material_id_by_spec_version = {sv.id: sv.material_id for sv in spec_versions}
+    for req in candidates:
+        if material_id_by_spec_version.get(req.material_spec_version_id) == material_id:
+            return req
+        if (
+            req.substitution_allowed
+            and req.alternative_material_spec_version_id is not None
+            and material_id_by_spec_version.get(req.alternative_material_spec_version_id) == material_id
+        ):
+            return req
+    return None
 
 
 class CreateDispensingOrderCommand(CommandEnvelope):
     site_id: uuid.UUID
     batch_id: uuid.UUID
-    batch_step_id: uuid.UUID | None = None
+    batch_step_id: uuid.UUID
     material_id: uuid.UUID
     material_spec_version_id: uuid.UUID | None = None
-    target_qty: Decimal
-    target_uom: str
-    tolerance_low: Decimal
-    tolerance_high: Decimal
 
 
 async def create_dispensing_order(
@@ -2932,29 +3964,48 @@ async def create_dispensing_order(
     if existing is not None:
         return _receipt_from_existing(existing)
 
-    if cmd.target_qty <= 0:
-        raise ValidationFailedError("target_qty must be positive")
-    if cmd.tolerance_low > cmd.tolerance_high:
-        raise ValidationFailedError("tolerance_low must not exceed tolerance_high")
-
     batch = await session.get(Batch, cmd.batch_id)
     if batch is None:
         raise NotFoundError("Batch not found")
     material = await session.get(Material, cmd.material_id)
     if material is None:
         raise NotFoundError("Material not found")
+    batch_step = await session.get(BatchStep, cmd.batch_step_id)
+    if batch_step is None or batch_step.batch_id != cmd.batch_id:
+        raise NotFoundError("Batch step not found on this batch")
+
+    requirement = await _recipe_material_requirement_for_dispensing(session, batch, batch_step, cmd.material_id)
+    if requirement is None:
+        raise ValidationFailedError(
+            "No released recipe material requirement found for this material at this step (SG-094)",
+            material_id=str(cmd.material_id), batch_step_id=str(cmd.batch_step_id),
+        )
+    if requirement.target_value is None or requirement.min_value is None or requirement.max_value is None or not requirement.uom:
+        raise ValidationFailedError(
+            "Recipe material requirement is missing a target/tolerance/UOM declaration (SG-094)",
+            requirement_id=str(requirement.id),
+        )
+    target_qty = requirement.target_value
+    tolerance_low = requirement.min_value
+    tolerance_high = requirement.max_value
+    target_uom = requirement.uom
+    if target_qty <= 0:
+        raise ValidationFailedError("target_qty must be positive")
+    if tolerance_low > tolerance_high:
+        raise ValidationFailedError("tolerance_low must not exceed tolerance_high")
 
     order = DispensingOrder(
         site_id=cmd.site_id,
         batch_id=cmd.batch_id,
         batch_step_id=cmd.batch_step_id,
         material_id=cmd.material_id,
-        material_spec_version_id=cmd.material_spec_version_id,
-        target_qty=cmd.target_qty,
-        target_uom=cmd.target_uom,
-        target_uom_id=await _resolve_uom_id(session, cmd.target_uom),
-        tolerance_low=cmd.tolerance_low,
-        tolerance_high=cmd.tolerance_high,
+        material_spec_version_id=cmd.material_spec_version_id or requirement.material_spec_version_id,
+        target_qty=target_qty,
+        target_uom=target_uom,
+        target_uom_id=requirement.uom_id or await _resolve_uom_id_strict(session, target_uom),
+        tolerance_low=tolerance_low,
+        tolerance_high=tolerance_high,
+        target_from_recipe=True,
         state="created",
         requested_by_user_id=actor_user_id,
         version=1,
@@ -2972,7 +4023,7 @@ async def create_dispensing_order(
         action="Created",
         actor_id=actor_user_id,
         correlation_id=correlation_id,
-        new_value={"material_id": str(cmd.material_id), "target_qty": str(cmd.target_qty)},
+        new_value={"material_id": str(cmd.material_id), "target_qty": str(target_qty), "target_from_recipe": True},
     )
     await write_outbox_event(
         session,
@@ -3000,6 +4051,113 @@ async def create_dispensing_order(
         command_id=receipt.id,
         aggregate_id=order.id,
         resulting_version=1,
+        audit_event_id=audit_event.id,
+        correlation_id=correlation_id,
+    )
+
+
+class OverrideDispensingOrderTargetCommand(CommandEnvelope):
+    expected_version: int
+    target_qty: Decimal
+    target_uom: str
+    tolerance_low: Decimal
+    tolerance_high: Decimal
+    override_reason: str
+
+
+async def override_dispensing_order_target(
+    session: AsyncSession,
+    order_id: uuid.UUID,
+    cmd: OverrideDispensingOrderTargetCommand,
+    actor_user_id: uuid.UUID,
+    site_id: uuid.UUID,
+) -> MutationReceipt:
+    """Topic 5 override path (SG-094): RBAC-only (Supervisor/Admin via `dispensing_order.override_target`),
+    mandatory reason, no signature -- mirrors `_enforce_step_role`'s role-override precedent
+    (batch_execution/commands.py:540-564) rather than inventing a signature ceremony for a record whose
+    dispensing has not yet started. Only usable while `order.state == "created"`, so the overridden
+    values are what `start_dispensing`/`complete_dispensing` actually evaluate against."""
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    if not cmd.override_reason or not cmd.override_reason.strip():
+        raise ValidationFailedError("override_reason is required")
+    if cmd.target_qty <= 0:
+        raise ValidationFailedError("target_qty must be positive")
+    if cmd.tolerance_low > cmd.tolerance_high:
+        raise ValidationFailedError("tolerance_low must not exceed tolerance_high")
+
+    order = await _load_dispensing_order_for_update(session, order_id)
+    _assert_dispensing_version(order, cmd.expected_version)
+    if order.state != "created":
+        raise InvalidTransitionError(
+            "Dispensing target can only be overridden before dispensing starts", current_status=order.state
+        )
+
+    await evaluate_policy(session, actor_user_id, action="dispensing_order.override_target", site_id=site_id)
+
+    old_value = {
+        "target_qty": str(order.target_qty), "target_uom": order.target_uom,
+        "tolerance_low": str(order.tolerance_low), "tolerance_high": str(order.tolerance_high),
+        "target_from_recipe": order.target_from_recipe,
+    }
+    order.target_qty = cmd.target_qty
+    order.target_uom = cmd.target_uom
+    order.target_uom_id = await _resolve_uom_id_strict(session, cmd.target_uom)
+    order.tolerance_low = cmd.tolerance_low
+    order.tolerance_high = cmd.tolerance_high
+    order.target_from_recipe = False
+    order.override_reason = cmd.override_reason
+    order.overridden_by_user_id = actor_user_id
+    order.overridden_at = datetime.now(timezone.utc)
+    order.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session,
+        site_id=site_id,
+        aggregate_type="dispensing_order",
+        aggregate_id=order.id,
+        aggregate_version=order.version,
+        action="Changed",
+        actor_id=actor_user_id,
+        correlation_id=correlation_id,
+        reason=cmd.override_reason,
+        old_value=old_value,
+        new_value={
+            "target_qty": str(order.target_qty), "target_uom": order.target_uom,
+            "tolerance_low": str(order.tolerance_low), "tolerance_high": str(order.tolerance_high),
+            "target_from_recipe": order.target_from_recipe, "override_reason": order.override_reason,
+        },
+    )
+    await write_outbox_event(
+        session,
+        event_type="DispensingOrderTargetOverridden",
+        aggregate_type="dispensing_order",
+        aggregate_id=order.id,
+        aggregate_version=order.version,
+        payload={"order_id": str(order.id)},
+        correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session,
+        site_id=site_id,
+        command_type="OverrideDispensingOrderTarget",
+        aggregate_type="dispensing_order",
+        aggregate_id=order.id,
+        expected_version=cmd.expected_version,
+        resulting_version=order.version,
+        idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash,
+        actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id,
+        aggregate_id=order.id,
+        resulting_version=order.version,
         audit_event_id=audit_event.id,
         correlation_id=correlation_id,
     )
@@ -3090,7 +4248,7 @@ async def select_dispensing_source(
     else:
         raise ValidationFailedError("either reservation_id or material_lot_id must be supplied")
 
-    if not _is_eligible(lot, container, today):
+    if not _is_eligible(lot, container, today, await _supplier_status_for_lot(session, lot)):
         raise LotIneligibleError("Selected lot/container is not eligible", current_status=_effective_status(lot, container))
     if cmd.scanned_container_code is not None and container is not None:
         if cmd.scanned_container_code != container.container_code:
@@ -3571,6 +4729,16 @@ async def complete_dispensing(
     if order.state not in ("started", "verified"):
         raise InvalidTransitionError("Dispensing is not ready to complete", current_status=order.state)
 
+    # SG-095 (project-owner-directed, Topic 10): a critical material's dispense cannot complete on the
+    # performer's own reading alone -- it must have passed through the existing independent `verify`
+    # step first (VerifierRequiredError + the performer != verifier check already enforced there).
+    dispensed_material = await session.get(Material, order.material_id)
+    if dispensed_material is not None and dispensed_material.critical and order.state != "verified":
+        raise VerifierRequiredError(
+            "Critical material dispensing requires independent verification before it can complete (SG-095)",
+            material_id=str(order.material_id),
+        )
+
     await evaluate_policy(session, actor_user_id, action="dispensing_order.complete", site_id=site_id)
 
     sources = (
@@ -3583,15 +4751,24 @@ async def complete_dispensing(
 
     today = datetime.now(timezone.utc).date()
     total_taken = Decimal("0")
+    correlation_id = uuid.uuid4()
+    genealogy_sources: list[tuple[MaterialLot, Decimal]] = []
     for source in sources:
         qty = cmd.actual_taken_quantities.get(str(source.id))
         if qty is None or qty <= 0:
             raise ValidationFailedError("actual_taken_quantities must include a positive value for every source", source_id=str(source.id))
 
-        lot = await session.get(MaterialLot, source.material_lot_id)
+        lot = (
+            await session.execute(select(MaterialLot).where(MaterialLot.id == source.material_lot_id).with_for_update())
+        ).scalar_one_or_none()
         container = await session.get(MaterialContainer, source.container_id) if source.container_id else None
-        if not _is_eligible(lot, container, today):
+        if not _is_eligible(lot, container, today, await _supplier_status_for_lot(session, lot)):
             raise LotIneligibleError("Source lot is no longer eligible at completion time (DSP-FR-025)", lot_id=str(lot.id))
+        if qty > lot.available_quantity:
+            raise QuantityExceedsAvailableError(
+                "Requested quantity exceeds the lot's available quantity",
+                available=str(lot.available_quantity), requested=str(qty),
+            )
 
         balance = (
             await session.execute(
@@ -3608,6 +4785,7 @@ async def complete_dispensing(
             raise SourceQuantityInsufficientError(
                 "No location holds sufficient available quantity for this source", source_id=str(source.id)
             )
+        await _assert_location_unlocked(session, balance.location_id)
 
         reservation_qty = Decimal("0")
         if source.reservation_id is not None:
@@ -3646,8 +4824,32 @@ async def complete_dispensing(
         await session.flush()
         balance.last_transaction_id = txn.id
 
+        # 2026-09-22, project-owner-directed (Material Lots page showed a permanently stale
+        # `available_quantity` -- nothing but the retired `issue_material_to_batch` path ever touched it,
+        # so a fully-dispensed lot still displayed as 100% available): dispensing is the real point
+        # material leaves the warehouse, so it's the one place `available_quantity` must be decremented
+        # too, alongside the `InventoryBalanceProjection` row this function already maintained correctly.
+        old_available = lot.available_quantity
+        lot.available_quantity -= qty
+        if lot.available_quantity == 0:
+            lot.status = "consumed"
+        lot.version += 1
+        await write_audit_event(
+            session,
+            site_id=site_id,
+            aggregate_type="material_lot",
+            aggregate_id=lot.id,
+            aggregate_version=lot.version,
+            action="Consumed",
+            actor_id=actor_user_id,
+            correlation_id=correlation_id,
+            old_value={"available_quantity": str(old_available)},
+            new_value={"available_quantity": str(lot.available_quantity), "dispensing_order_id": str(order.id)},
+        )
+
         source.actual_taken_quantity = qty
         total_taken += qty
+        genealogy_sources.append((lot, qty))
 
     if not (order.tolerance_low <= total_taken <= order.tolerance_high):
         raise WeightOutOfToleranceError(
@@ -3673,6 +4875,27 @@ async def complete_dispensing(
     session.add(dispensed)
     await session.flush()
 
+    # SG-096 DSP-FR-023 (Task 2, 2026-09-23): "Create source lot/container -> dispensed container -> batch
+    # relationship." DERIVED_FROM is the closest catalogue fit (Document 13 SS5) -- unlike SPLIT_FROM
+    # (single-parent, same-lot-identity conservation, see split_container()), a dispensed container can
+    # draw from multiple, possibly different, source lots (DSP-FR-017 multi-lot dispensing), so this is a
+    # many-to-one derivation, not a split. The dispensed-container -> batch hop already exists separately
+    # via record_consumption()'s existing material_lot -> drug_batch CONSUMED_IN edge (2026-09-22,
+    # project-owner-directed) -- left unchanged here, out of this task's scope.
+    dispensed_container_node = await genealogy_service.get_or_create_node(
+        session, site_id=site_id, node_type="material_container", authoritative_record_type="dispensed_container",
+        authoritative_record_id=dispensed.id, business_ref=dispensed.container_code, actor_user_id=actor_user_id,
+    )
+    for source_lot, source_qty in genealogy_sources:
+        source_lot_node = await genealogy_service.get_or_create_node(
+            session, site_id=site_id, node_type="material_lot", authoritative_record_type="material_lot",
+            authoritative_record_id=source_lot.id, business_ref=source_lot.internal_lot, actor_user_id=actor_user_id,
+        )
+        await genealogy_service.create_edge(
+            session, from_node_id=source_lot_node.id, to_node_id=dispensed_container_node.id, edge_type="DERIVED_FROM",
+            quantity=source_qty, uom=order.target_uom, source_event_id=dispensed.id, actor_user_id=actor_user_id,
+        )
+
     signature_id = await _dispensing_sign(
         session, actor_user_id=actor_user_id, action="complete", order=order,
         challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,
@@ -3682,7 +4905,6 @@ async def complete_dispensing(
     order.state = "completed"
     order.version += 1
 
-    correlation_id = uuid.uuid4()
     audit_event = await write_audit_event(
         session,
         site_id=site_id,
@@ -4031,7 +5253,7 @@ async def record_consumption(
     await evaluate_policy(session, actor_user_id, action="material_consumption.create", site_id=site_id)
 
     material_lot_id = await _resolve_consumption_lot(session, container, cmd.material_lot_id)
-    cmd_uom_id = await _resolve_uom_id(session, cmd.uom)
+    cmd_uom_id = await _resolve_uom_id_strict(session, cmd.uom)
 
     txn = InventoryTransaction(
         site_id=site_id,
@@ -4069,6 +5291,28 @@ async def record_consumption(
     )
     session.add(consumption)
     await session.flush()
+
+    # 2026-09-22, project-owner-directed (MAT-021 material genealogy): this is the real, permission-gated
+    # batch-consumption path the frontend actually uses, but unlike the retired `issue_material_to_batch`
+    # it never linked the consumed lot to the batch in genealogy -- so a released batch's traceability
+    # chain (supplier lot -> internal lot -> container -> batch) was silently missing its material edge.
+    # Same node/edge shape `issue_material_to_batch` used to write, ported here rather than reinvented.
+    lot = await session.get(MaterialLot, material_lot_id)
+    batch = await session.get(Batch, cmd.batch_id)
+    if lot is not None and batch is not None:
+        material_lot_node = await genealogy_service.get_or_create_node(
+            session, site_id=site_id, node_type="material_lot", authoritative_record_type="material_lot",
+            authoritative_record_id=lot.id, business_ref=lot.internal_lot, actor_user_id=actor_user_id,
+        )
+        drug_batch_node = await genealogy_service.get_or_create_node(
+            session, site_id=site_id, node_type="drug_batch", authoritative_record_type="batch",
+            authoritative_record_id=batch.id, business_ref=batch.batch_number, actor_user_id=actor_user_id,
+        )
+        await genealogy_service.create_edge(
+            session, from_node_id=material_lot_node.id, to_node_id=drug_batch_node.id, edge_type="CONSUMED_IN",
+            quantity=cmd.quantity, uom=cmd.uom, step_id=cmd.step_id, source_event_id=consumption.id,
+            actor_user_id=actor_user_id,
+        )
 
     correlation_id = uuid.uuid4()
     audit_event = await write_audit_event(
@@ -4175,7 +5419,7 @@ async def record_return(
     # caller-supplied `condition_acceptable` flag is a captured classification, not an inferred quality
     # judgment — same treatment as every other captured-not-derived boolean/enum in this module.
     resulting_status = "released" if cmd.condition_acceptable else "quarantine"
-    cmd_uom_id = await _resolve_uom_id(session, cmd.uom)
+    cmd_uom_id = await _resolve_uom_id_strict(session, cmd.uom)
 
     txn = InventoryTransaction(
         site_id=site_id,
@@ -4336,7 +5580,7 @@ async def record_material_loss(
         transaction_type=cmd.loss_type,
         quantity=cmd.quantity,
         uom=cmd.uom,
-        uom_id=await _resolve_uom_id(session, cmd.uom),
+        uom_id=await _resolve_uom_id_strict(session, cmd.uom),
         from_location_id=cmd.location_id,
         reference_type="dispensed_container",
         reference_id=container.id,
@@ -4654,6 +5898,126 @@ async def approve_inventory_adjustment_request(
     )
 
 
+class RejectInventoryAdjustmentRequestCommand(CommandEnvelope):
+    expected_version: int
+    reason: str
+    challenge_id: uuid.UUID | None = None
+    reauth_password: str | None = None
+
+
+async def reject_inventory_adjustment_request(
+    session: AsyncSession,
+    request_id: uuid.UUID,
+    cmd: RejectInventoryAdjustmentRequestCommand,
+    actor_user_id: uuid.UUID,
+    site_id: uuid.UUID,
+) -> MutationReceipt:
+    """Approve's missing counterpart -- until this pass a rejected/wrong adjustment request had no path
+    out of "requested" at all (docs/testing/DDCP_Client_Demo_Guide_Gujarati.md §19 #7). No dedicated
+    Document 106 row exists for reject (only row 55's approve is registered), but Document 106 P1 ("a
+    signature is required when the action ... approves ... rejects ... a predicate-rule record") and this
+    codebase's own material_lot.reject precedent (row 44, same "Rejected" meaning + independence as its
+    "release"/"approve" sibling) both point the same way -- reuses approve's independence/signature shape
+    rather than leaving reject unsigned. Unlike approve, no InventoryTransaction/balance mutation happens:
+    a rejected request never touched inventory in the first place."""
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    result = await session.execute(
+        select(InventoryAdjustmentRequest).where(InventoryAdjustmentRequest.id == request_id).with_for_update()
+    )
+    request = result.scalar_one_or_none()
+    if request is None:
+        raise NotFoundError("Inventory adjustment request not found")
+    if request.version != cmd.expected_version:
+        raise StaleVersionError(
+            "Inventory adjustment request was modified by another actor since it was read",
+            expected_version=cmd.expected_version,
+            current_version=request.version,
+        )
+    if request.status != "requested":
+        raise InvalidTransitionError(
+            "Only a requested adjustment can be rejected (CON-FR-013)", current_status=request.status
+        )
+
+    await evaluate_policy(session, actor_user_id, action="inventory_adjustment_request.reject", site_id=site_id)
+
+    # CON-FR-014: same independence rule as approve -- a requester cannot dispose of their own request.
+    if actor_user_id == request.requested_by_user_id:
+        raise ValidationFailedError(
+            "Rejecter must be independent of the requester of this adjustment (CON-FR-014)"
+        )
+
+    signature_id = await _material_sign(
+        session,
+        record_type="inventory_adjustment_request",
+        action="reject",
+        actor_user_id=actor_user_id,
+        record_version=request.version,
+        record_hash=inventory_adjustment_request_record_hash(request),
+        challenge_id=cmd.challenge_id,
+        reauth_password=cmd.reauth_password,
+        reason=cmd.reason,
+    )
+    if signature_id is None:
+        raise AdjustmentApprovalRequiredError("Adjustment rejection requires a signature (Document 106 P1)")
+
+    old_status = request.status
+    request.status = "rejected"
+    request.signature_id = signature_id
+    request.approved_by_user_id = actor_user_id
+    request.approved_at = datetime.now(timezone.utc)
+    request.version += 1
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session,
+        site_id=site_id,
+        aggregate_type="inventory_adjustment_request",
+        aggregate_id=request.id,
+        aggregate_version=request.version,
+        action="Rejected",
+        actor_id=actor_user_id,
+        correlation_id=correlation_id,
+        old_value={"status": old_status},
+        new_value={"status": request.status},
+        signature_id=signature_id,
+        reason=cmd.reason,
+    )
+    await write_outbox_event(
+        session,
+        event_type="InventoryAdjustmentRejected",
+        aggregate_type="inventory_adjustment_request",
+        aggregate_id=request.id,
+        aggregate_version=request.version,
+        payload={"id": str(request.id)},
+        correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session,
+        site_id=site_id,
+        command_type="RejectInventoryAdjustmentRequest",
+        aggregate_type="inventory_adjustment_request",
+        aggregate_id=request.id,
+        expected_version=cmd.expected_version,
+        resulting_version=request.version,
+        idempotency_key=cmd.idempotency_key,
+        command_hash=payload_hash,
+        actor_user_id=actor_user_id,
+        payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id,
+        aggregate_id=request.id,
+        resulting_version=request.version,
+        audit_event_id=audit_event.id,
+        signature_id=signature_id,
+        correlation_id=correlation_id,
+    )
+
+
 # ---------------------------------------------------------------------------
 # CreateDestructionRequest / ExecuteDestruction — CON-FR-015/016/017/018. Document 106 row 56 registers
 # exactly one signer for `execute` (`Performed`, count=1, no independence, no reason) — `witnesses` is
@@ -4702,7 +6066,7 @@ async def create_destruction_request(
         dispensed_container_id=cmd.dispensed_container_id,
         quantity=cmd.quantity,
         uom=cmd.uom,
-        uom_id=await _resolve_uom_id(session, cmd.uom),
+        uom_id=await _resolve_uom_id_strict(session, cmd.uom),
         reason=cmd.reason,
         method=cmd.method,
         vendor_name=cmd.vendor_name,

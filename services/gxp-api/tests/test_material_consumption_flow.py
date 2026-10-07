@@ -15,6 +15,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import DBAPIError
 
+from app.modules.batch_execution.models import Batch, BatchStep
 from app.modules.material.models import (
     DestructionRecord,
     DispensedContainer,
@@ -24,9 +25,12 @@ from app.modules.material.models import (
     MaterialReconciliation,
     MaterialReturn,
 )
+from app.modules.material_specification.models import MaterialSpecificationVersion
+from app.modules.recipe_master.models import RecipeMaterialRequirement, RecipeStep
 from tests.conftest import DEMO_PASSWORD, auth_headers, idem, login
 from tests.test_dispensing_flow import (
     _complete,
+    _create_batch_with_requirement,
     _create_order,
     _manual_reading,
     _prepared_lot,
@@ -45,9 +49,11 @@ async def _build_dispensed_container(client, db, seeded, op_token, qc_token, qa_
 
     material_id, lot_id, container_id = await _prepared_lot(client, db, op_token, qa_token, site_id, code, lot_code)
     await _put_away(client, op_token, lot_id, container_id, released_location_id, "100.000000")
-    batch_id = await _create_batch(client, op_token, site_id, code)
+    batch_id, batch_step_id = await _create_batch_with_requirement(
+        client, op_token, site_id, code, material_id, target_qty=qty, low="1.000000", high="200.000000"
+    )
 
-    order_id = await _create_order(client, op_token, site_id, batch_id, material_id, target_qty=qty, low="1.000000", high="200.000000")
+    order_id = await _create_order(client, op_token, site_id, batch_id, batch_step_id, material_id)
     select_resp = await _select_source(client, op_token, order_id, 1, lot_id, container_id=container_id, quantity=qty)
     assert select_resp.status_code == 200, select_resp.text
     start_resp = await _start(client, op_token, order_id, 2)
@@ -67,6 +73,78 @@ async def _build_dispensed_container(client, db, seeded, op_token, qc_token, qa_
         await db.execute(select(DispensedContainer).where(DispensedContainer.dispensing_order_id == order_id))
     ).scalar_one()
     return batch_id, material_id, lot_id, str(dispensed.id), released_location_id
+
+
+async def consume_material_into_existing_batch(
+    client, db, seeded, op_token, qc_token, qa_token, batch_id, batch_step_id, code, lot_code, qty="1.000000"
+):
+    """Like `_build_dispensed_container` above, but dispenses against a batch (and one of its already-
+    existing `BatchStep`s) the caller already created, rather than making a new one -- for tests elsewhere
+    that just need one genuine `MaterialConsumption` row against an existing batch (e.g. the Batch Record
+    view's "materials consumed" section). 2026-09-22: replaces the old pattern of hand-inserting a
+    `MaterialIssue` row directly via the ORM, which stopped working once `record_service.py` was fixed to
+    read the real consumption ledger instead of that retired, never-written-by-any-UI table. SG-094
+    (Topic 5, Phase 6): `create_dispensing_order` now derives its target/tolerance from a released
+    `RecipeMaterialRequirement` -- the caller's batch/step predates this material, so one is inserted here
+    directly against the step's underlying `RecipeStep`, the same shape
+    `_create_batch_with_requirement` builds for a brand-new batch."""
+    site_id = seeded["site_id"]
+    released_location_id = str(seeded["locations"]["RELEASED-01"].id)
+
+    material_id, lot_id, container_id = await _prepared_lot(client, db, op_token, qa_token, site_id, code, lot_code, quantity=qty)
+    await _put_away(client, op_token, lot_id, container_id, released_location_id, qty)
+
+    batch_step = await db.get(BatchStep, uuid.UUID(batch_step_id))
+    batch = await db.get(Batch, uuid.UUID(batch_id))
+    recipe_step = (
+        await db.execute(
+            select(RecipeStep).where(
+                RecipeStep.recipe_version_id == batch.recipe_version_id,
+                RecipeStep.stable_step_code == batch_step.recipe_step_code,
+            )
+        )
+    ).scalar_one()
+    spec = MaterialSpecificationVersion(
+        material_spec_business_id=f"SPEC-{lot_code}", version_no=1, material_id=uuid.UUID(material_id),
+        name=f"Spec {lot_code}", lifecycle_state="released", site_id=site_id,
+    )
+    db.add(spec)
+    await db.flush()
+    db.add(
+        RecipeMaterialRequirement(
+            step_id=recipe_step.id, material_spec_version_id=spec.id,
+            target_value=Decimal(qty), min_value=Decimal("0.000001"), max_value=Decimal("999999.000000"), uom="kg",
+        )
+    )
+    await db.commit()
+
+    order_id = await _create_order(client, op_token, site_id, batch_id, batch_step_id, material_id)
+    select_resp = await _select_source(client, op_token, order_id, 1, lot_id, container_id=container_id, quantity=qty)
+    assert select_resp.status_code == 200, select_resp.text
+    assert (await _start(client, op_token, order_id, 2)).status_code == 200
+    assert (await _manual_reading(client, op_token, order_id, 3, qty)).status_code == 200
+    assert (await _verify(client, qc_token, order_id, 3)).status_code == 200
+
+    from app.modules.material.models import DispensingSource
+
+    src = (await db.execute(select(DispensingSource).where(DispensingSource.dispensing_order_id == order_id))).scalar_one()
+    complete_resp = await _complete(client, op_token, order_id, 4, str(src.id), qty, f"DC-{lot_code}")
+    assert complete_resp.status_code == 200, complete_resp.text
+
+    dispensed = (
+        await db.execute(select(DispensedContainer).where(DispensedContainer.dispensing_order_id == order_id))
+    ).scalar_one()
+
+    consume_resp = await client.post(
+        "/materials/v1/consumptions",
+        json={
+            "idempotency_key": idem(), "batch_id": batch_id, "dispensed_container_id": str(dispensed.id),
+            "quantity": qty, "uom": "kg",
+        },
+        headers=auth_headers(op_token),
+    )
+    assert consume_resp.status_code == 200, consume_resp.text
+    return lot_id, str(dispensed.id)
 
 
 # ---------------------------------------------------------------------------
@@ -599,6 +677,113 @@ async def test_adjustment_approve_stale_version_rejected(client, db, seeded):
     )
     assert approve_resp.status_code == 409, approve_resp.text
     assert approve_resp.json()["code"] == "STALE_VERSION"
+
+
+async def test_adjustment_request_create_and_reject(client, db, seeded):
+    """Approve's missing counterpart until this pass (DDCP_Client_Demo_Guide_Gujarati.md §19 #7) -- a
+    wrong/unwanted adjustment request had no way out of "requested" at all."""
+    op_token = await login(client, "operator1")
+    qa_token = await login(client, "qa.releaser")
+    _material_id, lot_id, container_id, location_id = await _released_lot_with_balance(
+        client, db, seeded, op_token, qa_token, "MAT-ADJ5", "LOT-ADJ5"
+    )
+
+    create_resp = await client.post(
+        "/inventory/v1/adjustments",
+        json={
+            "idempotency_key": idem(),
+            "material_lot_id": lot_id,
+            "container_id": container_id,
+            "location_id": location_id,
+            "expected_quantity": "50.000000",
+            "observed_quantity": "48.500000",
+            "reason": "physical count variance, disputed",
+        },
+        headers=auth_headers(op_token),
+    )
+    assert create_resp.status_code == 200, create_resp.text
+    request_id = create_resp.json()["aggregate_id"]
+
+    challenge = (
+        await client.post(
+            f"/inventory/v1/adjustments/{request_id}/signature-challenges",
+            json={"action": "reject"},
+            headers=auth_headers(qa_token),
+        )
+    ).json()
+    assert challenge["meaning"] == "Rejected"
+    reject_resp = await client.post(
+        f"/inventory/v1/adjustments/{request_id}/reject",
+        json={
+            "idempotency_key": idem(),
+            "expected_version": 1,
+            "reason": "recount confirmed original count was correct",
+            "challenge_id": challenge["challenge_id"],
+            "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(qa_token),
+    )
+    assert reject_resp.status_code == 200, reject_resp.text
+    assert reject_resp.json()["signature_id"] is not None
+
+    request = await db.get(InventoryAdjustmentRequest, uuid.UUID(request_id))
+    assert request.status == "rejected"
+
+    from app.modules.material.models import InventoryBalanceProjection
+
+    balance = (
+        await db.execute(
+            select(InventoryBalanceProjection).where(
+                InventoryBalanceProjection.material_lot_id == uuid.UUID(lot_id),
+                InventoryBalanceProjection.container_id == uuid.UUID(container_id),
+                InventoryBalanceProjection.location_id == uuid.UUID(location_id),
+            )
+        )
+    ).scalar_one()
+    assert balance.on_hand == Decimal("50.000000")  # unchanged -- a rejected adjustment never touches inventory
+
+
+async def test_adjustment_self_rejection_denied(client, db, seeded):
+    op_token = await login(client, "operator1")
+    qa_token = await login(client, "qa.releaser")
+    _material_id, lot_id, _container_id, location_id = await _released_lot_with_balance(
+        client, db, seeded, op_token, qa_token, "MAT-ADJ6", "LOT-ADJ6"
+    )
+
+    create_resp = await client.post(
+        "/inventory/v1/adjustments",
+        json={
+            "idempotency_key": idem(),
+            "material_lot_id": lot_id,
+            "location_id": location_id,
+            "expected_quantity": "50.000000",
+            "observed_quantity": "49.000000",
+            "reason": "self-rejection test",
+        },
+        headers=auth_headers(qa_token),
+    )
+    assert create_resp.status_code == 200, create_resp.text
+    request_id = create_resp.json()["aggregate_id"]
+
+    challenge = (
+        await client.post(
+            f"/inventory/v1/adjustments/{request_id}/signature-challenges",
+            json={"action": "reject"},
+            headers=auth_headers(qa_token),
+        )
+    ).json()
+    reject_resp = await client.post(
+        f"/inventory/v1/adjustments/{request_id}/reject",
+        json={
+            "idempotency_key": idem(),
+            "expected_version": 1,
+            "reason": "attempting self-rejection",
+            "challenge_id": challenge["challenge_id"],
+            "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(qa_token),
+    )
+    assert reject_resp.status_code == 422, reject_resp.text
 
 
 # ---------------------------------------------------------------------------

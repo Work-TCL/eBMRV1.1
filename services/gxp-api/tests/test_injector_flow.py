@@ -23,6 +23,7 @@ from app.modules.ddcp.models import (
     DeviceFunctionalTestLink,
     ReusableDevicePairing,
 )
+from app.modules.iam.models import Role
 from app.modules.material.models import Material, MaterialLot
 from app.modules.product_master.models import ProductVersion
 from app.modules.qms import change_commands
@@ -128,7 +129,41 @@ async def _create_released_product_version(
     return pv
 
 
+async def _seed_ddcp_signature_floor(db, *, signed: bool = False) -> None:
+    """SG-148 Client Topic 12 (project-owner-directed): same test-file-local-only floor as
+    `test_ddcp_flow.py::_seed_ddcp_signature_floor` -- see that function's docstring for the full
+    rationale. Idempotent per test since it is called from multiple helper/test call sites.
+    """
+    existing = (
+        await db.execute(select(SignaturePolicy.id).where(SignaturePolicy.record_type == "ddcp_profile_version", SignaturePolicy.action == "release"))
+    ).scalar_one_or_none()
+    if existing is not None:
+        return
+    operator_role_id = (await db.execute(select(Role.id).where(Role.name == "DDCP Operator"))).scalar_one()
+    qa_releaser_role_id = (await db.execute(select(Role.id).where(Role.name == "QA Releaser"))).scalar_one()
+    db.add_all([
+        SignaturePolicy(
+            record_type="ddcp_profile_version", action="release", meaning="Released",
+            required_role_id=qa_releaser_role_id if signed else None, signature_required=signed,
+        ),
+        SignaturePolicy(
+            record_type="constituent_handoff", action="decide", meaning="Approved",
+            required_role_id=operator_role_id if signed else None, signature_required=signed,
+        ),
+        SignaturePolicy(
+            record_type="fill_operation", action="start", meaning="Performed",
+            required_role_id=operator_role_id if signed else None, signature_required=signed,
+        ),
+        SignaturePolicy(
+            record_type="fill_operation", action="complete", meaning="Performed",
+            required_role_id=operator_role_id if signed else None, signature_required=signed,
+        ),
+    ])
+    await db.flush()
+
+
 async def _create_and_release_profile(db, seeded, actor_id, *, profile_code: str) -> DdcpProfileVersion:
+    await _seed_ddcp_signature_floor(db)
     product_version = await _create_released_product_version(db, seeded, code=profile_code)
     receipt = await injector_commands.create_injector_profile_version(
         db,
@@ -150,6 +185,7 @@ async def _create_and_release_profile(db, seeded, actor_id, *, profile_code: str
 
 
 async def _accept_constituents(db, seeded, actor_id, batch, bulk_batch, device_lot):
+    await _seed_ddcp_signature_floor(db)
     for from_c, to_c, ref in (("DRUG", "drug_container", {"batch_id": str(bulk_batch.id)}), ("DEVICE", "housing", {"lot_id": str(device_lot.id)})):
         receipt = await ddcp_commands.record_constituent_handoff(
             db, ddcp_commands.RecordConstituentHandoffCommand(idempotency_key=idem(), batch_id=batch.id, from_constituent=from_c, to_constituent=to_c, source_batch_reference=ref), actor_id,
@@ -501,6 +537,7 @@ async def test_release_readiness_blocks_on_pending_handoff_and_failed_test(seede
     """INJ-FR-027: a real negative-path assertion, not just the happy path -- release readiness must
     actually block when a device handoff is still pending and a functional test has failed."""
 
+    await _seed_ddcp_signature_floor(db)
     actor_id = seeded["users"]["ddcp.operator"].id
     batch = await _create_batch(db, seeded, batch_number="BATCH-INJ-BLOCK-1")
     bulk_batch = await _create_batch(db, seeded, batch_number="BULK-DRUG-INJ-BLOCK-1")
@@ -566,6 +603,7 @@ async def test_profile_family_inheritance_via_version_supersede(seeded, db):
     mechanism release_injectable_profile_version() already provides (reused verbatim from Document 54):
     version 2 supersedes version 1 under the same profile_code, carrying its own distinct required_controls."""
 
+    await _seed_ddcp_signature_floor(db)
     actor_id = seeded["users"]["ddcp.engineer"].id
     # Same profile_code reused across v1/v2 (that's the point of this test), so the Product Master
     # version is created once and referenced by both -- product_version_id has no uniqueness constraint
