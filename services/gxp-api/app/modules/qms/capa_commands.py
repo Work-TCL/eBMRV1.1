@@ -7,7 +7,7 @@ SG-063/SG-064/SG-065 for what is deliberately not built this pass).
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,7 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import verify_password
 from app.modules.iam.models import User
 from app.modules.qc.models import OosRecord, OotRecord
+from app.modules.qms.change_models import ChangeControl
 from app.modules.qms.complaint_models import ComplaintRecord
+from app.modules.qms.field_action_models import FieldAction
 from app.modules.qms.internal_audit_models import InternalAudit
 from app.modules.qms.models import DeviationRecord
 from app.modules.qms.ncr_models import NonconformanceRecord
@@ -159,6 +161,10 @@ _CAPA_SOURCE_MODELS: dict[str, type] = {
     "audit": InternalAudit,
     "supplier": SupplierQualityCase,
     "risk": RiskRecord,
+    # SG-063 resolved 2026-10-09 (project-owner-directed): Change Control/Field Action added to
+    # CAPA_SOURCE_TYPES above, same FK-existence-check discipline as the other 8.
+    "change_control": ChangeControl,
+    "field_action": FieldAction,
 }
 
 
@@ -172,6 +178,50 @@ async def _validate_capa_source(session: AsyncSession, *, source_type: str, sour
             "source_id does not reference an existing record for source_type (CAPA-FR-002)",
             source_type=source_type, source_id=str(source_id),
         )
+
+
+# SG-067-adjacent gap (2026-10-09, project-owner-directed: "Auto-create a draft CAPA" chosen over the
+# existing deviation-style bare-notification-event precedent) -- when NCR/Complaint/Internal-Audit/SCAR/
+# Field-Action set their own capa_required flag, a real OPEN CapaRecord is now created in the same
+# transaction rather than only emitting an unconsumed outbox event. `risk_class`/`owner_subject_id`/
+# `target_date` have no source-side equivalent to carry over (none of the 5 triggering commands collect
+# them) and Document 27's own 8-op API list has no endpoint to revise them after create() either -- same
+# limitation an ordinarily-created CAPA already has, not a new one introduced here: `owner_subject_id`
+# defaults to the actor who raised the flag (reassignment is a human follow-up outside this module's
+# built scope), `risk_class` defaults to the self-documenting placeholder "pending_assessment" (never a
+# guessed real classification), `target_date` defaults to +30 days, and `root_cause_ref.proactive_rationale`
+# is populated from the triggering command's own `capa_rationale` text (CAPA-FR-002's required-but-not-yet-
+# investigated case).
+async def auto_create_capa_from_source(
+    session: AsyncSession, *, site_id: uuid.UUID, source_type: str, source_id: uuid.UUID,
+    source_version: int | None, capa_rationale: str | None, actor_user_id: uuid.UUID, correlation_id: uuid.UUID,
+) -> CapaRecord:
+    capa_number = f"CAPA-AUTO-{uuid.uuid4().hex[:10].upper()}"
+    rationale = (capa_rationale or "").strip() or "Auto-created: capa_required flag set with no further rationale supplied."
+    capa = CapaRecord(
+        site_id=site_id, capa_number=capa_number, source_type=source_type, source_id=source_id,
+        source_version=source_version,
+        problem_statement=f"Auto-created from {source_type} {source_id} (capa_required flag): {rationale}",
+        scope_type="site", risk_class="pending_assessment",
+        root_cause_ref={"proactive_rationale": rationale},
+        owner_subject_id=actor_user_id, target_date=datetime.now(timezone.utc) + timedelta(days=30),
+        state="OPEN",
+    )
+    session.add(capa)
+    await session.flush()
+    await write_audit_event(
+        session, site_id=capa.site_id, aggregate_type="capa_record", aggregate_id=capa.id,
+        aggregate_version=capa.version, action="Created", actor_id=actor_user_id, correlation_id=correlation_id,
+        reason=rationale, old_value=None, new_value={"state": capa.state, "source_type": source_type, "source_id": str(source_id)},
+        signature_id=None,
+    )
+    await write_outbox_event(
+        session, event_type="CapaAutoCreated", aggregate_type="capa_record", aggregate_id=capa.id,
+        aggregate_version=capa.version,
+        payload={"id": str(capa.id), "capa_number": capa_number, "source_type": source_type, "source_id": str(source_id)},
+        correlation_id=correlation_id,
+    )
+    return capa
 
 
 class CreateCapaCommand(CommandEnvelope):

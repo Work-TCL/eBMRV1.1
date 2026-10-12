@@ -32,6 +32,7 @@ import { Fact, FactGrid } from "@/components/ui/FactGrid";
 import { Banner } from "@/components/ui/Banner";
 import { WorkflowStatePill } from "@/components/ui/StatePill";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
+import { humanizeLabel } from "@/lib/format";
 
 // app/modules/material/commands.py CreateMaterialReceiptCommand / ExamineReceiptCommand,
 // app/modules/material/router.py _receipt_dict()/list_material_receipts(). Document 19 (SPEC-MAT-002A)
@@ -708,7 +709,7 @@ function ExamineReceiptModal({
               <option value="">—</option>
               {STORAGE_CONDITIONS.map((c) => (
                 <option key={c} value={c}>
-                  {c}
+                  {humanizeLabel(c)}
                 </option>
               ))}
             </Select>
@@ -769,8 +770,9 @@ function DispositionHeldReceiptModal({
   onDone: () => void;
 }) {
   const entities = useEntityOptions();
+  const forcedSignificant = receipt.discrepancy_type === "source_not_approved";
   const [decision, setDecision] = useState("accepted");
-  const [severity, setSeverity] = useState("minor");
+  const [severity, setSeverity] = useState(forcedSignificant ? "significant" : "minor");
   const [reason, setReason] = useState("");
   const [deviationId, setDeviationId] = useState("");
   const [internalLot, setInternalLot] = useState("");
@@ -821,8 +823,16 @@ function DispositionHeldReceiptModal({
               ))}
             </Select>
           </Field>
-          <Field label="Severity" required hint="Governs whether a Deviation link is required.">
-            <Select value={severity} onChange={(e) => setSeverity(e.target.value)}>
+          <Field
+            label="Severity"
+            required
+            hint={
+              forcedSignificant
+                ? "Forced to 'significant' - this receipt was held for an unapproved/suspended supplier, which always requires a linked Deviation."
+                : "Governs whether a Deviation link is required."
+            }
+          >
+            <Select value={severity} onChange={(e) => setSeverity(e.target.value)} disabled={forcedSignificant}>
               {DISPOSITION_SEVERITIES.map((o) => (
                 <option key={o.value} value={o.value}>
                   {o.label}
@@ -858,7 +868,7 @@ function DispositionHeldReceiptModal({
                     <option value="">—</option>
                     {STORAGE_CONDITIONS.map((c) => (
                       <option key={c} value={c}>
-                        {c}
+                        {humanizeLabel(c)}
                       </option>
                     ))}
                   </Select>

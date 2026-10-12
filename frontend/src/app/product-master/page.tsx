@@ -28,6 +28,7 @@ import { Icon } from "@/components/ui/Icon";
 import { WorkflowStatePill } from "@/components/ui/StatePill";
 import { summarizeJson } from "@/components/ui/JsonPanel";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
+import { humanizeLabel } from "@/lib/format";
 
 // Matches app/modules/product_master/router.py::_version_dict / _constituent_dict.
 interface Constituent {
@@ -588,7 +589,7 @@ function ConstituentEditor({
             <Select value={type} onChange={(e) => setType(e.target.value)}>
               {CONSTITUENT_TYPES.map((t) => (
                 <option key={t} value={t}>
-                  {t}
+                  {humanizeLabel(t)}
                 </option>
               ))}
             </Select>
@@ -870,7 +871,7 @@ function DraftModal({
               <Select value={profile} onChange={(e) => setProfile(e.target.value)}>
                 {MANUFACTURING_PROFILES.map((p) => (
                   <option key={p} value={p}>
-                    {p}
+                    {humanizeLabel(p)}
                   </option>
                 ))}
               </Select>
@@ -1030,7 +1031,7 @@ function EditDraftModal({
             <Select value={profile} onChange={(e) => setProfile(e.target.value)}>
               {MANUFACTURING_PROFILES.map((p) => (
                 <option key={p} value={p}>
-                  {p}
+                  {humanizeLabel(p)}
                 </option>
               ))}
             </Select>

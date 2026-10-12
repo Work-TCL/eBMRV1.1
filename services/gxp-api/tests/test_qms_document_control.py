@@ -279,6 +279,75 @@ async def test_controlled_copy_rejected_for_non_effective_version(client, seeded
     assert resp.json()["code"] == "DOCUMENT_VERSION_OBSOLETE"
 
 
+# --- Acknowledgment (DOC-FR-014/SG-079 resolved 2026-10-09, project-owner-directed: "Simple unsigned log") ---
+
+
+async def test_acknowledge_rejected_for_non_effective_version(client, seeded, db):
+    owner = await _setup(db, seeded, "30")
+    token = await login(client, "admin.doc30")
+    version_id = await _create(client, token, seeded["site_id"], owner.id)
+    resp = await client.post(
+        f"/documents/v1/versions/{version_id}/acknowledgments",
+        json={"idempotency_key": idem(), "document_version_id": version_id},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["code"] == "DOCUMENT_VERSION_OBSOLETE"
+
+
+async def test_acknowledge_then_list_and_reacknowledge_is_idempotent(client, seeded, db):
+    owner = await _setup(db, seeded, "31", signed=False)
+    token = await login(client, "admin.doc31")
+    version_id = await _create(client, token, seeded["site_id"], owner.id)
+    next_version = await _advance_to_released(client, token, version_id)
+    resp = await client.post(
+        f"/documents/v1/versions/{version_id}/make-effective",
+        json={"idempotency_key": idem(), "document_version_id": version_id, "expected_version": next_version},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    resp = await client.post(
+        f"/documents/v1/versions/{version_id}/acknowledgments",
+        json={"idempotency_key": idem(), "document_version_id": version_id, "statement": "I have read and understood this SOP."},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["signature_id"] is None  # unsigned log, not a Part 11 signature
+
+    resp = await client.get(f"/documents/v1/versions/{version_id}/acknowledgments", headers=auth_headers(token))
+    assert resp.status_code == 200, resp.text
+    acks = resp.json()
+    assert len(acks) == 1
+    assert acks[0]["user_id"] == str(owner.id)
+    assert acks[0]["statement"] == "I have read and understood this SOP."
+    assert acks[0]["acknowledged_at"] is not None
+
+    # Re-acknowledging (e.g. a double-click, or revisiting the SOP) is idempotent -- no duplicate row,
+    # no error.
+    resp = await client.post(
+        f"/documents/v1/versions/{version_id}/acknowledgments",
+        json={"idempotency_key": idem(), "document_version_id": version_id, "statement": "re-read"},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    resp = await client.get(f"/documents/v1/versions/{version_id}/acknowledgments", headers=auth_headers(token))
+    assert len(resp.json()) == 1
+
+
+async def test_acknowledge_404_for_missing_version(client, seeded, db):
+    owner = await _setup(db, seeded, "32")
+    token = await login(client, "admin.doc32")
+    missing_id = str(uuid.uuid4())
+    resp = await client.post(
+        f"/documents/v1/versions/{missing_id}/acknowledgments",
+        json={"idempotency_key": idem(), "document_version_id": missing_id},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 404, resp.text
+
+
 async def test_release_with_unknown_change_control_id_rejected(client, seeded, db):
     owner = await _setup(db, seeded, "10")
     token = await login(client, "admin.doc10")

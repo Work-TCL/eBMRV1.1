@@ -1,14 +1,22 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, isAdminAnywhere } from "@/lib/api";
 import { useApiResource, useMe, useOnboardingStatus } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/Table";
 import { Icon } from "@/components/ui/Icon";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { LinkButton } from "@/components/ui/Button";
 import { Stepper, StepItem } from "@/components/ui/Stepper";
+import { Select } from "@/components/ui/Select";
+import { Button } from "@/components/ui/Button";
+
+// "Needs my action" is a notification feed, not a server-paginated table (GET /dashboard/v1/workflow-actions
+// returns the actor's whole visible set in one shot, already small -- see the router's own docstring), so
+// paging/filtering here is plain client-side slicing over that one fetched list, not a DataTable.
+const ACTION_PAGE_SIZE = 5;
 
 // Resumable onboarding checklist (client gap-analysis follow-up, 2026-10-06): shown only once an admin
 // has explicitly skipped the wizard (AuthGuard's OnboardingGate redirects there otherwise) and only
@@ -19,6 +27,30 @@ const ONBOARDING_STEPS = [
   { key: "users", title: "Users", href: "/admin/users", done: (s: { users_done: boolean }) => s.users_done },
   { key: "roles", title: "Roles", href: "/admin/roles", done: (s: { roles_done: boolean }) => s.roles_done },
 ] as const;
+
+/** Stand-in for a card's list-of-rows body (both "Needs my action" and "Coming due" below share this
+ * exact row shape: a title line over a smaller meta line) while its `useApiResource` call is in flight. */
+function ListRowsSkeleton({ rows = 3 }: { rows?: number }) {
+  return (
+    <div aria-hidden="true">
+      {Array.from({ length: rows }).map((_, i) => (
+        <div
+          key={i}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+            padding: "var(--space-3) 0",
+            borderBottom: "1px solid var(--border-hairline)",
+          }}
+        >
+          <Skeleton width={`${50 + (i % 3) * 10}%`} height={14} />
+          <Skeleton width={120} height={11} />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function OnboardingChecklistCard() {
   const { me } = useMe();
@@ -115,6 +147,7 @@ const REMINDER_CATEGORY_LABEL: Record<string, string> = {
   equipment_maintenance: "Equipment maintenance due",
   equipment_qualification: "Equipment qualification expiry",
   supplier_qualification: "Supplier qualification expiry",
+  risk_review_due: "Risk periodic review due",
 };
 
 export default function HomePage() {
@@ -128,8 +161,35 @@ export default function HomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload identity is stable per useApiResource call, same interval pattern as WorkflowActionsBell.
   }, []);
 
-  const actionItems = actions.data?.items ?? [];
+  const actionItems = useMemo(() => actions.data?.items ?? [], [actions.data]);
   const reminderItems = reminders.data ?? [];
+
+  const [actionPage, setActionPage] = useState(1);
+  const [actionCategory, setActionCategory] = useState("all");
+  const [actionUnreadOnly, setActionUnreadOnly] = useState(false);
+
+  const actionCategoryOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const item of actionItems) {
+      if (!seen.has(item.category)) seen.set(item.category, WORKFLOW_CATEGORY_LABEL[item.category] ?? item.category);
+    }
+    return Array.from(seen.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+  }, [actionItems]);
+
+  const filteredActionItems = useMemo(
+    () =>
+      actionItems.filter(
+        (item) => (actionCategory === "all" || item.category === actionCategory) && (!actionUnreadOnly || !item.read)
+      ),
+    [actionItems, actionCategory, actionUnreadOnly]
+  );
+
+  const actionTotalPages = Math.max(1, Math.ceil(filteredActionItems.length / ACTION_PAGE_SIZE));
+  const actionCurrentPage = Math.min(actionPage, actionTotalPages);
+  const pagedActionItems = filteredActionItems.slice(
+    (actionCurrentPage - 1) * ACTION_PAGE_SIZE,
+    actionCurrentPage * ACTION_PAGE_SIZE
+  );
 
   const markRead = async (id: string) => {
     try {
@@ -160,47 +220,121 @@ export default function HomePage() {
             meta={actionItems.length > 0 ? `${actions.data?.unread_count ?? 0} unread` : undefined}
           />
           {actions.loading ? (
-            <p className="hint">Loading…</p>
+            <ListRowsSkeleton />
           ) : actionItems.length === 0 ? (
             <EmptyState icon="check">Nothing waiting on you right now.</EmptyState>
           ) : (
             <div>
-              {actionItems.map((item) => (
-                <a
-                  key={item.id}
-                  href={item.link_path}
-                  onClick={() => {
-                    if (!item.read) void markRead(item.id);
+              <div
+                className="flex items-center gap-3"
+                style={{ paddingBottom: "var(--space-3)", borderBottom: "1px solid var(--border-hairline)" }}
+              >
+                <Select
+                  value={actionCategory}
+                  onChange={(e) => {
+                    setActionCategory(e.target.value);
+                    setActionPage(1);
                   }}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    gap: "var(--space-3)",
-                    padding: "var(--space-3) 0",
-                    borderBottom: "1px solid var(--border-hairline)",
-                    color: "inherit",
-                    textDecoration: "none",
-                  }}
+                  aria-label="Filter by type"
+                  style={{ width: "auto" }}
                 >
-                  <div>
-                    <div style={{ fontSize: "var(--fs-3)", fontWeight: 600 }}>{item.entity_label}</div>
-                    <div className="hint">{WORKFLOW_CATEGORY_LABEL[item.category] ?? item.category}</div>
+                  <option value="all">All types</option>
+                  {actionCategoryOptions.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </Select>
+                <Button
+                  type="button"
+                  variant={actionUnreadOnly ? "primary" : "ghost"}
+                  size="sm"
+                  onClick={() => {
+                    setActionUnreadOnly((prev) => !prev);
+                    setActionPage(1);
+                  }}
+                  aria-pressed={actionUnreadOnly}
+                >
+                  Unread only
+                </Button>
+                <span className="hint" style={{ marginLeft: "auto" }}>
+                  {filteredActionItems.length} of {actionItems.length}
+                </span>
+              </div>
+
+              {filteredActionItems.length === 0 ? (
+                <EmptyState icon="check">No matching items.</EmptyState>
+              ) : (
+                pagedActionItems.map((item) => (
+                  <a
+                    key={item.id}
+                    href={item.link_path}
+                    onClick={() => {
+                      if (!item.read) void markRead(item.id);
+                    }}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: "var(--space-3)",
+                      padding: "var(--space-3) 0",
+                      borderBottom: "1px solid var(--border-hairline)",
+                      color: "inherit",
+                      textDecoration: "none",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: "var(--fs-3)", fontWeight: 600 }}>{item.entity_label}</div>
+                      <div className="hint">{WORKFLOW_CATEGORY_LABEL[item.category] ?? item.category}</div>
+                    </div>
+                    {!item.read && (
+                      <span
+                        aria-label="unread"
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: 999,
+                          background: "var(--status-info-solid, #2563eb)",
+                          flexShrink: 0,
+                        }}
+                      />
+                    )}
+                  </a>
+                ))
+              )}
+
+              {actionTotalPages > 1 && (
+                <div
+                  className="flex items-center justify-between"
+                  style={{ paddingTop: "var(--space-3)" }}
+                >
+                  <span className="hint">
+                    Page {actionCurrentPage} of {actionTotalPages}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={actionCurrentPage <= 1}
+                      onClick={() => setActionPage((p) => Math.max(1, p - 1))}
+                      aria-label="Previous page"
+                    >
+                      <Icon name="chevron-left" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={actionCurrentPage >= actionTotalPages}
+                      onClick={() => setActionPage((p) => Math.min(actionTotalPages, p + 1))}
+                      aria-label="Next page"
+                    >
+                      <Icon name="chevron-right" />
+                    </Button>
                   </div>
-                  {!item.read && (
-                    <span
-                      aria-label="unread"
-                      style={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: 999,
-                        background: "var(--status-info-solid, #2563eb)",
-                        flexShrink: 0,
-                      }}
-                    />
-                  )}
-                </a>
-              ))}
+                </div>
+              )}
             </div>
           )}
         </Card>
@@ -215,7 +349,7 @@ export default function HomePage() {
             meta="next 30 days"
           />
           {reminders.loading ? (
-            <p className="hint">Loading…</p>
+            <ListRowsSkeleton />
           ) : reminderItems.length === 0 ? (
             <EmptyState icon="calendar">Nothing coming due in the next 30 days.</EmptyState>
           ) : (

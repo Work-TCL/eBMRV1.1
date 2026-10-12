@@ -27,7 +27,8 @@ from app.modules.qms.change_commands import (
     verify_change,
 )
 from app.modules.qms.change_models import ChangeAffectedObject, ChangeControl, ChangeTask
-from app.modules.qms.read_support import filtered, iso, sid
+from app.modules.qms.read_support import filtered, iso, resolve_user_names, sid
+from app.modules.qms.risk_models import RiskRecord
 from app.modules.qms.signature_support import SignatureChallengeRequest, create_qms_signature_challenge
 from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.schemas import MutationReceipt
@@ -230,7 +231,14 @@ async def get_change(
     tasks = (
         await session.execute(select(ChangeTask).where(ChangeTask.change_id == change_id))
     ).scalars().all()
+    # 2026-10 UUID-display audit: owner_subject_id/risk_ref were shown as raw ids with no resolved name.
+    user_by_id = await resolve_user_names(session, {record.owner_subject_id})
+    owner = user_by_id.get(str(record.owner_subject_id))
+    risk = await session.get(RiskRecord, record.risk_ref) if record.risk_ref else None
     return {
+        "owner_full_name": owner[0] if owner else None,
+        "owner_username": owner[1] if owner else None,
+        "risk_number": risk.risk_number if risk else None,
         **_change_dict(record),
         "current_state": record.current_state,
         "proposed_state": record.proposed_state,
@@ -242,6 +250,8 @@ async def get_change(
         "emergency_reason": record.emergency_reason,
         "retrospective_review": record.retrospective_review,
         "cancel_reason": record.cancel_reason,
+        "rollback_reason": record.rollback_reason,
+        "rolled_back_at": iso(record.rolled_back_at),
         "closure_history": record.closure_history,
         "affected_objects": [
             {

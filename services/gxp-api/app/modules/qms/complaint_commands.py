@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
 from app.modules.iam.models import User
+from app.modules.qms.capa_commands import auto_create_capa_from_source
 from app.modules.qms.complaint_models import (
     CONSTITUENT_CLASSIFICATIONS,
     SOURCE_CHANNELS,
@@ -389,6 +390,11 @@ async def assess_reportability(session: AsyncSession, cmd: ReportabilityAssessme
         await write_outbox_event(
             session, event_type="ComplaintCAPAOpened", aggregate_type="complaint_record", aggregate_id=complaint.id,
             aggregate_version=complaint.version, payload={"id": str(complaint.id), "capa_rationale": cmd.capa_rationale},
+            correlation_id=receipt.correlation_id,
+        )
+        await auto_create_capa_from_source(
+            session, site_id=complaint.site_id, source_type="complaint", source_id=complaint.id,
+            source_version=complaint.version, capa_rationale=cmd.capa_rationale, actor_user_id=actor_user_id,
             correlation_id=receipt.correlation_id,
         )
     if cmd.field_action_required:

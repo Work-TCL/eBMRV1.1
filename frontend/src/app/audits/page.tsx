@@ -5,6 +5,7 @@ import { api, ApiError, hasPermission, formatDate, newIdempotencyKey, type Inter
 import { useEntityOptions, useMe, useRequirePermission, useSiteId } from "@/lib/hooks";
 import { QmsListPage } from "@/components/qms/QmsListPage";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
+import { RepeatableRows, type RepeatRow } from "@/components/shared/RepeatableFields";
 import type { DataTableColumn } from "@/components/ui/DataTable";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -91,6 +92,7 @@ function ScheduleAuditModal({ onClose, onDone }: { onClose: () => void; onDone: 
   const [criteria, setCriteria] = useState("");
   const [processScope, setProcessScope] = useState("");
   const [leadAuditor, setLeadAuditor] = useState(me?.user_id ?? "");
+  const [auditeeRows, setAuditeeRows] = useState<RepeatRow[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -107,6 +109,9 @@ function ScheduleAuditModal({ onClose, onDone }: { onClose: () => void; onDone: 
         program_ref: programRef,
         criteria_refs: { standards: criteria.split(",").map((c) => c.trim()).filter(Boolean) },
         lead_auditor_id: leadAuditor,
+        auditees: auditeeRows.map((r) => r.user_id).filter(Boolean).length
+          ? auditeeRows.map((r) => r.user_id).filter(Boolean)
+          : null,
         scheduled_at: new Date(scheduledAt).toISOString(),
         process_scope: processScope ? { processes: processScope.split(",").map((p) => p.trim()) } : null,
       });
@@ -156,6 +161,16 @@ function ScheduleAuditModal({ onClose, onDone }: { onClose: () => void; onDone: 
           options={entities.users}
           status={entities.usersStatus}
           kind="user"
+        />
+        <RepeatableRows
+          label="Auditees"
+          itemLabel="Auditee"
+          hint="The team/area being audited. SOD-016: lead auditor must not also appear here."
+          subFields={[{ name: "user_id", label: "User", type: "userSelect", required: true }]}
+          value={auditeeRows}
+          onChange={setAuditeeRows}
+          userOptions={entities.users}
+          userOptionsStatus={entities.usersStatus}
         />
         {error && <p className="error-text mb-2">{error}</p>}
         <div className="flex justify-between gap-3 mt-2">

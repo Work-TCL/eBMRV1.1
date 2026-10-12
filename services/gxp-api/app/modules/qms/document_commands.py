@@ -22,6 +22,7 @@ from app.modules.qms.document_models import (
     ControlledCopy,
     ControlledDocument,
     ControlledDocumentVersion,
+    DocumentAcknowledgment,
 )
 from app.modules.qms.signature_support import enforce_signer_policy
 from app.modules.signature import service as signature_service
@@ -458,4 +459,70 @@ async def issue_controlled_copy(session: AsyncSession, cmd: IssueControlledCopyC
         reason=cmd.reason, old_state=old_state, event_type="ControlledCopyIssued",
         event_payload={"id": str(version.id), "copy_id": str(copy.id), "copy_number": cmd.copy_number},
         signature_id=None, expected_version=cmd.expected_version, command_type="IssueControlledCopy", site_id=document.site_id,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Acknowledgment — DOC-FR-014/SG-079 resolved 2026-10-09 (project-owner-directed: "Simple unsigned log")
+# ---------------------------------------------------------------------------
+
+
+class AcknowledgeDocumentVersionCommand(CommandEnvelope):
+    document_version_id: uuid.UUID
+    statement: str | None = None
+
+
+async def acknowledge_document_version(
+    session: AsyncSession, cmd: AcknowledgeDocumentVersionCommand, actor_user_id: uuid.UUID,
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    version = await session.get(ControlledDocumentVersion, cmd.document_version_id)
+    if version is None:
+        raise NotFoundError("Controlled document version not found")
+    if version.state != "EFFECTIVE":
+        raise DocumentVersionObsoleteError("Acknowledgment can only be recorded against an EFFECTIVE version", current_state=version.state)
+    document = await session.get(ControlledDocument, version.document_id)
+
+    # Re-acknowledging is idempotent, not an error (AG-07: this is a read-and-understand log, not a
+    # signature -- a double-click or a later re-visit of an already-acknowledged version is not a data
+    # problem worth rejecting the way a duplicate copy_number is for IssueControlledCopy above).
+    ack = (
+        await session.execute(
+            select(DocumentAcknowledgment).where(
+                DocumentAcknowledgment.document_version_id == version.id, DocumentAcknowledgment.user_id == actor_user_id,
+            )
+        )
+    ).scalar_one_or_none()
+    created = ack is None
+    if created:
+        ack = DocumentAcknowledgment(document_version_id=version.id, user_id=actor_user_id, statement=cmd.statement)
+        session.add(ack)
+        await session.flush()
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=document.site_id, aggregate_type="controlled_document_version", aggregate_id=version.id,
+        aggregate_version=version.version, action="Changed", actor_id=actor_user_id, correlation_id=correlation_id,
+        reason=cmd.statement, old_value=None, new_value={"acknowledgment_id": str(ack.id), "user_id": str(actor_user_id)},
+        signature_id=None,
+    )
+    if created:
+        await write_outbox_event(
+            session, event_type="DocumentVersionAcknowledged", aggregate_type="controlled_document_version",
+            aggregate_id=version.id, aggregate_version=version.version,
+            payload={"id": str(version.id), "acknowledgment_id": str(ack.id), "user_id": str(actor_user_id)},
+            correlation_id=correlation_id,
+        )
+    receipt = await record_command_receipt(
+        session, site_id=document.site_id, command_type="AcknowledgeDocumentVersion", aggregate_type="controlled_document_version",
+        aggregate_id=version.id, expected_version=None, resulting_version=version.version,
+        idempotency_key=cmd.idempotency_key, command_hash=payload_hash, actor_user_id=actor_user_id, payload_hash=payload_hash,
+    )
+    return MutationReceipt(
+        command_id=receipt.id, aggregate_id=version.id, resulting_version=version.version,
+        audit_event_id=audit_event.id, signature_id=None, correlation_id=correlation_id,
     )

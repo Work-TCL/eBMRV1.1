@@ -29,10 +29,13 @@ from app.modules.equipment.aseptic_commands import (
     start_operation,
     supersede_profile_version,
 )
-from app.modules.equipment.aseptic_models import AsepticIntervention, AsepticOperation, AsepticProfileVersion
+from app.modules.equipment.aseptic_models import AsepticEventTimeline, AsepticIntervention, AsepticOperation, AsepticProfileVersion
 from app.modules.equipment.cleaning_models import EquipmentArea
+from app.modules.iam.models import User
 from app.modules.policy.service import evaluate_policy
 from app.modules.product_master.models import ProductVersion
+from app.modules.qc.models import QcSample, QcTestOrder
+from app.modules.qms.read_support import resolve_qc_result_samples
 from app.modules.signature.service import create_challenge
 from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.schemas import MutationReceipt
@@ -66,7 +69,9 @@ def _operation_dict(operation: AsepticOperation, refs: dict | None = None) -> di
         "complete_signature_id": str(operation.complete_signature_id) if operation.complete_signature_id else None,
         "media_fill_reference": operation.media_fill_reference,
         "qc_test_order_id": str(operation.qc_test_order_id) if operation.qc_test_order_id else None,
+        "qc_test_order_sample_number": refs.get("qc_test_order_sample_number"),
         "qc_result_id": str(operation.qc_result_id) if operation.qc_result_id else None,
+        "qc_result_sample_number": refs.get("qc_result_sample_number"),
         "requires_deviation": operation.requires_deviation,
         "deviation_reference_id": str(operation.deviation_reference_id) if operation.deviation_reference_id else None,
         "version": operation.version,
@@ -84,6 +89,8 @@ async def _resolve_operation_refs(session: AsyncSession, operations: list[Asepti
     area_ids = {o.area_id for o in operations}
     profile_ids = {o.profile_version_id for o in operations}
     batch_ids = {o.batch_id for o in operations if o.batch_id}
+    test_order_ids = {o.qc_test_order_id for o in operations if o.qc_test_order_id}
+    result_ids = {o.qc_result_id for o in operations if o.qc_result_id}
 
     area_by_id = dict(
         (await session.execute(select(EquipmentArea.id, EquipmentArea.area_code).where(EquipmentArea.id.in_(area_ids)))).all()
@@ -110,6 +117,19 @@ async def _resolve_operation_refs(session: AsyncSession, operations: list[Asepti
             ).all()
         }
 
+    test_order_sample_by_id: dict[uuid.UUID, str] = {}
+    if test_order_ids:
+        test_order_sample_by_id = dict(
+            (
+                await session.execute(
+                    select(QcTestOrder.id, QcSample.sample_number)
+                    .join(QcSample, QcSample.id == QcTestOrder.sample_id)
+                    .where(QcTestOrder.id.in_(test_order_ids))
+                )
+            ).all()
+        )
+    result_sample_by_id = await resolve_qc_result_samples(session, result_ids)
+
     resolved: dict[uuid.UUID, dict] = {}
     for o in operations:
         profile_number, profile_version_no = profile_by_id.get(o.profile_version_id, (None, None))
@@ -121,8 +141,63 @@ async def _resolve_operation_refs(session: AsyncSession, operations: list[Asepti
             "batch_number": batch_number,
             "batch_product_name": product_name,
             "batch_product_code": product_code,
+            "qc_test_order_sample_number": test_order_sample_by_id.get(o.qc_test_order_id) if o.qc_test_order_id else None,
+            "qc_result_sample_number": result_sample_by_id.get(str(o.qc_result_id)) if o.qc_result_id else None,
         }
     return resolved
+
+
+def _intervention_dict(intervention: AsepticIntervention, refs: dict | None = None) -> dict:
+    refs = refs or {}
+    return {
+        "id": str(intervention.id),
+        "intervention_type": intervention.intervention_type,
+        "planned": intervention.planned,
+        "operator_user_id": str(intervention.operator_user_id) if intervention.operator_user_id else None,
+        "operator_full_name": refs.get("operator_full_name"),
+        "operator_username": refs.get("operator_username"),
+        "started_at": intervention.started_at.isoformat() if intervention.started_at else None,
+        "ended_at": intervention.ended_at.isoformat() if intervention.ended_at else None,
+        "location": intervention.location,
+        "reason": intervention.reason,
+        "impacted_unit_scope": intervention.impacted_unit_scope,
+        "evidence_ref": intervention.evidence_ref,
+        "requires_deviation": intervention.requires_deviation,
+        "deviation_reference_id": str(intervention.deviation_reference_id) if intervention.deviation_reference_id else None,
+        "created_at": intervention.created_at.isoformat() if intervention.created_at else None,
+    }
+
+
+async def _resolve_intervention_refs(session: AsyncSession, interventions: list[AsepticIntervention]) -> dict[uuid.UUID, dict]:
+    """Batch-resolves each intervention's recording operator to a human-readable name -- same one-
+    query-per-referenced-table shape as `_resolve_operation_refs` above."""
+    user_ids = {i.operator_user_id for i in interventions if i.operator_user_id}
+    if not user_ids:
+        return {}
+    user_by_id = {
+        row.id: (row.full_name, row.username)
+        for row in (await session.execute(select(User.id, User.full_name, User.username).where(User.id.in_(user_ids)))).all()
+    }
+    resolved: dict[uuid.UUID, dict] = {}
+    for i in interventions:
+        operator = user_by_id.get(i.operator_user_id) if i.operator_user_id else None
+        resolved[i.id] = {
+            "operator_full_name": operator[0] if operator else None,
+            "operator_username": operator[1] if operator else None,
+        }
+    return resolved
+
+
+def _event_dict(event: AsepticEventTimeline) -> dict:
+    return {
+        "id": str(event.id),
+        "event_type": event.event_type,
+        "source": event.source,
+        "severity": event.severity,
+        "payload": event.payload,
+        "occurred_at": event.occurred_at.isoformat() if event.occurred_at else None,
+        "created_at": event.created_at.isoformat() if event.created_at else None,
+    }
 
 
 OPERATION_SORTABLE = {
@@ -223,17 +298,20 @@ async def list_operations(
 
     `batch_id` is optional (additive) -- built for the Batch Workspace, which needs a batch's aseptic
     activity without paging through the whole site; `AsepticOperation.batch_id` already existed on the
-    row, this just exposes it as a filter."""
-    async with session.begin():
-        stmt = select(AsepticOperation).where(AsepticOperation.site_id == site_id)
-        if batch_id is not None:
-            stmt = stmt.where(AsepticOperation.batch_id == batch_id)
-        if params.q:
-            stmt = stmt.where(AsepticOperation.state.ilike(f"%{params.q}%"))
-        rows, envelope = await paginate(session, stmt, params, sortable=OPERATION_SORTABLE, default_sort=AsepticOperation.created_at)
-        operations = [o for (o,) in rows]
-        refs = await _resolve_operation_refs(session, operations)
-        return {**envelope, "items": [_operation_dict(o, refs.get(o.id)) for o in operations]}
+    row, this just exposes it as a filter.
+
+    2026-10-08: had no policy check at all until now -- any authenticated actor, any role, any site,
+    could list another site's operations. Found while adding the interventions/events detail below."""
+    await evaluate_policy(session, actor.user_id, action="aseptic_operation.view", site_id=site_id)
+    stmt = select(AsepticOperation).where(AsepticOperation.site_id == site_id)
+    if batch_id is not None:
+        stmt = stmt.where(AsepticOperation.batch_id == batch_id)
+    if params.q:
+        stmt = stmt.where(AsepticOperation.state.ilike(f"%{params.q}%"))
+    rows, envelope = await paginate(session, stmt, params, sortable=OPERATION_SORTABLE, default_sort=AsepticOperation.created_at)
+    operations = [o for (o,) in rows]
+    refs = await _resolve_operation_refs(session, operations)
+    return {**envelope, "items": [_operation_dict(o, refs.get(o.id)) for o in operations]}
 
 
 @router.get("/operations/{operation_id}")
@@ -242,11 +320,45 @@ async def get_operation(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
+    """2026-10-08 (real user report): embeds this operation's own interventions/events so the detail
+    view can show them instead of nothing -- same `load_items`-on-the-parent-record shape as
+    sterilization_router.get_cycle. Also had no policy check at all until now (same gap as
+    list_operations above)."""
     operation = await session.get(AsepticOperation, operation_id)
     if operation is None:
         raise NotFoundError("Aseptic operation not found")
+    await evaluate_policy(session, actor.user_id, action="aseptic_operation.view", site_id=operation.site_id)
     refs = await _resolve_operation_refs(session, [operation])
-    return _operation_dict(operation, refs.get(operation.id))
+
+    interventions = (
+        (
+            await session.execute(
+                select(AsepticIntervention)
+                .where(AsepticIntervention.operation_id == operation.id)
+                .order_by(AsepticIntervention.created_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    intervention_refs = await _resolve_intervention_refs(session, interventions)
+    events = (
+        (
+            await session.execute(
+                select(AsepticEventTimeline)
+                .where(AsepticEventTimeline.operation_id == operation.id)
+                .order_by(AsepticEventTimeline.occurred_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    return {
+        **_operation_dict(operation, refs.get(operation.id)),
+        "interventions": [_intervention_dict(i, intervention_refs.get(i.id)) for i in interventions],
+        "events": [_event_dict(e) for e in events],
+    }
 
 
 class OperationSignatureChallengeRequest(BaseModel):
@@ -254,6 +366,7 @@ class OperationSignatureChallengeRequest(BaseModel):
 
 
 _OPERATION_CHALLENGE_MEANINGS = {"start": "Performed", "complete": "Performed"}
+_OPERATION_CHALLENGE_PERMISSIONS = {"start": "aseptic_operation.start", "complete": "aseptic_operation.complete"}
 
 
 @router.post("/operations/{operation_id}/signature-challenges")
@@ -268,8 +381,12 @@ async def post_operation_signature_challenge(
         if operation is None:
             raise NotFoundError("Aseptic operation not found")
         meaning = _OPERATION_CHALLENGE_MEANINGS.get(body.action)
-        if meaning is None:
+        permission = _OPERATION_CHALLENGE_PERMISSIONS.get(body.action)
+        if meaning is None or permission is None:
             raise ValidationFailedError("Unknown action", action=body.action)
+        # 2026-10-08: this endpoint had no policy check at all -- same gap already fixed this session
+        # on yield_reconciliation's/sterilization's own signature-challenges routes.
+        await evaluate_policy(session, actor.user_id, action=permission, site_id=operation.site_id)
         challenge = await create_challenge(
             session, user_id=actor.user_id, record_type="aseptic_operation", record_id=operation.id,
             record_version=operation.version, record_hash=operation_record_hash(operation), meaning=meaning,

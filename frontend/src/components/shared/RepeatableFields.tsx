@@ -39,7 +39,7 @@ export interface RepeatSubField {
    * `GET /sterilization/v1/items/eligible` fetch) — SG-201's "generalize rather than grow bespoke
    * per-entity types forever" resolution: a new dropdown source no longer needs a new prop pair added to
    * `RepeatableRows`/`SubFieldControl`, just a `customSelect` field carrying its own already-fetched data. */
-  type?: "text" | "number" | "select" | "bool" | "materialLotSelect" | "userSelect" | "equipmentSelect" | "areaSelect" | "customSelect";
+  type?: "text" | "number" | "select" | "bool" | "materialSelect" | "materialLotSelect" | "userSelect" | "equipmentSelect" | "areaSelect" | "customSelect";
   required?: boolean;
   placeholder?: string;
   options?: { value: string; label: string }[];
@@ -48,7 +48,19 @@ export interface RepeatSubField {
   /** "customSelect" only — the noun used in copy ("Select a {noun}", "Loading {noun}s…"), e.g. "sterile input". */
   optionsNoun?: string;
   default?: string;
+  /** Only render this sub-field within a row when another sub-field in the *same* row currently equals
+   * one of `equals` — e.g. a line-clearance checklist item's "Equipment asset" field should only appear
+   * when that row's own `item_type` is "equipment", not for "material"/"label" rows. `RepeatableRows`'s
+   * `updateRow` also clears any sub-field whose `showWhen` stops matching when its controlling field
+   * changes, so a value entered while a field was visible can't silently ride along in the submitted
+   * row after the user switches it back out of view. */
+  showWhen?: { field: string; equals: string | string[] };
 }
+function matchesShowWhen(row: RepeatRow, showWhen: NonNullable<RepeatSubField["showWhen"]>): boolean {
+  const current = row[showWhen.field] ?? "";
+  return Array.isArray(showWhen.equals) ? showWhen.equals.includes(current) : current === showWhen.equals;
+}
+
 export type RepeatRow = Record<string, string>;
 export interface KvRow {
   key: string;
@@ -60,6 +72,7 @@ export interface KvRow {
 // entity-backed sub-field type is then just one row here plus one new options/status prop threaded down
 // from RepeatableRows, matching the two original hand-written branches this table replaced.
 const SELECT_FIELD_META: Record<string, { noun: string; plural: string; manualPlaceholder: string }> = {
+  materialSelect: { noun: "material", plural: "materials", manualPlaceholder: "Material ID or code" },
   materialLotSelect: { noun: "lot", plural: "material lots", manualPlaceholder: "e.g. LOT-DEV-2601, or a garment/filter reference" },
   userSelect: { noun: "user", plural: "users", manualPlaceholder: "User ID" },
   equipmentSelect: { noun: "equipment asset", plural: "equipment assets", manualPlaceholder: "Equipment asset ID" },
@@ -70,6 +83,8 @@ function SubFieldControl({
   field,
   value,
   onChange,
+  materialOptions,
+  materialOptionsStatus,
   materialLotOptions,
   materialLotOptionsStatus,
   userOptions,
@@ -82,6 +97,9 @@ function SubFieldControl({
   field: RepeatSubField;
   value: string;
   onChange: (value: string) => void;
+  /** Backs "materialSelect" — omitted for every other sub-field type. */
+  materialOptions?: EntityOption[];
+  materialOptionsStatus?: EntityOptionsStatus;
   /** Backs "materialLotSelect" — omitted for every other sub-field type. */
   materialLotOptions?: EntityOption[];
   materialLotOptionsStatus?: EntityOptionsStatus;
@@ -114,21 +132,25 @@ function SubFieldControl({
       : selectMeta
         ? {
             options:
-              field.type === "userSelect"
-                ? userOptions ?? []
-                : field.type === "equipmentSelect"
-                  ? equipmentOptions ?? []
-                  : field.type === "areaSelect"
-                    ? areaOptions ?? []
-                    : materialLotOptions ?? [],
+              field.type === "materialSelect"
+                ? materialOptions ?? []
+                : field.type === "userSelect"
+                  ? userOptions ?? []
+                  : field.type === "equipmentSelect"
+                    ? equipmentOptions ?? []
+                    : field.type === "areaSelect"
+                      ? areaOptions ?? []
+                      : materialLotOptions ?? [],
             status:
-              field.type === "userSelect"
-                ? userOptionsStatus ?? "empty"
-                : field.type === "equipmentSelect"
-                  ? equipmentOptionsStatus ?? "empty"
-                  : field.type === "areaSelect"
-                    ? areaOptionsStatus ?? "empty"
-                    : materialLotOptionsStatus ?? "empty",
+              field.type === "materialSelect"
+                ? materialOptionsStatus ?? "empty"
+                : field.type === "userSelect"
+                  ? userOptionsStatus ?? "empty"
+                  : field.type === "equipmentSelect"
+                    ? equipmentOptionsStatus ?? "empty"
+                    : field.type === "areaSelect"
+                      ? areaOptionsStatus ?? "empty"
+                      : materialLotOptionsStatus ?? "empty",
             ...selectMeta,
           }
         : null;
@@ -226,6 +248,8 @@ export function RepeatableRows({
   subFields,
   value,
   onChange,
+  materialOptions,
+  materialOptionsStatus,
   materialLotOptions,
   materialLotOptionsStatus,
   userOptions,
@@ -242,6 +266,9 @@ export function RepeatableRows({
   subFields: RepeatSubField[];
   value: RepeatRow[];
   onChange: (value: RepeatRow[]) => void;
+  /** Backs any "materialSelect" sub-field — omitted when no sub-field uses that type. */
+  materialOptions?: EntityOption[];
+  materialOptionsStatus?: EntityOptionsStatus;
   /** Backs any "materialLotSelect" sub-field — omitted when no sub-field uses that type. */
   materialLotOptions?: EntityOption[];
   materialLotOptionsStatus?: EntityOptionsStatus;
@@ -264,7 +291,22 @@ export function RepeatableRows({
     onChange([...rows, blank]);
   }
   function updateRow(i: number, name: string, v: string) {
-    onChange(rows.map((r, idx) => (idx === i ? { ...r, [name]: v } : r)));
+    onChange(
+      rows.map((r, idx) => {
+        if (idx !== i) return r;
+        const next = { ...r, [name]: v };
+        // Clear any sub-field whose `showWhen` controlling field is the one that just changed and no
+        // longer matches — otherwise a value entered while that field was visible (e.g. an equipment id
+        // picked while item_type="equipment") would silently keep riding along after the user switches
+        // item_type back to "material"/"label".
+        for (const sf of subFields) {
+          if (sf.showWhen?.field === name && !matchesShowWhen(next, sf.showWhen)) {
+            next[sf.name] = sf.default ?? "";
+          }
+        }
+        return next;
+      })
+    );
   }
   function removeRow(i: number) {
     onChange(rows.filter((_, idx) => idx !== i));
@@ -287,15 +329,18 @@ export function RepeatableRows({
             </button>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            {subFields.map((sf) => (
-              <SubFieldControl
-                key={sf.name} field={sf} value={row[sf.name] ?? ""} onChange={(v) => updateRow(i, sf.name, v)}
-                materialLotOptions={materialLotOptions} materialLotOptionsStatus={materialLotOptionsStatus}
-                userOptions={userOptions} userOptionsStatus={userOptionsStatus}
-                equipmentOptions={equipmentOptions} equipmentOptionsStatus={equipmentOptionsStatus}
-                areaOptions={areaOptions} areaOptionsStatus={areaOptionsStatus}
-              />
-            ))}
+            {subFields
+              .filter((sf) => !sf.showWhen || matchesShowWhen(row, sf.showWhen))
+              .map((sf) => (
+                <SubFieldControl
+                  key={sf.name} field={sf} value={row[sf.name] ?? ""} onChange={(v) => updateRow(i, sf.name, v)}
+                  materialOptions={materialOptions} materialOptionsStatus={materialOptionsStatus}
+                  materialLotOptions={materialLotOptions} materialLotOptionsStatus={materialLotOptionsStatus}
+                  userOptions={userOptions} userOptionsStatus={userOptionsStatus}
+                  equipmentOptions={equipmentOptions} equipmentOptionsStatus={equipmentOptionsStatus}
+                  areaOptions={areaOptions} areaOptionsStatus={areaOptionsStatus}
+                />
+              ))}
           </div>
         </div>
       ))}

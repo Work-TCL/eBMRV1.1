@@ -9,12 +9,14 @@ from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.qms import document_service
 from app.modules.qms.document_commands import (
+    AcknowledgeDocumentVersionCommand,
     CreateDocumentDraftCommand,
     IssueControlledCopyCommand,
     MakeDocumentVersionEffectiveCommand,
     ObsoleteDocumentVersionCommand,
     ReleaseDocumentDraftCommand,
     SubmitDocumentDraftCommand,
+    acknowledge_document_version,
     create_draft,
     issue_controlled_copy,
     make_effective,
@@ -22,8 +24,8 @@ from app.modules.qms.document_commands import (
     release_draft,
     submit_draft,
 )
-from app.modules.qms.document_models import ControlledDocument, ControlledDocumentVersion
-from app.modules.qms.read_support import filtered, iso, sid
+from app.modules.qms.document_models import ControlledDocument, ControlledDocumentVersion, DocumentAcknowledgment
+from app.modules.qms.read_support import filtered, iso, resolve_user_names, sid
 from app.modules.qms.signature_support import SignatureChallengeRequest, create_qms_signature_challenge
 from app.mutation.errors import ValidationFailedError
 from app.mutation.schemas import MutationReceipt
@@ -55,7 +57,7 @@ def _document_dict(document: ControlledDocument) -> dict:
     }
 
 
-def _version_dict(version: ControlledDocumentVersion, document: ControlledDocument) -> dict:
+def _version_dict(version: ControlledDocumentVersion, document: ControlledDocument, owner: tuple[str, str] | None = None) -> dict:
     # Flattens the owning document's identity/classification fields onto each version row -- this is
     # the shape frontend/src/app/documents/page.tsx's `DocumentVersion` interface actually declares
     # (site_id, document_code, document_type, owner_subject_id, is_external, external_source,
@@ -64,6 +66,9 @@ def _version_dict(version: ControlledDocumentVersion, document: ControlledDocume
         "id": str(version.id), "document_id": str(version.document_id),
         "site_id": sid(document.site_id), "document_code": document.document_code,
         "document_type": document.document_type, "owner_subject_id": sid(document.owner_subject_id),
+        # 2026-10 UUID-display audit: owner_subject_id was shown as a raw id with no resolved name.
+        "owner_full_name": owner[0] if owner else None,
+        "owner_username": owner[1] if owner else None,
         "is_external": document.is_external, "external_source": document.external_source,
         "external_revision": document.external_revision,
         "version_label": version.version_label,
@@ -77,6 +82,16 @@ def _version_dict(version: ControlledDocumentVersion, document: ControlledDocume
         "training_impact": version.training_impact,
         "version": version.version,
         "created_at": iso(version.created_at),
+    }
+
+
+def _acknowledgment_dict(a: DocumentAcknowledgment, user: tuple[str, str] | None = None) -> dict:
+    return {
+        "id": str(a.id), "document_version_id": str(a.document_version_id), "user_id": str(a.user_id),
+        # 2026-10 UUID-display audit: user_id was shown as a raw id with no resolved name.
+        "user_full_name": user[0] if user else None,
+        "user_username": user[1] if user else None,
+        "statement": a.statement, "acknowledged_at": iso(a.acknowledged_at),
     }
 
 
@@ -182,6 +197,20 @@ async def post_issue_controlled_copy(
         return await issue_controlled_copy(session, cmd, actor.user_id)
 
 
+@document_router.post("/versions/{document_version_id}/acknowledgments", response_model=MutationReceipt)
+async def post_acknowledge_version(
+    document_version_id: uuid.UUID, cmd: AcknowledgeDocumentVersionCommand, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> MutationReceipt:
+    if cmd.document_version_id != document_version_id:
+        raise ValidationFailedError("document_version_id in path and body must match")
+    async with session.begin():
+        version = await document_service.get_version(session, document_version_id)
+        document = await document_service.get_document(session, version.document_id)
+        await evaluate_policy(session, actor.user_id, action="document.acknowledge", site_id=document.site_id)
+        return await acknowledge_document_version(session, cmd, actor.user_id)
+
+
 # --- Read side ---------------------------------------------------------------------------------
 
 
@@ -212,6 +241,19 @@ async def get_controlled_copies(
     return [_controlled_copy_dict(c) for c in copies]
 
 
+@document_router.get("/versions/{document_version_id}/acknowledgments")
+async def get_acknowledgments(
+    document_version_id: uuid.UUID, session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
+    version = await document_service.get_version(session, document_version_id)
+    document = await document_service.get_document(session, version.document_id)
+    await evaluate_policy(session, actor.user_id, action="document.view", site_id=document.site_id)
+    acks = await document_service.get_acknowledgments(session, document_version_id)
+    user_by_id = await resolve_user_names(session, {a.user_id for a in acks})
+    return [_acknowledgment_dict(a, user_by_id.get(str(a.user_id))) for a in acks]
+
+
 @document_router.get("/{document_code}/versions")
 async def get_versions(
     document_code: str, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
@@ -219,4 +261,6 @@ async def get_versions(
     document = await document_service.get_document_by_code(session, document_code)
     await evaluate_policy(session, actor.user_id, action="document.view", site_id=document.site_id)
     versions = await document_service.get_versions_for_document(session, document.id)
-    return [_version_dict(v, document) for v in versions]
+    user_by_id = await resolve_user_names(session, {document.owner_subject_id})
+    owner = user_by_id.get(str(document.owner_subject_id))
+    return [_version_dict(v, document, owner) for v in versions]

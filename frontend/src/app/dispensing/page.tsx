@@ -34,8 +34,11 @@ interface DispensingOrder {
   id: string;
   site_id: string;
   batch_id: string;
+  batch_number: string | null;
   batch_step_id: string | null;
   material_id: string;
+  material_code: string | null;
+  material_name: string | null;
   target_qty: string;
   target_uom: string;
   tolerance_low: string;
@@ -94,7 +97,7 @@ export default function DispensingPage() {
       header: "Batch",
       render: (o) => (
         <span className="tabular fs-2" style={{ wordBreak: "break-all" }}>
-          {o.batch_id}
+          {o.batch_number ?? o.batch_id}
         </span>
       ),
     },
@@ -492,8 +495,8 @@ function OrderModal({
         )}
         <Fact label="Record version">{o.version}</Fact>
         <IdFact label="Order ID" value={o.id} />
-        <IdFact label="Batch" value={o.batch_id} />
-        <IdFact label="Material" value={o.material_id} />
+        <IdFact label="Batch" value={o.batch_number ?? o.batch_id} />
+        <IdFact label="Material" value={o.material_name ? `${o.material_name} (${o.material_code})` : o.material_id} />
       </FactGrid>
 
       <div className="flex justify-between gap-3 mt-4">

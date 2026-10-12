@@ -6,22 +6,27 @@ import {
   ApiError,
   canEvaluateYield,
   canVerifyReconciliation,
+  clientPagedFetcher,
   listAll,
   newIdempotencyKey,
   type MutationReceipt,
 } from "@/lib/api";
-import { useEntityOptions, useMe, type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
+import { useApiResource, useEntityOptions, useMe, useSiteId, type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
-import { Table, EmptyState } from "@/components/ui/Table";
+import { EmptyState } from "@/components/ui/Table";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/Button";
-import { Field } from "@/components/ui/Field";
+import { Skeleton } from "@/components/ui/Skeleton";
+import { Field, RowButtonSlot } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { UomSelect } from "@/components/ui/UomSelect";
 import { Icon } from "@/components/ui/Icon";
+import { Modal } from "@/components/ui/Modal";
+import { Fact, FactGrid } from "@/components/ui/FactGrid";
 import { StatePill } from "@/components/ui/StatePill";
-import { summarizeJson } from "@/components/ui/JsonPanel";
+import { JsonPanel, summarizeJson } from "@/components/ui/JsonPanel";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
 import {
@@ -40,6 +45,9 @@ interface Calculation {
   calculation_type: string;
   phase_code: string | null;
   scope_type: string;
+  device_unit_id: string | null;
+  device_unit_serial: string | null;
+  input_refs: Record<string, unknown> | null;
   theoretical_quantity: string | null;
   actual_quantity: string | null;
   uom: string | null;
@@ -47,6 +55,12 @@ interface Calculation {
   state: string;
   min_percent: string | null;
   max_percent: string | null;
+  evaluated_by_username: string | null;
+  evaluated_at: string | null;
+  verified_by_username: string | null;
+  verified_at: string | null;
+  supersedes_id: string | null;
+  supersedes_version: number | null;
   verified: boolean;
   version: number;
 }
@@ -56,8 +70,18 @@ interface Reconciliation {
   reconciliation_type: string;
   item_ref: Record<string, unknown> | null;
   device_unit_id: string | null;
+  device_unit_serial: string | null;
   quantities: Record<string, unknown> | null;
   uom: string | null;
+  tolerance_rule: Record<string, unknown> | null;
+  loss_reasons: Record<string, unknown>[] | null;
+  external_reference: Record<string, unknown> | null;
+  external_comparison: Record<string, unknown> | null;
+  evaluated_by_username: string | null;
+  verified_by_username: string | null;
+  verified_at: string | null;
+  supersedes_id: string | null;
+  supersedes_version: number | null;
   state: string;
   version: number;
   verified?: boolean;
@@ -95,13 +119,23 @@ function resultPill(state: string) {
 }
 
 export default function YieldPage() {
-  const { me } = useMe();
+  const { me, loading: meLoading } = useMe();
   const entities = useEntityOptions();
   const [batchId, setBatchId] = useState("");
   const [summary, setSummary] = useState<BatchSummary | null>(null);
+  const [summaryVersion, setSummaryVersion] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [verifyTarget, setVerifyTarget] = useState<VerifyTarget | null>(null);
+  const [viewCalculation, setViewCalculation] = useState<Calculation | null>(null);
+  const [viewReconciliation, setViewReconciliation] = useState<Reconciliation | null>(null);
+
+  const [yieldOpen, setYieldOpen] = useState(false);
+  const [potencyOpen, setPotencyOpen] = useState(false);
+  const [materialOpen, setMaterialOpen] = useState(false);
+  const [packagingOpen, setPackagingOpen] = useState(false);
+  const [labelOpen, setLabelOpen] = useState(false);
+  const [componentOpen, setComponentOpen] = useState(false);
 
   async function load(id = batchId) {
     if (!id.trim()) return;
@@ -109,6 +143,7 @@ export default function YieldPage() {
     setError(null);
     try {
       setSummary(await api.get<BatchSummary>(`/reconciliation/v1/batches/${id.trim()}/summary`));
+      setSummaryVersion((n) => n + 1);
     } catch (err) {
       setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Lookup failed");
       setSummary(null);
@@ -117,6 +152,103 @@ export default function YieldPage() {
     }
   }
 
+  // clientPagedFetcher adapts the already-loaded `summary.calculations`/`.reconciliations` arrays (no
+  // "every batch's calculations" endpoint exists — only a per-batch summary) to DataTable's page/sort/
+  // search contract; recreated every render so it always closes over the latest `summary`, same pattern
+  // as Vault's own `fetchVersions`.
+  const fetchCalculations = clientPagedFetcher<Calculation>(
+    async () => summary?.calculations ?? [],
+    {
+      searchText: (c) => `${c.calculation_type} ${c.phase_code ?? ""} ${c.state}`,
+      sortValue: (c, sortBy) => (sortBy === "state" ? c.state : sortBy === "calculation_type" ? c.calculation_type : null),
+    }
+  );
+  const fetchReconciliations = clientPagedFetcher<Reconciliation>(
+    async () => summary?.reconciliations ?? [],
+    {
+      searchText: (r) => `${r.reconciliation_type} ${r.state} ${summarizeJson(r.item_ref)}`,
+      sortValue: (r, sortBy) => (sortBy === "state" ? r.state : sortBy === "reconciliation_type" ? r.reconciliation_type : null),
+    }
+  );
+
+  const calculationColumns: DataTableColumn<Calculation>[] = [
+    { key: "calculation_type", header: "Type", sortable: true, render: (c) => <span className="fs-2">{c.calculation_type}</span> },
+    { key: "phase_code", header: "Phase", render: (c) => <span className="fs-2">{c.phase_code ?? "—"}</span> },
+    {
+      key: "theoretical_quantity",
+      header: "Theoretical",
+      align: "right",
+      render: (c) => <span className="tabular fs-2">{c.theoretical_quantity ?? "—"} {c.uom ?? ""}</span>,
+    },
+    {
+      key: "actual_quantity",
+      header: "Actual",
+      align: "right",
+      render: (c) => <span className="tabular fs-2">{c.actual_quantity ?? "—"} {c.uom ?? ""}</span>,
+    },
+    {
+      key: "limits",
+      header: "Limits %",
+      align: "right",
+      render: (c) => <span className="tabular fs-2">{c.min_percent ?? "—"} – {c.max_percent ?? "—"}</span>,
+    },
+    { key: "state", header: "State", sortable: true, render: (c) => resultPill(c.state) },
+    {
+      key: "open",
+      header: "",
+      align: "right",
+      render: (c) => (
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={(e) => {
+            e.stopPropagation();
+            setViewCalculation(c);
+          }}
+        >
+          View
+        </Button>
+      ),
+    },
+  ];
+
+  const reconciliationColumns: DataTableColumn<Reconciliation>[] = [
+    { key: "reconciliation_type", header: "Type", sortable: true, render: (r) => <span className="fs-2">{r.reconciliation_type}</span> },
+    {
+      key: "item_ref",
+      header: "Item",
+      render: (r) => <span className="fs-2" style={{ wordBreak: "break-word" }}>{summarizeJson(r.item_ref)}</span>,
+    },
+    {
+      key: "quantities",
+      header: "Quantities",
+      align: "right",
+      render: (r) => (
+        <span className="tabular fs-2" style={{ wordBreak: "break-word" }}>
+          {summarizeJson(r.quantities)} {r.uom ?? ""}
+        </span>
+      ),
+    },
+    { key: "state", header: "State", sortable: true, render: (r) => resultPill(r.state) },
+    {
+      key: "open",
+      header: "",
+      align: "right",
+      render: (r) => (
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={(e) => {
+            e.stopPropagation();
+            setViewReconciliation(r);
+          }}
+        >
+          View
+        </Button>
+      ),
+    },
+  ];
+
   return (
     <div>
       <PageHead
@@ -124,13 +256,17 @@ export default function YieldPage() {
         subtitle="Theoretical vs actual quantities, tolerance outcome, and the verifier signature that clears a batch for release."
       />
 
+      {/* `items-start` (not `items-end`) — `EntityPickerField`'s "Batch" control can carry its own hint
+          text (empty/error states), which would make that Field taller than a bare Button next to it;
+          `RowButtonSlot` keeps the button level with the input either way instead of only working by
+          coincidence when no hint happens to be showing. */}
       <Card pad className="mb-4">
         <form
           onSubmit={(e) => {
             e.preventDefault();
             load();
           }}
-          className="flex flex-wrap items-end gap-4"
+          className="flex flex-wrap items-start gap-4"
         >
           <EntityPickerField
             label="Batch"
@@ -140,9 +276,11 @@ export default function YieldPage() {
             status={entities.batchesStatus}
             kind="batch"
           />
-          <Button type="submit" variant="secondary" disabled={loading || !batchId.trim()}>
-            <Icon name="search" /> {loading ? "Loading…" : "Load batch summary"}
-          </Button>
+          <RowButtonSlot>
+            <Button type="submit" variant="secondary" disabled={loading || !batchId.trim()}>
+              <Icon name="search" /> {loading ? "Loading…" : "Load batch summary"}
+            </Button>
+          </RowButtonSlot>
         </form>
         {error && <p className="error-text mt-3">{error}</p>}
       </Card>
@@ -159,134 +297,262 @@ export default function YieldPage() {
           </Banner>
 
           <Card className="mt-4">
-            <CardHeader title={`Calculations (${summary.calculations.length})`} />
+            <CardHeader
+              title={`Calculations (${summary.calculations.length})`}
+              meta={
+                meLoading ? (
+                  <Skeleton width={190} height={30} radius="var(--radius-md)" />
+                ) : canEvaluateYield(me) ? (
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="secondary" onClick={() => setYieldOpen(true)}>
+                      <Icon name="plus" /> Evaluate yield
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => setPotencyOpen(true)}>
+                      <Icon name="plus" /> Evaluate potency
+                    </Button>
+                  </div>
+                ) : undefined
+              }
+            />
             {summary.calculations.length === 0 ? (
               <EmptyState icon="gauge">No yield or potency calculations recorded for this batch.</EmptyState>
             ) : (
-              <Table>
-                <thead>
-                  <tr>
-                    <th>Type</th>
-                    <th>Phase</th>
-                    <th>Theoretical</th>
-                    <th>Actual</th>
-                    <th>Limits %</th>
-                    <th>State</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summary.calculations.map((c) => (
-                    <tr key={c.id}>
-                      <td>{c.calculation_type}</td>
-                      <td>{c.phase_code ?? "—"}</td>
-                      <td className="tabular">{c.theoretical_quantity ?? "—"} {c.uom ?? ""}</td>
-                      <td className="tabular">{c.actual_quantity ?? "—"} {c.uom ?? ""}</td>
-                      <td className="tabular fs-2">
-                        {c.min_percent ?? "—"} – {c.max_percent ?? "—"}
-                      </td>
-                      <td>{resultPill(c.state)}</td>
-                      <td style={{ textAlign: "right" }}>
-                        {!c.verified && canVerifyReconciliation(me) && (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() =>
-                              setVerifyTarget({
-                                kind: "CALCULATION",
-                                id: c.id,
-                                version: c.version,
-                                label: `${c.calculation_type}${c.phase_code ? ` / ${c.phase_code}` : ""}`,
-                              })
-                            }
-                          >
-                            Verify
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </Table>
+              <DataTable
+                columns={calculationColumns}
+                fetchPage={fetchCalculations}
+                rowKey={(c) => c.id}
+                searchPlaceholder="Search type, phase or state…"
+                defaultSort={{ by: "calculation_type", dir: "asc" }}
+                onRowClick={setViewCalculation}
+                reloadToken={summaryVersion}
+              />
             )}
           </Card>
 
           <Card className="mt-4">
-            <CardHeader title={`Reconciliations (${summary.reconciliations.length})`} />
+            <CardHeader
+              title={`Reconciliations (${summary.reconciliations.length})`}
+              meta={
+                meLoading ? (
+                  <Skeleton width={260} height={30} radius="var(--radius-md)" />
+                ) : canEvaluateYield(me) ? (
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="secondary" onClick={() => setMaterialOpen(true)}>
+                      <Icon name="plus" /> Material
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => setPackagingOpen(true)}>
+                      <Icon name="plus" /> Packaging
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => setLabelOpen(true)}>
+                      <Icon name="plus" /> Label
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => setComponentOpen(true)}>
+                      <Icon name="plus" /> Component
+                    </Button>
+                  </div>
+                ) : undefined
+              }
+            />
             {summary.reconciliations.length === 0 ? (
               <EmptyState icon="list-checks">No material, packaging, label or component reconciliations recorded.</EmptyState>
             ) : (
-              <Table>
-                <thead>
-                  <tr>
-                    <th>Type</th>
-                    <th>Item</th>
-                    <th>Quantities</th>
-                    <th>State</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {summary.reconciliations.map((r) => (
-                    <tr key={r.id}>
-                      <td>{r.reconciliation_type}</td>
-                      <td className="fs-2" style={{ wordBreak: "break-word" }}>
-                        {summarizeJson(r.item_ref)}
-                      </td>
-                      <td className="fs-1" style={{ wordBreak: "break-word" }}>
-                        {summarizeJson(r.quantities)} {r.uom ?? ""}
-                      </td>
-                      <td>{resultPill(r.state)}</td>
-                      <td style={{ textAlign: "right" }}>
-                        {!r.verified && canVerifyReconciliation(me) && (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            onClick={() =>
-                              setVerifyTarget({
-                                kind: "RECONCILIATION",
-                                id: r.id,
-                                version: r.version,
-                                label: r.reconciliation_type,
-                              })
-                            }
-                          >
-                            Verify
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </Table>
+              <DataTable
+                columns={reconciliationColumns}
+                fetchPage={fetchReconciliations}
+                rowKey={(r) => r.id}
+                searchPlaceholder="Search type, item or state…"
+                defaultSort={{ by: "reconciliation_type", dir: "asc" }}
+                onRowClick={setViewReconciliation}
+                reloadToken={summaryVersion}
+              />
             )}
           </Card>
         </>
       )}
 
-      {canEvaluateYield(me) && (
-        <div className="mt-6 grid gap-4">
-          <EvaluateYieldCard onEvaluated={() => load()} defaultBatchId={batchId} entities={entities} />
-          <EvaluatePotencyCard onEvaluated={() => load()} defaultBatchId={batchId} entities={entities} />
+      {viewCalculation && (
+        <Modal
+          open
+          onClose={() => setViewCalculation(null)}
+          title={`${viewCalculation.calculation_type}${viewCalculation.phase_code ? ` / ${viewCalculation.phase_code}` : ""}`}
+        >
+          <FactGrid>
+            <Fact label="Scope type">{viewCalculation.scope_type}</Fact>
+            {viewCalculation.device_unit_id && (
+              <Fact label="Device unit">{viewCalculation.device_unit_serial ?? viewCalculation.device_unit_id}</Fact>
+            )}
+            <Fact label="Theoretical">{viewCalculation.theoretical_quantity ?? "—"} {viewCalculation.uom ?? ""}</Fact>
+            <Fact label="Actual">{viewCalculation.actual_quantity ?? "—"} {viewCalculation.uom ?? ""}</Fact>
+            <Fact label="Limits %">{viewCalculation.min_percent ?? "—"} – {viewCalculation.max_percent ?? "—"}</Fact>
+            <Fact label="State">{resultPill(viewCalculation.state)}</Fact>
+            <Fact label="Evaluated by">{viewCalculation.evaluated_by_username ?? "—"}</Fact>
+            {viewCalculation.verified && (
+              <>
+                <Fact label="Verified by">{viewCalculation.verified_by_username ?? "—"}</Fact>
+                <Fact label="Verified at">{viewCalculation.verified_at ?? "—"}</Fact>
+              </>
+            )}
+            {viewCalculation.supersedes_id && (
+              <Fact label="Supersedes">
+                {viewCalculation.supersedes_version != null ? `v${viewCalculation.supersedes_version}` : viewCalculation.supersedes_id}
+              </Fact>
+            )}
+            <Fact label="Record version">{viewCalculation.version}</Fact>
+          </FactGrid>
+          <JsonPanel title="Input references" value={viewCalculation.input_refs} />
+          <JsonPanel title="Result" value={viewCalculation.result} />
+          {!viewCalculation.verified && canVerifyReconciliation(me) && (
+            <Button
+              className="mt-3"
+              variant="secondary"
+              onClick={() =>
+                setVerifyTarget({
+                  kind: "CALCULATION",
+                  id: viewCalculation.id,
+                  version: viewCalculation.version,
+                  label: `${viewCalculation.calculation_type}${viewCalculation.phase_code ? ` / ${viewCalculation.phase_code}` : ""}`,
+                })
+              }
+            >
+              Verify
+            </Button>
+          )}
+        </Modal>
+      )}
+
+      {viewReconciliation && (
+        <Modal open onClose={() => setViewReconciliation(null)} title={viewReconciliation.reconciliation_type}>
+          <FactGrid>
+            {viewReconciliation.device_unit_id && (
+              <Fact label="Device unit">{viewReconciliation.device_unit_serial ?? viewReconciliation.device_unit_id}</Fact>
+            )}
+            <Fact label="Item">{summarizeJson(viewReconciliation.item_ref)}</Fact>
+            <Fact label="Quantities">{summarizeJson(viewReconciliation.quantities)} {viewReconciliation.uom ?? ""}</Fact>
+            <Fact label="Tolerance rule">{summarizeJson(viewReconciliation.tolerance_rule)}</Fact>
+            <Fact label="State">{resultPill(viewReconciliation.state)}</Fact>
+            <Fact label="Evaluated by">{viewReconciliation.evaluated_by_username ?? "—"}</Fact>
+            {viewReconciliation.verified && (
+              <>
+                <Fact label="Verified by">{viewReconciliation.verified_by_username ?? "—"}</Fact>
+                <Fact label="Verified at">{viewReconciliation.verified_at ?? "—"}</Fact>
+              </>
+            )}
+            {viewReconciliation.supersedes_id && (
+              <Fact label="Supersedes">
+                {viewReconciliation.supersedes_version != null ? `v${viewReconciliation.supersedes_version}` : viewReconciliation.supersedes_id}
+              </Fact>
+            )}
+            <Fact label="Record version">{viewReconciliation.version}</Fact>
+          </FactGrid>
+          {viewReconciliation.loss_reasons && viewReconciliation.loss_reasons.length > 0 && (
+            <JsonPanel title="Loss reasons" value={viewReconciliation.loss_reasons} />
+          )}
+          {viewReconciliation.external_reference && (
+            <JsonPanel title="External (ERP/WMS) reference" value={viewReconciliation.external_reference} />
+          )}
+          {viewReconciliation.external_comparison && (
+            <JsonPanel title="External comparison outcome" value={viewReconciliation.external_comparison} />
+          )}
+          {!viewReconciliation.verified && canVerifyReconciliation(me) && (
+            <Button
+              className="mt-3"
+              variant="secondary"
+              onClick={() =>
+                setVerifyTarget({
+                  kind: "RECONCILIATION",
+                  id: viewReconciliation.id,
+                  version: viewReconciliation.version,
+                  label: viewReconciliation.reconciliation_type,
+                })
+              }
+            >
+              Verify
+            </Button>
+          )}
+        </Modal>
+      )}
+
+      {yieldOpen && (
+        <Modal open onClose={() => setYieldOpen(false)} title="Evaluate yield" large>
+          <EvaluateYieldCard
+            onEvaluated={() => {
+              setYieldOpen(false);
+              load();
+            }}
+            defaultBatchId={batchId}
+            entities={entities}
+          />
+        </Modal>
+      )}
+
+      {potencyOpen && (
+        <Modal open onClose={() => setPotencyOpen(false)} title="Evaluate potency" large>
+          <EvaluatePotencyCard
+            onEvaluated={() => {
+              setPotencyOpen(false);
+              load();
+            }}
+            defaultBatchId={batchId}
+            entities={entities}
+          />
+        </Modal>
+      )}
+
+      {materialOpen && (
+        <Modal open onClose={() => setMaterialOpen(false)} title="Evaluate material reconciliation" large>
           <ReconciliationCard
             title="Evaluate material reconciliation"
             postPath="/reconciliation/v1/material/evaluate"
             reconciliationType="MATERIAL"
-            onEvaluated={() => load()}
+            onEvaluated={() => {
+              setMaterialOpen(false);
+              load();
+            }}
             defaultBatchId={batchId}
             entities={entities}
           />
+        </Modal>
+      )}
+
+      {packagingOpen && (
+        <Modal open onClose={() => setPackagingOpen(false)} title="Evaluate packaging reconciliation" large>
           <ReconciliationCard
             title="Evaluate packaging reconciliation"
             postPath="/reconciliation/v1/packaging/evaluate"
             reconciliationType="PACKAGING"
-            onEvaluated={() => load()}
+            onEvaluated={() => {
+              setPackagingOpen(false);
+              load();
+            }}
             defaultBatchId={batchId}
             entities={entities}
           />
-          <EvaluateLabelReconciliationCard onEvaluated={() => load()} entities={entities} />
-          <EvaluateComponentReconciliationCard onEvaluated={() => load()} defaultBatchId={batchId} entities={entities} />
-        </div>
+        </Modal>
+      )}
+
+      {labelOpen && (
+        <Modal open onClose={() => setLabelOpen(false)} title="Evaluate label reconciliation" large>
+          <EvaluateLabelReconciliationCard
+            onEvaluated={() => {
+              setLabelOpen(false);
+              load();
+            }}
+            entities={entities}
+          />
+        </Modal>
+      )}
+
+      {componentOpen && (
+        <Modal open onClose={() => setComponentOpen(false)} title="Evaluate component reconciliation" large>
+          <EvaluateComponentReconciliationCard
+            onEvaluated={() => {
+              setComponentOpen(false);
+              load();
+            }}
+            defaultBatchId={batchId}
+            entities={entities}
+          />
+        </Modal>
       )}
 
       {verifyTarget && (
@@ -295,6 +561,8 @@ export default function YieldPage() {
           onClose={() => setVerifyTarget(null)}
           onDone={() => {
             setVerifyTarget(null);
+            setViewCalculation(null);
+            setViewReconciliation(null);
             load();
           }}
           challengePath={`/reconciliation/v1/${verifyTarget.id}/signature-challenges`}
@@ -891,6 +1159,24 @@ function EvaluateComponentReconciliationCard({
 }) {
   const [batchId, setBatchId] = useState(defaultBatchId);
   const [deviceUnitId, setDeviceUnitId] = useState("");
+  const { siteId } = useSiteId();
+  // 2026-10-09 real fix: `GET /devices/v1/units` (added the same day, batch_id-filterable) now exists --
+  // this field was left free-text because no list endpoint existed at all; that's no longer true, so
+  // it's wired to a real dropdown scoped to the selected batch, same shape as useGenealogyNodeRefs().
+  const deviceUnits = useApiResource<{ items: { unit_id: string; serial_number: string | null; udi_di: string | null }[] }>(
+    siteId && batchId.trim() ? `/devices/v1/units?site_id=${siteId}&batch_id=${batchId.trim()}` : null
+  );
+  const deviceUnitOptions: EntityOption[] = (deviceUnits.data?.items ?? []).map((u) => ({
+    value: u.unit_id,
+    label: u.serial_number ?? u.udi_di ?? u.unit_id,
+  }));
+  const deviceUnitOptionsStatus: EntityOptionsStatus = deviceUnits.loading
+    ? "loading"
+    : deviceUnits.error
+      ? "error"
+      : deviceUnitOptions.length === 0
+        ? "empty"
+        : "ready";
   const [itemRef, setItemRef] = useState<KvRow[]>([]);
   const quantityFields = useQuantityFields(true);
   const [uom, setUom] = useState("");
@@ -947,9 +1233,15 @@ function EvaluateComponentReconciliationCard({
           status={entities.batchesStatus}
           kind="batch"
         />
-        <Field label="Device unit ID" hint="Optional - only for a serialized case; must belong to this batch.">
-          <Input value={deviceUnitId} onChange={(e) => setDeviceUnitId(e.target.value)} />
-        </Field>
+        <EntityPickerField
+          label="Device unit ID"
+          hint="Optional - only for a serialized case; must belong to this batch."
+          value={deviceUnitId}
+          onChange={setDeviceUnitId}
+          options={deviceUnitOptions}
+          status={deviceUnitOptionsStatus}
+          kind="device unit"
+        />
         <UomSelect value={uom} onChange={setUom} required />
         <ToleranceRuleFields
           type={toleranceType}

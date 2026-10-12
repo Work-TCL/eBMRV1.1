@@ -7,8 +7,10 @@ import { useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
+import { TableSkeleton } from "@/components/ui/Skeleton";
 import { Select } from "@/components/ui/Select";
 import type { IconName } from "@/components/ui/Icon";
+import { humanizeLabel } from "@/lib/format";
 
 /** The register scaffold every list screen in the app is built from.
  *
@@ -97,7 +99,7 @@ export function RecordListPage<T>({
                   <option value="">All</option>
                   {states.map((s) => (
                     <option key={s} value={s}>
-                      {s}
+                      {humanizeLabel(s)}
                     </option>
                   ))}
                 </Select>
@@ -106,11 +108,10 @@ export function RecordListPage<T>({
           }
         />
         {/* Holding the table until the site resolves avoids one unscoped request that would return
-            every site's rows and never correct itself (DataTable does not watch `siteId`). */}
+            every site's rows and never correct itself (DataTable does not watch `siteId`). The real
+            headers render immediately so nothing shifts once DataTable takes over. */}
         {waiting ? (
-          <p className="table-loading-row" style={{ padding: "var(--space-4)" }}>
-            Loading…
-          </p>
+          <TableSkeleton columns={columns.map((c) => ({ header: c.header, align: c.align }))} />
         ) : (
           <DataTable
             columns={columns}

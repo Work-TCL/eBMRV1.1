@@ -12,7 +12,7 @@ import {
 import { useApiResource, useMe } from "@/lib/hooks";
 import { RecordDetailShell, useCommand } from "@/components/shared/RecordDetailShell";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
-import { Fact, IdFact } from "@/components/ui/FactGrid";
+import { Fact, IdFact, UserFact } from "@/components/ui/FactGrid";
 import { JsonPanel, HistoryPanel } from "@/components/ui/JsonPanel";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -23,7 +23,9 @@ import { Icon } from "@/components/ui/Icon";
 interface OotDetail {
   id: string;
   source_result_id: string;
+  source_sample_number: string | null;
   trend_rule_id: string | null;
+  trend_rule_business_id: string | null;
   trend_rule_version: string | null;
   baseline_ref: string | null;
   trigger_details: Record<string, unknown> | null;
@@ -31,6 +33,8 @@ interface OotDetail {
   investigation_notes: string | null;
   impact_assessment: string | null;
   investigation_owner_user_id: string | null;
+  investigation_owner_full_name: string | null;
+  investigation_owner_username: string | null;
   hold_status: string | null;
   version: number;
   opened_at: string | null;
@@ -52,7 +56,7 @@ export default function OotDetailPage({ params }: { params: Promise<{ id: string
     <RecordDetailShell
       recordNumber={data ? `OOT ${data.id.slice(0, 8)}…` : ""}
       state={data?.state}
-      subtitle={data ? `Source result ${data.source_result_id.slice(0, 8)}…` : undefined}
+      subtitle={data ? `Source sample ${data.source_sample_number ?? `${data.source_result_id.slice(0, 8)}…`}` : undefined}
       backHref="/quality/oos"
       backLabel="OOS / OOT"
       loading={loading}
@@ -81,10 +85,15 @@ export default function OotDetailPage({ params }: { params: Promise<{ id: string
             <Fact label="Opened">{data.opened_at ? formatDateTime(data.opened_at) : "—"}</Fact>
             <Fact label="Closed">{data.closed_at ? formatDateTime(data.closed_at) : "—"}</Fact>
             <Fact label="Record version">{data.version}</Fact>
-            <IdFact label="Source result" value={data.source_result_id} />
-            {data.trend_rule_id && <IdFact label="Trend rule" value={data.trend_rule_id} />}
+            <IdFact label="Source result" value={data.source_sample_number ?? data.source_result_id} />
+            {data.trend_rule_id && <IdFact label="Trend rule" value={data.trend_rule_business_id ?? data.trend_rule_id} />}
             {data.investigation_owner_user_id && (
-              <IdFact label="Investigation owner" value={data.investigation_owner_user_id} />
+              <UserFact
+                label="Investigation owner"
+                fullName={data.investigation_owner_full_name}
+                username={data.investigation_owner_username}
+                id={data.investigation_owner_user_id}
+              />
             )}
           </>
         )

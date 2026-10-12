@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { WorkflowStatePill } from "@/components/ui/StatePill";
+import { humanizeLabel } from "@/lib/format";
 
 const RISK_STATES = [
   "DRAFT",
@@ -197,7 +198,7 @@ function RaiseRiskModal({ onClose, onDone }: { onClose: () => void; onDone: () =
             <Select value={riskType} onChange={(e) => setRiskType(e.target.value)}>
               {RISK_TYPES.map((t) => (
                 <option key={t} value={t}>
-                  {t}
+                  {humanizeLabel(t)}
                 </option>
               ))}
             </Select>

@@ -48,8 +48,13 @@ async def release_readiness(session: AsyncSession, lot_id: uuid.UUID) -> dict:
     blocked = [u for u in ([lot] + units) if u.state == "hold"]
     return {
         "lot_id": str(lot_id),
+        "lot_udi_di": lot.udi_di,
         "unit_count": len(units),
         "blocked_unit_ids": [str(u.id) for u in blocked],
+        # Added alongside the ids (2026-10-09, real user report) so the UI can show which unit is
+        # actually blocking release by its own serial number instead of a raw list of UUIDs -- the lot
+        # header itself (serial_number is null) is labelled "(lot)" rather than a blank string.
+        "blocked_units": [{"unit_id": str(u.id), "serial_number": u.serial_number} for u in blocked],
         "eligible": len(blocked) == 0,
         "note": "Partial check (state only) -- component/test/label/signature/NCR completeness not evaluated (SG-049/SG-050). Not a regulated release decision.",
     }

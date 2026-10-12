@@ -569,3 +569,138 @@ async def test_list_cycles_filters_by_batch_id(client, seeded, db):
         await client.get(f"/sterilization/v1/cycles?site_id={site_id}&batch_id={batch_id}", headers=auth_headers(op_token))
     ).json()
     assert [r["id"] for r in filtered["items"]] == [scoped_cycle_id]
+
+
+async def test_cycle_reads_and_signature_challenge_require_auth_and_role(client, seeded, db):
+    """2026-10-08 regression (real user report) -- `GET /cycles`, `GET /cycles/{id}` and `POST
+    .../signature-challenges` had no policy check at all: any authenticated actor, any role, any site,
+    could read/mint a challenge for any cycle. Mirrors test_equipment_flow.py's own cross-site setup."""
+    from app.core.security import hash_password
+    from app.modules.iam.models import Site, User, UserSiteRole
+
+    op_token = await login(client, "sterilization.operator")
+    site_id = seeded["site_id"]
+    profile_id = str(seeded["sterilization_profile"].id)
+    equipment_id = await _create_equipment(client, op_token, site_id, code="EQP-STR-WN50")
+    cycle_id = await _create_cycle(client, op_token, site_id, equipment_id, profile_id)
+
+    async with db.begin():
+        other_site = Site(organization_id=seeded["org_id"], code="T2-STR", name="Second Sterilization Site")
+        db.add(other_site)
+        await db.flush()
+        other_user = User(
+            username="sterilwn50.other", email="sterilwn50.other@example.com", full_name="Other Site User",
+            password_hash=hash_password("ChangeMe123!"), status="active",
+        )
+        db.add(other_user)
+        await db.flush()
+        db.add(UserSiteRole(user_id=other_user.id, site_id=other_site.id, role_id=seeded["roles"]["Sterilization Operator"].id))
+
+    other_token = await login(client, "sterilwn50.other")
+
+    list_resp = await client.get(f"/sterilization/v1/cycles?site_id={site_id}", headers=auth_headers(other_token))
+    assert list_resp.status_code == 403, list_resp.text
+
+    get_resp = await client.get(f"/sterilization/v1/cycles/{cycle_id}", headers=auth_headers(other_token))
+    assert get_resp.status_code == 403, get_resp.text
+
+    challenge_resp = await client.post(
+        f"/sterilization/v1/cycles/{cycle_id}/signature-challenges", json={"action": "start"}, headers=auth_headers(other_token)
+    )
+    assert challenge_resp.status_code == 403, challenge_resp.text
+
+    # The owning-site operator can still do all three.
+    ok_list = await client.get(f"/sterilization/v1/cycles?site_id={site_id}", headers=auth_headers(op_token))
+    assert ok_list.status_code == 200
+    ok_get = await client.get(f"/sterilization/v1/cycles/{cycle_id}", headers=auth_headers(op_token))
+    assert ok_get.status_code == 200
+
+
+async def test_filter_use_reads_and_signature_challenge_require_auth_and_role(client, seeded, db):
+    """2026-10-08 regression (real user report) -- `GET /filtration/v1/filters`, `GET .../filters/{id}`
+    and `POST .../uses/{id}/signature-challenges` had no policy check at all. `GET /filters` stays
+    deliberately unscoped by site (pre-existing design, same as cleaning.router.list_executions) -- its
+    gate is "holds sterile_filter_use.view at any site", not a per-site check -- while the single-record
+    `GET /filters/{id}` and the signature-challenges route are both scoped to the use's own site."""
+    from app.core.security import hash_password
+    from app.modules.iam.models import Site, User, UserSiteRole
+
+    op_token = await login(client, "sterilization.operator")
+    site_id = seeded["site_id"]
+    use_id = (
+        await client.post(
+            "/filtration/v1/filters/install",
+            json={"idempotency_key": idem(), "site_id": str(site_id), "filter_serial": "FLT-WN51"},
+            headers=auth_headers(op_token),
+        )
+    ).json()["aggregate_id"]
+
+    # No role at all granting sterile_filter_use.view anywhere -- denied from the list entirely.
+    no_role_token = await login(client, "em.technician")
+    no_role_list = await client.get("/filtration/v1/filters", headers=auth_headers(no_role_token))
+    assert no_role_list.status_code == 403, no_role_list.text
+
+    async with db.begin():
+        other_site = Site(organization_id=seeded["org_id"], code="T2-STR-FLT", name="Second Filtration Site")
+        db.add(other_site)
+        await db.flush()
+        other_user = User(
+            username="sterilwn51.other", email="sterilwn51.other@example.com", full_name="Other Site User",
+            password_hash=hash_password("ChangeMe123!"), status="active",
+        )
+        db.add(other_user)
+        await db.flush()
+        db.add(UserSiteRole(user_id=other_user.id, site_id=other_site.id, role_id=seeded["roles"]["Sterilization Operator"].id))
+
+    other_token = await login(client, "sterilwn51.other")
+
+    # Holds sterile_filter_use.view at a *different* site -- list succeeds (unscoped by design), but the
+    # single-record get and the signature-challenge on this specific (other site's) use are both denied.
+    other_list = await client.get("/filtration/v1/filters", headers=auth_headers(other_token))
+    assert other_list.status_code == 200, other_list.text
+
+    get_resp = await client.get(f"/filtration/v1/filters/{use_id}", headers=auth_headers(other_token))
+    assert get_resp.status_code == 403, get_resp.text
+
+    challenge_resp = await client.post(
+        f"/filtration/v1/uses/{use_id}/signature-challenges", json={"action": "complete"}, headers=auth_headers(other_token)
+    )
+    assert challenge_resp.status_code == 403, challenge_resp.text
+
+    ok_get = await client.get(f"/filtration/v1/filters/{use_id}", headers=auth_headers(op_token))
+    assert ok_get.status_code == 200
+
+
+async def test_filter_use_detail_resolves_batch_and_cycle_references(client, seeded, db):
+    """2026-10-08 regression (real user report) -- the filter use detail modal showed raw UUIDs for
+    batch/cycle/installer instead of resolved human-readable labels."""
+    op_token = await login(client, "sterilization.operator")
+    site_id = seeded["site_id"]
+    profile_id = str(seeded["sterilization_profile"].id)
+
+    admin_token, product_version_id, recipe_version_id = await _released_pair(db, client, seeded, "strwn52")
+    batch_resp = await client.post(
+        "/batches/v1",
+        json=_create_body(site_id, product_version_id, recipe_version_id, "BAT-STR-WN52"),
+        headers=auth_headers(admin_token),
+    )
+    batch_id = batch_resp.json()["aggregate_id"]
+    equipment_id = await _create_equipment(client, op_token, site_id, code="EQP-STR-WN52")
+    cycle_id = await _create_cycle(client, op_token, site_id, equipment_id, profile_id)
+
+    resp = await client.post(
+        "/filtration/v1/filters/install",
+        json={
+            "idempotency_key": idem(), "site_id": str(site_id), "filter_serial": "FLT-WN52",
+            "batch_id": batch_id, "sterilization_cycle_id": cycle_id,
+        },
+        headers=auth_headers(op_token),
+    )
+    assert resp.status_code == 200, resp.text
+    use_id = resp.json()["aggregate_id"]
+
+    detail = (await client.get(f"/filtration/v1/filters/{use_id}", headers=auth_headers(op_token))).json()
+    assert detail["batch_number"] == "BAT-STR-WN52"
+    assert detail["sterilization_cycle_label"] is not None
+    assert detail["installed_by_full_name"] is not None
+    assert detail["installed_by_username"] == "sterilization.operator"

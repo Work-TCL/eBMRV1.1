@@ -1231,13 +1231,17 @@ async def post_create_order(
         return await create_dispensing_order(session, cmd, actor.user_id)
 
 
-def _dispensing_dict(order: DispensingOrder) -> dict:
+def _dispensing_dict(order: DispensingOrder, refs: dict | None = None) -> dict:
+    refs = refs or {}
     return {
         "id": str(order.id),
         "site_id": str(order.site_id),
         "batch_id": str(order.batch_id),
+        "batch_number": refs.get("batch_number"),
         "batch_step_id": str(order.batch_step_id) if order.batch_step_id else None,
         "material_id": str(order.material_id),
+        "material_code": refs.get("material_code"),
+        "material_name": refs.get("material_name"),
         "material_spec_version_id": str(order.material_spec_version_id) if order.material_spec_version_id else None,
         "target_qty": str(order.target_qty),
         "target_uom": order.target_uom,
@@ -1269,12 +1273,34 @@ async def post_override_target(
         return await override_dispensing_order_target(session, order_id, cmd, actor.user_id, order.site_id)
 
 
+async def _dispensing_refs(session: AsyncSession, orders: list[DispensingOrder]) -> dict[uuid.UUID, dict]:
+    """Batch-resolves `batch_id`/`material_id` to their human-facing numbers/codes for a set of
+    dispensing orders -- one query per referenced table instead of per row (2026-10 UUID-display audit)."""
+    if not orders:
+        return {}
+    batch_ids = {o.batch_id for o in orders}
+    material_ids = {o.material_id for o in orders}
+    batches = (await session.execute(select(Batch).where(Batch.id.in_(batch_ids)))).scalars().all()
+    materials = (await session.execute(select(Material).where(Material.id.in_(material_ids)))).scalars().all()
+    batch_by_id = {b.id: b for b in batches}
+    material_by_id = {m.id: m for m in materials}
+    return {
+        o.id: {
+            "batch_number": batch_by_id[o.batch_id].batch_number if o.batch_id in batch_by_id else None,
+            "material_code": material_by_id[o.material_id].code if o.material_id in material_by_id else None,
+            "material_name": material_by_id[o.material_id].name if o.material_id in material_by_id else None,
+        }
+        for o in orders
+    }
+
+
 @dispensing_v1_router.get("/orders/{order_id}")
 async def get_order(order_id: uuid.UUID, session: AsyncSession = Depends(get_session)) -> dict:
     order = await session.get(DispensingOrder, order_id)
     if order is None:
         raise NotFoundError("Dispensing order not found")
-    return _dispensing_dict(order)
+    refs = await _dispensing_refs(session, [order])
+    return _dispensing_dict(order, refs.get(order.id))
 
 
 class DispensingSignatureChallengeRequest(BaseModel):
@@ -1417,7 +1443,9 @@ async def get_queue(
     rows, envelope = await paginate(
         session, stmt, params, sortable={"created_at": DispensingOrder.created_at}, default_sort=DispensingOrder.created_at
     )
-    return {**envelope, "items": [_dispensing_dict(o) for (o,) in rows]}
+    orders = [o for (o,) in rows]
+    refs = await _dispensing_refs(session, orders)
+    return {**envelope, "items": [_dispensing_dict(o, refs.get(o.id)) for o in orders]}
 
 
 # ---------------------------------------------------------------------------

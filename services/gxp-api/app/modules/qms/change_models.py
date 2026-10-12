@@ -59,10 +59,16 @@ CHANGE_TYPES = (
 CHANGE_CLASSIFICATIONS = ("temporary", "permanent")
 
 CHANGE_STATES = (
-    "DRAFT", "IMPACT_ASSESSMENT", "APPROVAL", "IMPLEMENTATION", "VERIFICATION", "EFFECTIVE", "CLOSED", "CANCELLED",
+    "DRAFT", "IMPACT_ASSESSMENT", "APPROVAL", "IMPLEMENTATION", "VERIFICATION", "EFFECTIVE", "CLOSED",
+    "CANCELLED",
+    # CHG-FR-019/SG-071 resolved 2026-10-09 (project-owner-directed): a new terminal state distinct from
+    # CANCELLED -- CANCELLED means abandoned before implementing; ROLLED_BACK means implementation
+    # started (or was verified) then had to be undone. Only reachable from IMPLEMENTATION/VERIFICATION.
+    "ROLLED_BACK",
 )
 
-NON_CANCELLABLE_STATES = ("CLOSED", "CANCELLED")
+NON_CANCELLABLE_STATES = ("CLOSED", "CANCELLED", "ROLLED_BACK")
+ROLLBACK_ELIGIBLE_STATES = ("IMPLEMENTATION", "VERIFICATION")
 
 CHANGE_ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "DRAFT": {"IMPACT_ASSESSMENT"},
@@ -114,6 +120,10 @@ class ChangeControl(Base):
     effective_at: Mapped[datetime | None] = mapped_column()
     cancel_reason: Mapped[str | None] = mapped_column(Text)
     cancelled_at: Mapped[datetime | None] = mapped_column()
+    # CHG-FR-019/SG-071 resolved 2026-10-09 (migration 0144): same shape as cancel_reason/cancelled_at
+    # above, for the new ROLLED_BACK terminal state.
+    rollback_reason: Mapped[str | None] = mapped_column(Text)
+    rolled_back_at: Mapped[datetime | None] = mapped_column()
     closure_history: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
