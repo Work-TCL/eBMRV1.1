@@ -14,7 +14,7 @@ import {
 import { useApiResource, useMe } from "@/lib/hooks";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { QmsDetailShell, useCommand } from "@/components/qms/QmsDetailShell";
-import { Fact, IdFact } from "@/components/ui/FactGrid";
+import { Fact, IdFact, UserFact } from "@/components/ui/FactGrid";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/Table";
 import { Banner } from "@/components/ui/Banner";
@@ -26,8 +26,16 @@ import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 import { BoolPill, SeverityPill, WorkflowStatePill } from "@/components/ui/StatePill";
+import { humanizeLabel } from "@/lib/format";
 
 interface CaseDetail extends SupplierCase {
+  internal_owner_full_name: string | null;
+  internal_owner_username: string | null;
+  supplier_code: string | null;
+  supplier_legal_name: string | null;
+  supplier_site_name: string | null;
+  material_code: string | null;
+  material_name: string | null;
   material_spec_ref: Record<string, unknown> | null;
   containment: Record<string, unknown> | null;
   asl_impact: Record<string, unknown> | null;
@@ -108,10 +116,10 @@ export default function SupplierCaseDetailPage({ params }: { params: Promise<{ i
             <Fact label="Opened">{formatDateTime(data.created_at)}</Fact>
             <Fact label="Closed">{data.closed_at ? formatDateTime(data.closed_at) : "—"}</Fact>
             <Fact label="Record version">{data.version}</Fact>
-            <IdFact label="Supplier" value={data.supplier_id} />
-            <IdFact label="Supplier site" value={data.supplier_site_id} />
-            <IdFact label="Material" value={data.material_id} />
-            <IdFact label="Internal owner" value={data.internal_owner_subject_id} />
+            <IdFact label="Supplier" value={data.supplier_legal_name ? `${data.supplier_legal_name} (${data.supplier_code})` : data.supplier_id} />
+            <IdFact label="Supplier site" value={data.supplier_site_name ?? data.supplier_site_id} />
+            <IdFact label="Material" value={data.material_name ? `${data.material_name} (${data.material_code})` : data.material_id} />
+            <UserFact label="Internal owner" fullName={data.internal_owner_full_name} username={data.internal_owner_username} id={data.internal_owner_subject_id} />
           </>
         )
       }
@@ -265,6 +273,7 @@ function ActionModal({
   const [scarNumber, setScarNumber] = useState("");
   const [problemStatement, setProblemStatement] = useState("");
   const [dueDate, setDueDate] = useState("");
+  const [acknowledgment, setAcknowledgment] = useState("");
   const [rootCause, setRootCause] = useState("");
   const [supplierActions, setSupplierActions] = useState("");
   const [decision, setDecision] = useState("accepted");
@@ -302,6 +311,7 @@ function ActionModal({
         case "response":
           return api.post(`/qms/v1/scars/${scar.id}/response`, {
             ...base,
+            acknowledgment: { statement: acknowledgment },
             supplier_root_cause: { description: rootCause },
             supplier_actions: { description: supplierActions },
           });
@@ -383,7 +393,7 @@ function ActionModal({
               <Select value={sourceStatus} onChange={(e) => setSourceStatus(e.target.value)}>
                 {SOURCE_STATUS_DECISIONS.map((s) => (
                   <option key={s} value={s}>
-                    {s}
+                    {humanizeLabel(s)}
                   </option>
                 ))}
               </Select>
@@ -446,6 +456,15 @@ function ActionModal({
 
         {action === "response" && (
           <>
+            <Field label="Supplier acknowledgment" required hint="Confirmation that the supplier has received and acknowledged this SCAR.">
+              <textarea
+                className="input"
+                rows={2}
+                value={acknowledgment}
+                onChange={(e) => setAcknowledgment(e.target.value)}
+                required
+              />
+            </Field>
             <Field label="Supplier root cause" required>
               <textarea className="input" rows={3} value={rootCause} onChange={(e) => setRootCause(e.target.value)} required />
             </Field>
@@ -480,7 +499,14 @@ function ActionModal({
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" variant="primary" disabled={busy}>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={
+              busy ||
+              (action === "response" && (!acknowledgment.trim() || !rootCause.trim() || !supplierActions.trim()))
+            }
+          >
             {busy ? "Saving…" : LABEL[action]}
           </Button>
         </div>

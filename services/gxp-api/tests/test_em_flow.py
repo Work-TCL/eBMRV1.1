@@ -147,6 +147,44 @@ async def test_action_excursion_auto_creates_excursion_and_blocks_area_readiness
     assert readiness["open_excursion_count"] == 1
 
 
+async def test_excursion_impact_accepts_realistic_disposition_text(client, seeded):
+    # Regression test for migration 0140: `em_excursions.disposition` was `VARCHAR(40)`, but any realistic
+    # disposition write-up is longer than that and used to truncate at the DB layer with an uncaught
+    # `StringDataRightTruncationError` (surfaced to the caller as an opaque 500 SYSTEM_FAULT). This string
+    # is 66 characters -- exactly the kind of real sentence that used to crash this endpoint.
+    em_token = await login(client, "em.technician")
+    qa_token = await login(client, "qa.reviewer")
+    site_id = seeded["site_id"]
+    program_id = str(seeded["em_program"].id)
+    location = seeded["em_locations"]["EM-LOC-GRADE-A-01"]
+
+    sample_id = await _create_task(client, em_token, site_id, program_id, str(location.id))
+    await _collect(client, em_token, sample_id, expected_version=1)
+    resp = await _record_result(client, em_token, sample_id, expected_version=2, alert_action_status="action_excursion", result={"cfu": 999})
+    assert resp.status_code == 200, resp.text
+
+    excursions = (await client.get("/em/v1/excursions", headers=auth_headers(qa_token))).json()["items"]
+    excursion = next(e for e in excursions if e["sample_id"] == sample_id)
+    assert excursion["impact_assessed_at"] is None
+
+    long_disposition = "Area re-sampled, result within limit - no batch impact confirmed"
+    assert len(long_disposition) > 40
+    resp = await client.post(
+        f"/em/v1/excursions/{excursion['id']}/impact",
+        json={
+            "idempotency_key": idem(), "excursion_id": excursion["id"], "expected_version": excursion["version"],
+            "disposition": long_disposition,
+        },
+        headers=auth_headers(qa_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    excursions_after = (await client.get("/em/v1/excursions", headers=auth_headers(qa_token))).json()["items"]
+    updated = next(e for e in excursions_after if e["id"] == excursion["id"])
+    assert updated["disposition"] == long_disposition
+    assert updated["impact_assessed_at"] is not None
+
+
 async def test_stale_version_rejected(client, seeded):
     em_token = await login(client, "em.technician")
     site_id = seeded["site_id"]

@@ -19,8 +19,9 @@ Extra columns beyond the catalogue's literal field list are each traced directly
   - `rendition_hash` (DOC-FR-004: "differentiate editable source from released rendition")
   - `review_workflow` (DOC-FR-005: reviewer roles/completion), `training_impact` (DOC-FR-013, same
     flag+data pattern as SG-060/SG-063's precedent -- real assignment wiring is out of scope, SG-079),
-    `acknowledgment_required` (DOC-FR-014 -- the flag is captured; per-user acknowledgment capture has no
-    operation, SG-079)
+    `acknowledgment_required` (DOC-FR-014 -- the flag is captured; per-user acknowledgment capture itself
+    is now built, see `DocumentAcknowledgment` below -- SG-079 resolved 2026-10-09, project-owner-directed,
+    "Simple unsigned log")
   - `superseded_by_version_id` (DOC-FR-008: self-referential, set on the *old* version when a new one
     becomes effective)
   - `source_relationships` (DOC-FR-016: parent/child/reference links)
@@ -113,6 +114,24 @@ class ControlledDocumentVersion(Base):
     retired_at: Mapped[datetime | None] = mapped_column()
     version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class DocumentAcknowledgment(Base):
+    """DOC-FR-014/SG-079 resolved 2026-10-09 (project-owner-directed: "Simple unsigned log"). A per-user
+    read-and-understand record, deliberately NOT a Part 11 signature (AG-07 -- login/MFA is not a
+    signature, and DOC-FR-014 itself calls this "distinct from the approval signature"): no challenge, no
+    reauth, just an insert-only row recording who acknowledged which version and when. Same insert-only
+    side-table shape as ControlledCopy above. The unique constraint makes re-acknowledging idempotent
+    rather than an error -- a double-click or re-visit is not a data problem worth rejecting."""
+
+    __tablename__ = "document_acknowledgment"
+    __table_args__ = (UniqueConstraint("document_version_id", "user_id"), {"schema": "qms"})
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    document_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("qms.controlled_document_version.id"), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False)
+    statement: Mapped[str | None] = mapped_column(Text)
+    acknowledged_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class ControlledCopy(Base):

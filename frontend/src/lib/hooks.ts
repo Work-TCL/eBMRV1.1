@@ -284,6 +284,31 @@ export function useEntityOptions(): {
    * Aseptic Supervisor holds, so this field 403'd for the two roles that need it most). */
   asepticProfiles: EntityOption[];
   asepticProfilesStatus: EntityOptionsStatus;
+  /** RELEASED cleaning procedure versions (Document 39) — `GET /cleaning/v1/procedure-versions`, added
+   * so `CreateCleaningExecutionCommand.procedure_version_id` has a real picker instead of free-text UUID
+   * entry (previously the only way to discover a valid id). Same SG-081 read-side precedent as
+   * `sterilizationProfiles`; the table itself is still seed-only (no create/release endpoint). */
+  cleaningProcedureVersions: EntityOption[];
+  cleaningProcedureVersionsStatus: EntityOptionsStatus;
+  /** Same rows as `cleaningProcedureVersions`, but valued by the procedure's own human `procedure_number`
+   * instead of its database id — for `LineClearance.checklist_version`, which stores a plain reference
+   * string (not a real FK — same "no master table, no CRUD" precedent as the field itself, see
+   * `cleaning_models.LineClearance`'s docstring), same shape as `materialLotCodes` below. */
+  cleaningProcedureCodes: EntityOption[];
+  cleaningProcedureCodesStatus: EntityOptionsStatus;
+  /** Every sterile filter use (Document 42) — `GET /filtration/v1/filters`, added so "Record an integrity
+   * test"/"Complete a filter use" have a real picker instead of a free-text `use_id` the operator had to
+   * already know by heart (the browsable list sits right above those forms on `/sterilization` but had
+   * nothing linking the two). Every state, not just open ones — a completed use is still a valid thing to
+   * look up. */
+  filterUses: EntityOption[];
+  filterUsesStatus: EntityOptionsStatus;
+  /** Every sterilization/CIP-SIP *cycle* (not profile — see `sterilizationProfiles` above for that) for
+   * the active site (Document 42) — `GET /sterilization/v1/cycles?site_id=`, added so "Install a
+   * filter"'s optional `sterilization_cycle_id` has a real picker instead of a free-text id. Site-scoped
+   * because the list endpoint itself requires `site_id`. */
+  sterilizationCycles: EntityOption[];
+  sterilizationCyclesStatus: EntityOptionsStatus;
   /** QC samples (Document 21) — every state, not just released/complete, since a deviation's "qc" source
    * type points at whichever sample triggered it (often still open). Feeds `GET /qc/v1/samples`, the same
    * browsable list `/qc`'s own Samples section reads. */
@@ -312,6 +337,10 @@ export function useEntityOptions(): {
   internalAuditsStatus: EntityOptionsStatus;
   risks: EntityOption[];
   risksStatus: EntityOptionsStatus;
+  supplierCases: EntityOption[];
+  supplierCasesStatus: EntityOptionsStatus;
+  fieldActions: EntityOption[];
+  fieldActionsStatus: EntityOptionsStatus;
   /** Released rules (Document 22, RUL-FR-003) — one row per `rule_id` with its currently-effective
    * released version. Same feed Recipe Master's `condition_rule_id`/parameter `rule_id` pickers already
    * use (`GET /rules/v1`); centralised here so every other module referencing a rule by its `rule_id`
@@ -322,8 +351,18 @@ export function useEntityOptions(): {
    * carry. */
   rules: EntityOption[];
   rulesStatus: EntityOptionsStatus;
+  /** Every site this org has (`GET /sites`) — for a form field that stores a real `site_id` the operator
+   * otherwise had to paste in as a raw UUID (e.g. sterilization's "Install a filter"), same "pick instead
+   * of paste" precedent as every other picker in this hook. Almost every page implicitly operates on
+   * `sites[0]` via `useSiteId()` (single-site deployments are the common case) — this exists for the
+   * handful of fields that take `site_id` as an explicit, editable form value rather than an invisible
+   * page-level default. */
+  sites: EntityOption[];
+  sitesStatus: EntityOptionsStatus;
 } {
   const { siteId } = useSiteId();
+  const [sites, setSites] = useState<EntityOption[]>([]);
+  const [sitesStatus, setSitesStatus] = useState<EntityOptionsStatus>("loading");
   const [batches, setBatches] = useState<EntityOption[]>([]);
   const [batchesStatus, setBatchesStatus] = useState<EntityOptionsStatus>("loading");
   const [releasedBatches, setReleasedBatches] = useState<EntityOption[]>([]);
@@ -346,6 +385,14 @@ export function useEntityOptions(): {
   const [sterilizationProfilesStatus, setSterilizationProfilesStatus] = useState<EntityOptionsStatus>("loading");
   const [asepticProfiles, setAsepticProfiles] = useState<EntityOption[]>([]);
   const [asepticProfilesStatus, setAsepticProfilesStatus] = useState<EntityOptionsStatus>("loading");
+  const [cleaningProcedureVersions, setCleaningProcedureVersions] = useState<EntityOption[]>([]);
+  const [cleaningProcedureVersionsStatus, setCleaningProcedureVersionsStatus] = useState<EntityOptionsStatus>("loading");
+  const [cleaningProcedureCodes, setCleaningProcedureCodes] = useState<EntityOption[]>([]);
+  const [cleaningProcedureCodesStatus, setCleaningProcedureCodesStatus] = useState<EntityOptionsStatus>("loading");
+  const [filterUses, setFilterUses] = useState<EntityOption[]>([]);
+  const [filterUsesStatus, setFilterUsesStatus] = useState<EntityOptionsStatus>("loading");
+  const [sterilizationCycles, setSterilizationCycles] = useState<EntityOption[]>([]);
+  const [sterilizationCyclesStatus, setSterilizationCyclesStatus] = useState<EntityOptionsStatus>("loading");
   const [qcSamples, setQcSamples] = useState<EntityOption[]>([]);
   const [qcSamplesStatus, setQcSamplesStatus] = useState<EntityOptionsStatus>("loading");
 
@@ -530,6 +577,74 @@ export function useEntityOptions(): {
 
   useEffect(() => {
     let cancelled = false;
+    // Server default is already `state=RELEASED` (see `cleaning_router.list_procedure_versions`).
+    listAll<{ id: string; procedure_number: string; version: number; cleaning_type: string }>(
+      "/cleaning/v1/procedure-versions",
+    )
+      .then((rows) => {
+        if (cancelled) return;
+        setCleaningProcedureVersions(
+          rows.map((p) => ({ value: p.id, label: `${p.procedure_number} v${p.version} - ${p.cleaning_type}` })),
+        );
+        setCleaningProcedureVersionsStatus(rows.length ? "ready" : "empty");
+        setCleaningProcedureCodes(
+          rows.map((p) => ({ value: p.procedure_number, label: `${p.procedure_number} v${p.version} - ${p.cleaning_type}` })),
+        );
+        setCleaningProcedureCodesStatus(rows.length ? "ready" : "empty");
+      })
+      .catch(() => {
+        if (!cancelled) {
+  setCleaningProcedureVersionsStatus("error");
+          setCleaningProcedureCodesStatus("error");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    listAll<{ id: string; filter_serial: string; filter_type: string | null; state: string }>("/filtration/v1/filters")
+      .then((rows) => {
+        if (cancelled) return;
+        setFilterUses(
+          rows.map((u) => ({ value: u.id, label: `${u.filter_serial}${u.filter_type ? ` (${u.filter_type})` : ""} - ${u.state}` })),
+        );
+        setFilterUsesStatus(rows.length ? "ready" : "empty");
+      })
+      .catch(() => {
+        if (!cancelled) setFilterUsesStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!siteId) return;
+    let cancelled = false;
+    listAll<{ id: string; process_type: string; equipment_code: string | null; state: string }>(
+      "/sterilization/v1/cycles",
+      { site_id: siteId },
+    )
+      .then((rows) => {
+        if (cancelled) return;
+        setSterilizationCycles(
+          rows.map((c) => ({ value: c.id, label: `${c.process_type} cycle${c.equipment_code ? ` - ${c.equipment_code}` : ""} (${c.state})` })),
+        );
+        setSterilizationCyclesStatus(rows.length ? "ready" : "empty");
+      })
+      .catch(() => {
+        if (!cancelled) setSterilizationCyclesStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [siteId]);
+
+  useEffect(() => {
+    let cancelled = false;
     listAll<{ id: string; sample_number: string; sample_type: string; state: string }>("/qc/v1/samples")
       .then((rows) => {
         if (cancelled) return;
@@ -587,6 +702,21 @@ export function useEntityOptions(): {
     state: string;
   }>("/qms/v1/risks", (r) => ({ value: r.id, label: `${r.risk_number} (${r.state})` }));
 
+  // scar_router.py::list_supplier_cases / field_action_router.py::list_field_actions -- same
+  // quality-event picker shape as capas/nonconformances above, added for quality-metrics's own
+  // effectiveness-check source_module=scar/field_action picker (previously free-text).
+  const { options: supplierCases, status: supplierCasesStatus } = useListEntityOptions<{
+    id: string;
+    case_number: string;
+    state: string;
+  }>("/qms/v1/supplier-cases", (c) => ({ value: c.id, label: `${c.case_number} (${c.state})` }));
+
+  const { options: fieldActions, status: fieldActionsStatus } = useListEntityOptions<{
+    id: string;
+    action_number: string;
+    state: string;
+  }>("/qms/v1/field-actions", (f) => ({ value: f.id, label: `${f.action_number} (${f.state})` }));
+
   // qc/router.py::list_oos_records / list_oot_records (2026-09-26) — CAPA's own source-record picker
   // previously fell back to a free-text id field for these two, same "no browse list exists yet"
   // reasoning the OOS/OOT page itself used to carry before its own redesign.
@@ -624,13 +754,35 @@ export function useEntityOptions(): {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<Site[]>("/sites")
+      .then((rows) => {
+        if (cancelled) return;
+        setSites(rows.map((s) => ({ value: s.id, label: `${s.name} (${s.code})` })));
+        setSitesStatus(rows.length ? "ready" : "empty");
+      })
+      .catch(() => {
+        if (!cancelled) setSitesStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return {
+    sites, sitesStatus,
     batches, batchesStatus, equipment, equipmentStatus, areas, areasStatus, users, usersStatus,
     materialLots, materialLotsStatus, releasedBatches, releasedBatchesStatus,
     materials, materialsStatus, suppliers, suppliersStatus,
     sterilizationProfiles, sterilizationProfilesStatus,
     materialLotCodes, materialLotCodesStatus,
     asepticProfiles, asepticProfilesStatus,
+    cleaningProcedureVersions, cleaningProcedureVersionsStatus,
+    cleaningProcedureCodes, cleaningProcedureCodesStatus,
+    filterUses, filterUsesStatus,
+    sterilizationCycles, sterilizationCyclesStatus,
     qcSamples, qcSamplesStatus,
     deviations, deviationsStatus,
     changeControls, changeControlsStatus,
@@ -641,6 +793,8 @@ export function useEntityOptions(): {
     ootRecords, ootRecordsStatus,
     internalAudits, internalAuditsStatus,
     risks, risksStatus,
+    supplierCases, supplierCasesStatus,
+    fieldActions, fieldActionsStatus,
     rules, rulesStatus,
   };
 }

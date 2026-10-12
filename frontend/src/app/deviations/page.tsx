@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { BoolPill, SeverityPill, WorkflowStatePill } from "@/components/ui/StatePill";
+import { humanizeLabel } from "@/lib/format";
 
 // Document 26 §4's own state notation, matching app/modules/qms/models.py::DEVIATION_STATES.
 const DEVIATION_STATES = [
@@ -211,7 +212,7 @@ function RaiseDeviationModal({ onClose, onDone }: { onClose: () => void; onDone:
             <Select value={severity} onChange={(e) => setSeverity(e.target.value)}>
               {SEVERITIES.map((s) => (
                 <option key={s} value={s}>
-                  {s}
+                  {humanizeLabel(s)}
                 </option>
               ))}
             </Select>
@@ -222,7 +223,7 @@ function RaiseDeviationModal({ onClose, onDone }: { onClose: () => void; onDone:
             <Select value={sourceType} onChange={(e) => changeSourceType(e.target.value)}>
               {SOURCE_TYPES.map((s) => (
                 <option key={s} value={s}>
-                  {s}
+                  {humanizeLabel(s)}
                 </option>
               ))}
             </Select>

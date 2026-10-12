@@ -8,6 +8,7 @@ import { Banner } from "@/components/ui/Banner";
 import { LinkButton } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { FactGrid } from "@/components/ui/FactGrid";
+import { Skeleton, FactGridSkeleton } from "@/components/ui/Skeleton";
 import { WorkflowStatePill } from "@/components/ui/StatePill";
 
 /** Shared frame for any regulated-record detail page: title with a live workflow-state pill, a back
@@ -54,7 +55,31 @@ export function RecordDetailShell({
   }
 
   if (loading) {
-    return <PageHead title={backLabel} subtitle="Loading…" />;
+    // Shaped like the record this is about to become: a real, clickable Back link (no reason to block
+    // navigating away while the record loads), skeleton title/state pill, a FactGrid-shaped skeleton in
+    // place of the real facts card, and a generic body card standing in for whatever tabs/panels the
+    // caller's `children` will render — close enough to the eventual layout that nothing jumps when the
+    // real content swaps in, without this generic shell needing to know each caller's exact body shape.
+    return (
+      <div>
+        <PageHead
+          title={<Skeleton width={200} height={22} />}
+          subtitle={subtitle !== undefined ? <Skeleton width={160} height={12} style={{ marginTop: 2 }} /> : undefined}
+          action={
+            <LinkButton href={backHref} variant="secondary">
+              <Icon name="arrow-left" /> Back
+            </LinkButton>
+          }
+        />
+        <Card pad className="mb-4">
+          <FactGridSkeleton />
+        </Card>
+        <Card pad>
+          <Skeleton width="30%" height={16} style={{ marginBottom: "var(--space-3)" }} />
+          <Skeleton width="100%" height={120} />
+        </Card>
+      </div>
+    );
   }
 
   return (

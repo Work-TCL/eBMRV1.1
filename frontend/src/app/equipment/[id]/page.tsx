@@ -31,6 +31,7 @@ import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
 import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
+import { Skeleton, FactGridSkeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { Tabs } from "@/components/ui/Tabs";
 import { Banner } from "@/components/ui/Banner";
 import { Button, LinkButton } from "@/components/ui/Button";
@@ -145,7 +146,18 @@ export default function EquipmentDetailPage({ params }: { params: Promise<{ id: 
   if (!asset.data) {
     return (
       <div>
-        <PageHead title="Equipment asset" subtitle="Loading…" />
+        <PageHead
+          title={<Skeleton width={180} height={22} />}
+          subtitle={<Skeleton width={220} height={12} style={{ marginTop: 2 }} />}
+          action={
+            <LinkButton href="/equipment" variant="secondary">
+              <Icon name="arrow-left" /> Back
+            </LinkButton>
+          }
+        />
+        <Card pad className="mb-4">
+          <FactGridSkeleton count={13} />
+        </Card>
       </div>
     );
   }
@@ -269,6 +281,7 @@ export default function EquipmentDetailPage({ params }: { params: Promise<{ id: 
             content: (
               <CalibrationTab
                 calibrations={history.data?.calibrations ?? []}
+                loading={history.loading}
                 asset={a}
                 me={me}
                 onDone={reloadAll}
@@ -282,6 +295,7 @@ export default function EquipmentDetailPage({ params }: { params: Promise<{ id: 
             content: (
               <MaintenanceTab
                 workOrders={history.data?.maintenance_work_orders ?? []}
+                loading={history.loading}
                 asset={a}
                 me={me}
                 onDone={reloadAll}
@@ -292,12 +306,12 @@ export default function EquipmentDetailPage({ params }: { params: Promise<{ id: 
             id: "use",
             label: "Use log",
             badge: history.data?.use_log.length,
-            content: <UseLogTab entries={history.data?.use_log ?? []} />,
+            content: <UseLogTab entries={history.data?.use_log ?? []} loading={history.loading} />,
           },
           {
             id: "eligibility",
             label: "Eligibility",
-            content: <EligibilityTab eligibility={eligibility.data} />,
+            content: <EligibilityTab eligibility={eligibility.data} loading={eligibility.loading} />,
           },
           {
             id: "documents",
@@ -324,16 +338,36 @@ export default function EquipmentDetailPage({ params }: { params: Promise<{ id: 
 
 function CalibrationTab({
   calibrations,
+  loading,
   asset,
   me,
   onDone,
 }: {
   calibrations: Calibration[];
+  loading: boolean;
   asset: EquipmentAsset;
   me: Me | null;
   onDone: () => void;
 }) {
   const [reviewing, setReviewing] = useState<Calibration | null>(null);
+
+  // `history` (the resource calibrations/maintenance/use-log all come from) resolves after `asset`, so
+  // without this the empty-state copy ("No calibration events…") flashes for every asset that actually
+  // has history, then flips to the real table a beat later -- exactly the fake-intermediate-data pattern.
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader title="Calibration history" />
+        <TableSkeleton
+          columns={[
+            { header: "Performed" }, { header: "Due" }, { header: "Result" },
+            { header: "Standard" }, { header: "Impact assessment" }, { header: "Approved" },
+          ]}
+          rows={3}
+        />
+      </Card>
+    );
+  }
 
   if (calibrations.length === 0) {
     return <EmptyState icon="gauge">No calibration events recorded for this asset.</EmptyState>;
@@ -490,16 +524,31 @@ function ApproveCalibrationModal({
 
 function MaintenanceTab({
   workOrders,
+  loading,
   asset,
   me,
   onDone,
 }: {
   workOrders: WorkOrder[];
+  loading: boolean;
   asset: EquipmentAsset;
   me: Me | null;
   onDone: () => void;
 }) {
   const [completing, setCompleting] = useState<WorkOrder | null>(null);
+
+  if (loading) {
+    return (
+      <div>
+        {[0, 1].map((i) => (
+          <Card key={i} pad className="mb-3">
+            <Skeleton width="40%" height={16} style={{ marginBottom: "var(--space-3)" }} />
+            <Skeleton width="100%" height={60} />
+          </Card>
+        ))}
+      </div>
+    );
+  }
 
   if (workOrders.length === 0) {
     return <EmptyState icon="refresh">No maintenance work orders for this asset.</EmptyState>;
@@ -708,7 +757,15 @@ function CompleteMaintenanceModal({
   );
 }
 
-function UseLogTab({ entries }: { entries: UseLogEntry[] }) {
+function UseLogTab({ entries, loading }: { entries: UseLogEntry[]; loading: boolean }) {
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader title="Use log" />
+        <TableSkeleton columns={[{ header: "Occurred" }, { header: "Until" }, { header: "Type" }, { header: "Batch" }, { header: "Note" }]} rows={3} />
+      </Card>
+    );
+  }
   if (entries.length === 0) {
     return <EmptyState icon="history">No use log entries for this asset.</EmptyState>;
   }
@@ -741,7 +798,15 @@ function UseLogTab({ entries }: { entries: UseLogEntry[] }) {
   );
 }
 
-function EligibilityTab({ eligibility }: { eligibility: Eligibility | null }) {
+function EligibilityTab({ eligibility, loading }: { eligibility: Eligibility | null; loading: boolean }) {
+  if (loading) {
+    return (
+      <Card pad>
+        <Skeleton width={160} height={22} radius="var(--radius-pill)" style={{ marginBottom: "var(--space-3)" }} />
+        <Skeleton width="100%" height={14} />
+      </Card>
+    );
+  }
   if (!eligibility) return <EmptyState icon="help-circle">Eligibility not loaded.</EmptyState>;
   return (
     <Card pad>
@@ -805,7 +870,7 @@ interface EquipmentDocument {
  * a soft, UI-only classification stored in `provenance` -- same "captured, unenforced" precedent as this
  * module's other classification-only fields (e.g. `cleanliness_status`). */
 function DocumentsTab({ assetId, me }: { assetId: string; me: Me | null }) {
-  const { data, reload } = useApiResource<{ evidence_objects: EquipmentDocument[] }>(
+  const { data, loading, reload } = useApiResource<{ evidence_objects: EquipmentDocument[] }>(
     `/evidence/v1/objects?owner_type=equipment_asset&owner_id=${assetId}`
   );
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -823,7 +888,9 @@ function DocumentsTab({ assetId, me }: { assetId: string; me: Me | null }) {
           )
         }
       />
-      {documents.length === 0 ? (
+      {loading ? (
+        <TableSkeleton columns={[{ header: "Type" }, { header: "Filename" }, { header: "State" }, { header: "Uploaded" }, { header: "" }]} rows={3} />
+      ) : documents.length === 0 ? (
         <EmptyState icon="file-text">No controlled documents uploaded for this equipment yet.</EmptyState>
       ) : (
         <Table>
@@ -1030,6 +1097,7 @@ function ActionModal({
   const [providerName, setProviderName] = useState("");
   const [certificateReference, setCertificateReference] = useState("");
   const [serviceProviders, setServiceProviders] = useState<Supplier[]>([]);
+  const [providersLoading, setProvidersLoading] = useState(true);
 
   // Client gap-analysis Phase 6: calibration/repair/test-lab vendors onboarded as a Supplier with
   // role_type "service_provider"/"both" populate this picker; free-text `providerName` stays available
@@ -1037,9 +1105,13 @@ function ActionModal({
   // useEntityOptions's own comment describes for a dependent/filtered list).
   useEffect(() => {
     let cancelled = false;
-    listAll<Supplier>("/suppliers/v1").then((rows) => {
-      if (!cancelled) setServiceProviders(rows.filter((s) => s.role_type === "service_provider" || s.role_type === "both"));
-    });
+    listAll<Supplier>("/suppliers/v1")
+      .then((rows) => {
+        if (!cancelled) setServiceProviders(rows.filter((s) => s.role_type === "service_provider" || s.role_type === "both"));
+      })
+      .finally(() => {
+        if (!cancelled) setProvidersLoading(false);
+      });
     return () => {
       cancelled = true;
     };
@@ -1282,13 +1354,19 @@ function ActionModal({
               <>
                 <div className="grid grid-cols-2 gap-4">
                   <Field label="Provider" required hint="Pick a known calibration/service provider, or type a name below if it's not onboarded yet.">
-                    <Select value={providerSupplierId} onChange={(e) => setProviderSupplierId(e.target.value)}>
-                      <option value="">— Not in the list / type a name —</option>
-                      {serviceProviders.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.legal_name} ({s.supplier_code})
-                        </option>
-                      ))}
+                    <Select value={providerSupplierId} onChange={(e) => setProviderSupplierId(e.target.value)} disabled={providersLoading}>
+                      {providersLoading ? (
+                        <option>Loading providers…</option>
+                      ) : (
+                        <>
+                          <option value="">— Not in the list / type a name —</option>
+                          {serviceProviders.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.legal_name} ({s.supplier_code})
+                            </option>
+                          ))}
+                        </>
+                      )}
                     </Select>
                   </Field>
                   <Field label="Certificate reference">

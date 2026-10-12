@@ -23,6 +23,7 @@ from app.modules.qms.quality_metrics_commands import (
     release_metric_definition,
 )
 from app.modules.qms.quality_metrics_models import EffectivenessCheck, QualityMetricDefinition, QualityMetricSnapshot
+from app.modules.qms.read_support import resolve_source_label
 from app.modules.qms.signature_support import SignatureChallengeRequest, create_qms_signature_challenge
 from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.schemas import MutationReceipt
@@ -114,8 +115,50 @@ async def get_dashboard(
             "source_cutoff": latest.source_cutoff.isoformat() if latest else None,
             "threshold_exceeded": latest.threshold_exceeded if latest else False,
             "freshness_seconds": (datetime.now(timezone.utc) - latest.source_cutoff.replace(tzinfo=timezone.utc)).total_seconds() if latest else None,
+            # 2026-10-09 real bug fixed, additive fields only (existing `latest_result`/`threshold_exceeded`/
+            # `source_cutoff`/`freshness_seconds` above kept verbatim for the existing test contract): this
+            # row never carried `definition_id`/`state`/`frequency`, and never nested a `latest_snapshot` --
+            # the frontend (quality-metrics/page.tsx) has always read exactly those fields (needed to even
+            # select a metric for "Calculate snapshot"), so every row silently failed to round-trip a usable
+            # definition id.
+            "definition_id": str(definition.id), "state": definition.state, "frequency": definition.frequency,
+            # 2026-10-09, client gap-closure item #8 UI fix: lets the frontend know whether this metric
+            # supports the new result-omitted auto-compute path (calculate_snapshot()'s own
+            # AUTO_COMPUTE_SOURCE_MODELS dict) so "Calculate snapshot" can make Numerator optional for it.
+            "source_model_id": definition.source_model_id,
+            "latest_snapshot": (
+                {
+                    "id": str(latest.id), "period_start": latest.period_start.isoformat(),
+                    "period_end": latest.period_end.isoformat(), "result": latest.result,
+                    "threshold_exceeded": latest.threshold_exceeded,
+                }
+                if latest else None
+            ),
         })
     return {"site_id": str(site_id), "metrics": rows}
+
+
+@quality_metrics_router.get("/definitions")
+async def list_metric_definitions(
+    site_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
+    """Picker data for Release (and general visibility): GET /dashboard above is scoped to RELEASED
+    definitions only by its own requirement (MET-FR-016 'the dashboard'), so a DRAFT definition is
+    otherwise invisible to any UI control -- same view permission as the dashboard, no new regulated
+    read."""
+    await evaluate_policy(session, actor.user_id, action="quality_metric.dashboard.view", site_id=site_id)
+    definitions = (
+        await session.execute(
+            select(QualityMetricDefinition).where(QualityMetricDefinition.site_id == site_id).order_by(QualityMetricDefinition.metric_code)
+        )
+    ).scalars().all()
+    return [
+        {
+            "id": str(d.id), "metric_code": d.metric_code, "state": d.state, "version": d.version,
+            "version_no": d.version_no, "owner_subject_id": str(d.owner_subject_id), "frequency": d.frequency,
+        }
+        for d in definitions
+    ]
 
 
 @quality_metrics_router.post("/management-review-packages", response_model=MutationReceipt)
@@ -148,10 +191,11 @@ async def post_management_review_signature_challenge(
         )
 
 
-def _effectiveness_check_dict(c: EffectivenessCheck) -> dict:
+def _effectiveness_check_dict(c: EffectivenessCheck, source_record_label: str | None = None) -> dict:
     return {
         "id": str(c.id), "site_id": str(c.site_id),
         "source_module": c.source_module, "source_record_id": str(c.source_record_id),
+        "source_record_label": source_record_label,
         "criterion": c.criterion,
         "metric_definition_id": str(c.metric_definition_id) if c.metric_definition_id else None,
         "observation_period_start": c.observation_period_start.isoformat(),
@@ -167,6 +211,22 @@ def _effectiveness_check_dict(c: EffectivenessCheck) -> dict:
     }
 
 
+@effectiveness_router.get("/checks")
+async def list_effectiveness_checks(
+    site_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
+    await evaluate_policy(session, actor.user_id, action="effectiveness_check.view", site_id=site_id)
+    checks = (
+        await session.execute(
+            select(EffectivenessCheck).where(EffectivenessCheck.site_id == site_id).order_by(EffectivenessCheck.created_at.desc())
+        )
+    ).scalars().all()
+    return [
+        _effectiveness_check_dict(c, await resolve_source_label(session, c.source_module, c.source_record_id))
+        for c in checks
+    ]
+
+
 @effectiveness_router.get("/checks/{check_id}")
 async def get_effectiveness_check(
     check_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
@@ -175,7 +235,8 @@ async def get_effectiveness_check(
     if check is None:
         raise NotFoundError("Effectiveness check not found")
     await evaluate_policy(session, actor.user_id, action="effectiveness_check.view", site_id=check.site_id)
-    return _effectiveness_check_dict(check)
+    source_label = await resolve_source_label(session, check.source_module, check.source_record_id)
+    return _effectiveness_check_dict(check, source_label)
 
 
 @effectiveness_router.post("/checks", response_model=MutationReceipt)

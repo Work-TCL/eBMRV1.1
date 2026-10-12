@@ -27,6 +27,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   equipment_maintenance: "Equipment maintenance due",
   equipment_qualification: "Equipment qualification expiry",
   supplier_qualification: "Supplier qualification expiry",
+  risk_review_due: "Risk periodic review due",
 };
 
 export function RemindersBell() {

@@ -15,11 +15,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
 from app.core.db import get_session
+from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.postmarket import commands
 from app.modules.postmarket.commands import _signal_hash
 from app.modules.postmarket.models import SafetyCase, SafetyCaseFollowup, SafetySignal
+from app.modules.qms.read_support import resolve_source_label
 from app.modules.signature.service import create_challenge, resolve_signature_requirement
 from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.hashing import sha256_hex
@@ -62,10 +64,11 @@ def _followup_dict(f: SafetyCaseFollowup) -> dict:
     }
 
 
-def _safety_case_dict(c: SafetyCase) -> dict:
+def _safety_case_dict(c: SafetyCase, source_record_label: str | None = None) -> dict:
     return {
         "id": str(c.id), "site_id": str(c.site_id), "safety_case_number": c.safety_case_number,
         "source_record_type": c.source_record_type, "source_record_id": str(c.source_record_id),
+        "source_record_label": source_record_label,
         "source_record_version": c.source_record_version,
         "source_receipt_at": c.source_receipt_at.isoformat() if c.source_receipt_at else None,
         "company_initial_receipt_at": c.company_initial_receipt_at.isoformat() if c.company_initial_receipt_at else None,
@@ -101,6 +104,41 @@ def _safety_signal_dict(s: SafetySignal) -> dict:
     }
 
 
+SAFETY_CASE_SORTABLE = {
+    "created_at": SafetyCase.created_at,
+    "safety_case_number": SafetyCase.safety_case_number,
+    "state": SafetyCase.state,
+}
+
+
+@router.get("/safety-cases")
+async def list_safety_cases(
+    session: AsyncSession = Depends(get_session),
+    params: PageParams = Depends(page_params),
+    site_id: uuid.UUID | None = None,
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """Browsable list for /postmarket's own "Open a safety case" section -- previously no way to see
+    what safety cases existed at all, only open one already-known by id. Same SG-081 read-side
+    precedent as every other list added this pass; site-scoped the same way vault.router.get_versions
+    is, since (unlike cleaning/EM) the single-record GET here already gates on `safety_case.view`."""
+    # resolve_site_scope never returns an empty list (it raises RoleMissingError instead), so `.in_()`
+    # here is always scoped to at least one real site.
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="safety_case.view")
+    stmt = select(SafetyCase).where(SafetyCase.site_id.in_(site_scope))
+    if params.q:
+        stmt = stmt.where(SafetyCase.safety_case_number.ilike(f"%{params.q}%"))
+    rows, envelope = await paginate(session, stmt, params, sortable=SAFETY_CASE_SORTABLE, default_sort=SafetyCase.created_at)
+    cases = [c for (c,) in rows]
+    return {
+        **envelope,
+        "items": [
+            _safety_case_dict(c, await resolve_source_label(session, c.source_record_type, c.source_record_id))
+            for c in cases
+        ],
+    }
+
+
 @router.get("/safety-cases/{case_id}")
 async def get_safety_case(
     case_id: uuid.UUID, session: AsyncSession = Depends(get_session), actor: AuthenticatedActor = Depends(get_current_actor),
@@ -118,7 +156,8 @@ async def get_safety_case(
         .scalars()
         .all()
     )
-    body = _safety_case_dict(case)
+    source_label = await resolve_source_label(session, case.source_record_type, case.source_record_id)
+    body = _safety_case_dict(case, source_label)
     body["followups"] = [_followup_dict(f) for f in followups]
     return body
 

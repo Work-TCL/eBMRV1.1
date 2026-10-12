@@ -112,6 +112,11 @@ class AuditFinding(Base):
     capa_rationale: Mapped[str | None] = mapped_column(Text)
     # AUDIT-FR-014: computed at creation time by matching requirement_ref against prior findings.
     is_repeat_finding: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Project-owner-directed 2026-10-09 (migration 0143): optional batch attribution, same generic
+    # source_type/source_id convention deviation_record/capa_record/nonconformance_record already use --
+    # lets release/service.py block on an unverified finding attributed to the batch it's about.
+    source_type: Mapped[str | None] = mapped_column(String(40))
+    source_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     verification: Mapped[dict | None] = mapped_column(JSONB)
     state: Mapped[str] = mapped_column(String(50), nullable=False, default="OPEN")
     version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)

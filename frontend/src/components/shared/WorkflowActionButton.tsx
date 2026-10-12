@@ -19,6 +19,7 @@ export function WorkflowActionButton({
   summary,
   confirmLabel,
   variant = "secondary",
+  size,
   confirmVariant,
   reason = "none",
   extraFields,
@@ -32,6 +33,8 @@ export function WorkflowActionButton({
   summary: ReactNode;
   confirmLabel?: string;
   variant?: "primary" | "secondary" | "ghost" | "danger" | "success";
+  /** Button size — e.g. "sm" for a compact DataTable row. Defaults to the normal `Button` size. */
+  size?: "sm" | "md" | "lg" | "icon";
   confirmVariant?: "primary" | "secondary" | "ghost" | "danger" | "success";
   reason?: "none" | "optional" | "required";
   /** Domain inputs for this action, rendered under the summary. */
@@ -72,7 +75,7 @@ export function WorkflowActionButton({
 
   return (
     <>
-      <Button variant={variant} onClick={() => setOpen(true)} disabled={disabled}>
+      <Button variant={variant} size={size} onClick={() => setOpen(true)} disabled={disabled}>
         {label}
       </Button>
       <Modal

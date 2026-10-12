@@ -46,9 +46,12 @@ from sqlalchemy.sql import func
 
 from app.core.db import Base
 
-# CAPA-FR-001: the source types Document 27 itself enumerates.
+# CAPA-FR-001: the source types Document 27 itself enumerates, plus change_control/field_action
+# (project-owner-directed 2026-10-09: SG-063 resolved -- both can legitimately trigger a CAPA, purely
+# additive to the 11 Document-27-named types, no existing source type's behavior changes).
 CAPA_SOURCE_TYPES = (
     "deviation", "oos", "oot", "ncr", "complaint", "audit", "supplier", "risk", "trend", "security", "validation",
+    "change_control", "field_action",
 )
 
 # CAPA-FR-019: the scope types Document 27 itself enumerates.

@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
+import { humanizeLabel } from "@/lib/format";
 
 // app/modules/qms/change_models.py CHANGE_STATES / CHANGE_CLASSIFICATIONS / CHANGE_TYPES.
 const CHANGE_STATES = [
@@ -154,7 +155,7 @@ function RaiseChangeModal({ onClose, onDone }: { onClose: () => void; onDone: ()
             <Select value={changeType} onChange={(e) => setChangeType(e.target.value)}>
               {CHANGE_TYPES.map((t) => (
                 <option key={t} value={t}>
-                  {t}
+                  {humanizeLabel(t)}
                 </option>
               ))}
             </Select>
@@ -163,7 +164,7 @@ function RaiseChangeModal({ onClose, onDone }: { onClose: () => void; onDone: ()
             <Select value={classification} onChange={(e) => setClassification(e.target.value)}>
               {CLASSIFICATIONS.map((c) => (
                 <option key={c} value={c}>
-                  {c}
+                  {humanizeLabel(c)}
                 </option>
               ))}
             </Select>

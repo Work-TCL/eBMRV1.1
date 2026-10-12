@@ -8,12 +8,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
-from app.modules.batch_execution.models import BatchStep
+from app.modules.batch_execution.models import Batch, BatchStep
+from app.modules.material.models import MaterialLot
 from app.modules.material_specification.models import MaterialSpecificationVersion
 from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.product_master.models import ProductVersion
-from app.modules.qms.read_support import filtered, iso, sid
+from app.modules.qms.change_models import ChangeControl
+from app.modules.qms.read_support import filtered, iso, resolve_qc_result_samples, resolve_user_names, sid
 from app.modules.recipe_master.models import RecipeFamily, RecipeVersion
+from app.modules.rules.models import RuleDefinition
 from app.modules.qc.commands import (
     ApproveDispositionCommand,
     ApproveResultCorrectionCommand,
@@ -901,7 +904,12 @@ async def list_oot_records(
     if state:
         stmt = stmt.where(OotRecord.state == state)
     rows, envelope = await paginate(session, stmt, params, sortable=OOT_SORTABLE, default_sort=OotRecord.opened_at)
-    return {**envelope, "items": [_oot_summary_dict(r) for (r,) in rows]}
+    records = [r for (r,) in rows]
+    sample_by_result = await resolve_qc_result_samples(session, {r.source_result_id for r in records})
+    return {
+        **envelope,
+        "items": [{**_oot_summary_dict(r), "source_sample_number": sample_by_result.get(str(r.source_result_id))} for r in records],
+    }
 
 
 # No GET /oot/v1/{oot_id} existed before this (only evaluate/signature-challenges/close/reopen) -- the
@@ -915,13 +923,23 @@ async def get_oot_record(
     oot = await session.get(OotRecord, oot_id)
     if oot is None:
         raise NotFoundError("OOT record not found")
+    # 2026-10 UUID-display audit: trend_rule_id/investigation_owner_user_id were shown as raw ids with
+    # no resolved name.
+    user_by_id = await resolve_user_names(session, {oot.investigation_owner_user_id})
+    owner = user_by_id.get(str(oot.investigation_owner_user_id)) if oot.investigation_owner_user_id else None
+    trend_rule = await session.get(RuleDefinition, oot.trend_rule_id) if oot.trend_rule_id else None
+    sample_by_result = await resolve_qc_result_samples(session, {oot.source_result_id})
     return {
         "id": sid(oot.id), "source_result_id": sid(oot.source_result_id),
+        "source_sample_number": sample_by_result.get(str(oot.source_result_id)),
         "trend_rule_id": sid(oot.trend_rule_id), "trend_rule_version": oot.trend_rule_version,
+        "trend_rule_business_id": trend_rule.rule_id if trend_rule else None,
         "baseline_ref": oot.baseline_ref, "trigger_details": oot.trigger_details,
         "state": oot.state, "investigation_notes": oot.investigation_notes,
         "impact_assessment": oot.impact_assessment,
         "investigation_owner_user_id": sid(oot.investigation_owner_user_id),
+        "investigation_owner_full_name": owner[0] if owner else None,
+        "investigation_owner_username": owner[1] if owner else None,
         "hold_status": oot.hold_status, "version": oot.version,
         "opened_at": iso(oot.opened_at), "closed_at": iso(oot.closed_at),
         "reopen_history": oot.reopen_history,
@@ -942,15 +960,25 @@ async def get_oos_record(
     ).scalars().all()
     retest_plans = (await session.execute(select(OosRetestPlan).where(OosRetestPlan.oos_record_id == oos.id))).scalars().all()
     resample_plans = (await session.execute(select(OosResamplePlan).where(OosResamplePlan.oos_record_id == oos.id))).scalars().all()
+    # 2026-10 UUID-display audit: batch_id/material_lot_id/change_control_id were shown as raw ids with
+    # no resolved name.
+    batch = await session.get(Batch, oos.batch_id) if oos.batch_id else None
+    material_lot = await session.get(MaterialLot, oos.material_lot_id) if oos.material_lot_id else None
+    change_control = await session.get(ChangeControl, oos.change_control_id) if oos.change_control_id else None
+    sample_by_result = await resolve_qc_result_samples(session, {oos.source_result_id})
     return {
         "id": str(oos.id),
         "site_id": str(oos.site_id) if oos.site_id else None,
         "oos_number": oos.oos_number,
         "source_result_id": str(oos.source_result_id),
+        "source_sample_number": sample_by_result.get(str(oos.source_result_id)),
         "sample_id": str(oos.sample_id) if oos.sample_id else None,
         "test_order_id": str(oos.test_order_id) if oos.test_order_id else None,
         "batch_id": str(oos.batch_id) if oos.batch_id else None,
+        "batch_number": batch.batch_number if batch else None,
         "material_lot_id": str(oos.material_lot_id) if oos.material_lot_id else None,
+        "material_lot_internal_lot": material_lot.internal_lot if material_lot else None,
+        "change_control_number": change_control.change_number if change_control else None,
         "state": oos.state,
         "severity": oos.severity,
         "hold_status": oos.hold_status,

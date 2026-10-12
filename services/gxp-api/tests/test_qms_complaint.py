@@ -227,6 +227,16 @@ async def test_full_lifecycle_via_investigation(client, seeded, db):
     assert assessment.due_date is not None
     assert assessment.applicable_regimes == ["FDA_MDR"]
 
+    # Client gap-closure item #1 (2026-10-09, project-owner-directed): capa_required now auto-creates a
+    # real OPEN CapaRecord in the same transaction, source_type="complaint".
+    from app.modules.qms.capa_models import CapaRecord
+    capa = (
+        await db.execute(select(CapaRecord).where(CapaRecord.source_type == "complaint", CapaRecord.source_id == complaint.id))
+    ).scalar_one()
+    assert capa.state == "OPEN"
+    assert capa.root_cause_ref["proactive_rationale"] == "Systemic spring-tension issue."
+    assert capa.capa_number.startswith("CAPA-AUTO-")
+
     create_rows = (
         await db.execute(
             select(AuditEvent).where(AuditEvent.aggregate_type == "complaint_record", AuditEvent.aggregate_id == complaint.id, AuditEvent.action == "Created")

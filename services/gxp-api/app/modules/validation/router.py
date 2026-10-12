@@ -8,9 +8,11 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, Query, Response
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
+from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.policy.service import evaluate_policy
 from app.modules.validation import (
@@ -126,6 +128,50 @@ async def post_master_plan_signature_challenge(
             session, actor_user_id=actor.user_id, record_type="validation_master_plan", record=plan,
             action=body.action, allowed_actions=("release",),
         )
+
+
+def _master_plan_dict(plan: ValidationMasterPlan) -> dict:
+    return {
+        "id": str(plan.id),
+        "site_id": str(plan.site_id) if plan.site_id else None,
+        "plan_number": plan.plan_number,
+        "scope": plan.scope,
+        "regulatory_profiles": plan.regulatory_profiles,
+        "methodology": plan.methodology,
+        "responsibilities": plan.responsibilities,
+        "retention_class": plan.retention_class,
+        "state": plan.state,
+        "released_by_user_id": str(plan.released_by_user_id) if plan.released_by_user_id else None,
+        "released_at": plan.released_at.isoformat() if plan.released_at else None,
+        "version": plan.version,
+        "created_at": plan.created_at.isoformat() if plan.created_at else None,
+    }
+
+
+MASTER_PLAN_SORTABLE = {
+    "created_at": ValidationMasterPlan.created_at,
+    "plan_number": ValidationMasterPlan.plan_number,
+    "state": ValidationMasterPlan.state,
+}
+
+
+@router.get("/master-plans")
+async def list_master_plans(
+    session: AsyncSession = Depends(get_session),
+    params: PageParams = Depends(page_params),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """Browsable list for /validation's own "VMP" section -- previously no way to see what master plans
+    existed at all (there was not even a single-record GET by id). Same SG-081 read-side precedent as
+    every other list added this pass; no permission gate (no `validation.plan.view` code exists, same
+    "no site scoping on this table" posture cleaning/EM use elsewhere this pass)."""
+    async with session.begin():
+        stmt = select(ValidationMasterPlan)
+        if params.q:
+            stmt = stmt.where(ValidationMasterPlan.plan_number.ilike(f"%{params.q}%"))
+        rows, envelope = await paginate(session, stmt, params, sortable=MASTER_PLAN_SORTABLE, default_sort=ValidationMasterPlan.created_at)
+        plans = [p for (p,) in rows]
+        return {**envelope, "items": [_master_plan_dict(p) for p in plans]}
 
 
 @router.get("/releases/{plan_id}/gate")

@@ -8,6 +8,7 @@ import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { Button } from "@/components/ui/Button";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
@@ -21,6 +22,7 @@ import { ProductVersionPickerField } from "@/components/shared/ProductVersionPic
 import { RecipeVersionPickerField } from "@/components/shared/RecipeVersionPicker";
 import { SignedJsonForm } from "@/components/shared/SignedJsonForm";
 import { RepeatableRows, buildRepeatArray, type RepeatRow, type RepeatSubField } from "@/components/shared/RepeatableFields";
+import { humanizeLabel } from "@/lib/format";
 
 interface Specification {
   id: string;
@@ -121,9 +123,11 @@ export default function QcPage() {
   const [samplesReloadToken, setSamplesReloadToken] = useState(0);
   const [methodsReloadToken, setMethodsReloadToken] = useState(0);
 
-  const { me } = useMe();
+  const { me, loading: meLoading } = useMe();
   // qc_sample.create/.receive, qc_test_order.create/.start/.record_raw_data/.complete share one grant.
   const canAnalyse = hasPermission(me, "qc_test_order.start");
+  const canCorrectResult = hasPermission(me, "qc_result.correct");
+  const [correctionOpen, setCorrectionOpen] = useState(false);
 
   return (
     <div>
@@ -131,6 +135,13 @@ export default function QcPage() {
         title="QC testing"
         subtitle="Samples, test orders, results, second-person review and OOS investigation."
         action={
+          meLoading ? (
+            <div className="flex gap-2">
+              {[190, 170, 140, 190].map((w, i) => (
+                <Skeleton key={i} width={w} height={36} radius="var(--radius-md)" />
+              ))}
+            </div>
+          ) : (
           <div className="flex gap-2">
             {canAnalyse && (
               <Button variant="secondary" onClick={() => setNewSpecOpen(true)}>
@@ -147,7 +158,13 @@ export default function QcPage() {
                 <Icon name="plus" /> New sample
               </Button>
             )}
+            {canCorrectResult && (
+              <Button variant="secondary" onClick={() => setCorrectionOpen(true)}>
+                <Icon name="pen-line" /> QC result correction
+              </Button>
+            )}
           </div>
+          )
         }
       />
 
@@ -196,34 +213,39 @@ export default function QcPage() {
         />
       </Card>
 
-      <SignedJsonForm
-        title="QC result correction - signed"
-        subtitle="Requesting a correction and approving it are independent signatures - the approver must differ from whoever requested the correction (SoD)."
-        root="/qc/v1"
-        ops={[
-          {
-            postPath: "results/{result_id}/correct",
-            challengePath: "results/{result_id}/signature-challenges",
-            action: "correct_request",
-            label: "Request a result correction",
-            fields: [
-              { name: "result_id", label: "QC result ID", required: true },
-              { name: "reason_text", label: "Reason", type: "textarea", required: true },
-              { name: "corrected_value_decimal", label: "Corrected value (numeric)", hint: "Fill exactly one of the three corrected-value fields, matching the result's data type." },
-              { name: "corrected_value_text", label: "Corrected value (text)" },
-              { name: "corrected_value_json", label: "Corrected value (structured)", type: "kv" },
-            ],
-          },
-          {
-            postPath: "corrections/{correction_id}/approve",
-            challengePath: "results/{result_id}/signature-challenges",
-            action: "correct_approve",
-            label: "Approve a result correction",
-            about: "The signature challenge is requested against the original QC result, not the correction record - both IDs are needed below.",
-            fields: [{ name: "correction_id", label: "Correction ID", required: true }],
-          },
-        ]}
-      />
+      {correctionOpen && (
+        <Modal open onClose={() => setCorrectionOpen(false)} title="QC result correction" large>
+          <SignedJsonForm
+            title="QC result correction - signed"
+            subtitle="Requesting a correction and approving it are independent signatures - the approver must differ from whoever requested the correction (SoD)."
+            root="/qc/v1"
+            me={me}
+            ops={[
+              {
+                postPath: "results/{result_id}/correct",
+                challengePath: "results/{result_id}/signature-challenges",
+                action: "correct_request",
+                label: "Request a result correction",
+                fields: [
+                  { name: "result_id", label: "QC result ID", required: true },
+                  { name: "reason_text", label: "Reason", type: "textarea", required: true },
+                  { name: "corrected_value_decimal", label: "Corrected value (numeric)", hint: "Fill exactly one of the three corrected-value fields, matching the result's data type." },
+                  { name: "corrected_value_text", label: "Corrected value (text)" },
+                  { name: "corrected_value_json", label: "Corrected value (structured)", type: "kv" },
+                ],
+              },
+              {
+                postPath: "corrections/{correction_id}/approve",
+                challengePath: "results/{result_id}/signature-challenges",
+                action: "correct_approve",
+                label: "Approve a result correction",
+                about: "The signature challenge is requested against the original QC result, not the correction record - both IDs are needed below.",
+                fields: [{ name: "correction_id", label: "Correction ID", required: true }],
+              },
+            ]}
+          />
+        </Modal>
+      )}
 
       {createSampleOpen && (
         <CreateSampleModal
@@ -390,7 +412,7 @@ function CreateSampleModal({ onClose, onDone }: { onClose: () => void; onDone: (
             <Select value={sampleType} onChange={(e) => setSampleType(e.target.value)}>
               {SAMPLE_TYPES.map((t) => (
                 <option key={t} value={t}>
-                  {t}
+                  {humanizeLabel(t)}
                 </option>
               ))}
             </Select>
@@ -409,7 +431,7 @@ function CreateSampleModal({ onClose, onDone }: { onClose: () => void; onDone: (
             >
               {SOURCE_TYPES.map((t) => (
                 <option key={t} value={t}>
-                  {t}
+                  {humanizeLabel(t)}
                 </option>
               ))}
             </Select>
@@ -515,7 +537,7 @@ function NewSpecificationModal({ onClose, onDone }: { onClose: () => void; onDon
             >
               {SCOPE_TYPES.map((t) => (
                 <option key={t} value={t}>
-                  {t}
+                  {humanizeLabel(t)}
                 </option>
               ))}
             </Select>
@@ -600,7 +622,7 @@ function NewQcMethodDraftModal({ onClose, onDone }: { onClose: () => void; onDon
             <Select value={methodType} onChange={(e) => setMethodType(e.target.value)}>
               {QC_METHOD_TYPES.map((t) => (
                 <option key={t} value={t}>
-                  {t}
+                  {humanizeLabel(t)}
                 </option>
               ))}
             </Select>

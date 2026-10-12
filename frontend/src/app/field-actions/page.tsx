@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { StatePill, BoolPill, WorkflowStatePill } from "@/components/ui/StatePill";
+import { humanizeLabel } from "@/lib/format";
 
 // app/modules/qms/field_action_models.py, verbatim from Document 36.
 const FIELD_ACTION_STATES = [
@@ -174,7 +175,7 @@ function RaiseFieldActionModal({ onClose, onDone }: { onClose: () => void; onDon
             <Select value={actionType} onChange={(e) => setActionType(e.target.value)}>
               {ACTION_TYPES.map((t) => (
                 <option key={t} value={t}>
-                  {t}
+                  {humanizeLabel(t)}
                 </option>
               ))}
             </Select>
@@ -185,7 +186,7 @@ function RaiseFieldActionModal({ onClose, onDone }: { onClose: () => void; onDon
             <Select value={triggerType} onChange={(e) => changeTriggerType(e.target.value)}>
               {TRIGGER_TYPES.map((t) => (
                 <option key={t} value={t}>
-                  {t}
+                  {humanizeLabel(t)}
                 </option>
               ))}
             </Select>

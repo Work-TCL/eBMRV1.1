@@ -590,6 +590,19 @@ async def create_material_receipt(
     if material is None:
         raise NotFoundError("Material not found")
 
+    existing_receipt = (
+        await session.execute(
+            select(MaterialReceipt.id).where(
+                MaterialReceipt.site_id == cmd.site_id, MaterialReceipt.receipt_number == cmd.receipt_number
+            )
+        )
+    ).scalar_one_or_none()
+    if existing_receipt is not None:
+        raise ValidationFailedError(
+            "A material receipt with this receipt_number already exists at this site",
+            receipt_number=cmd.receipt_number,
+        )
+
     coa_vault_object_id = None
     if cmd.coa_document_hash:
         vault_obj = await vault_service.release_master(
@@ -956,6 +969,15 @@ async def disposition_held_receipt(
         raise ValidationFailedError("severity must be one of minor, significant")
     if not cmd.reason:
         raise ValidationFailedError("reason is required to disposition a held receipt")
+    # project-owner-directed (2026-10-12): accepting material from a supplier the organization has
+    # itself suspended is an override of that suspension decision, not a shipment-level logistics issue
+    # (unlike identity_mismatch/damaged/seal_broken) -- it can never be waved through as "minor" with a
+    # one-line reason and no Deviation trail.
+    if receipt_row.discrepancy_type == "source_not_approved" and cmd.severity != "significant":
+        raise ValidationFailedError(
+            "A disposition on a receipt held for an unapproved/suspended supplier must be severity "
+            "'significant', with a linked Deviation"
+        )
 
     deviation = None
     if cmd.severity == "significant":

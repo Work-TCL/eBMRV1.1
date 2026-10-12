@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, hasPermission, newIdempotencyKey, pagedFetcher, type Me, type MutationReceipt, type Paged } from "@/lib/api";
 import { useApiResource, useMe, useSiteId } from "@/lib/hooks";
 import { useCommand } from "@/components/shared/RecordDetailShell";
@@ -11,6 +11,7 @@ import { KeyValueRows, buildKvObject, type KvRow } from "@/components/shared/Rep
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
+import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Icon } from "@/components/ui/Icon";
@@ -19,6 +20,8 @@ import { Select } from "@/components/ui/Select";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
 import { Table, EmptyState } from "@/components/ui/Table";
 import { JsonPanel } from "@/components/ui/JsonPanel";
+import { FactGrid } from "@/components/ui/FactGrid";
+import { humanizeLabel } from "@/lib/format";
 
 const PROCESS_TYPES = [
   "steam_autoclave", "dry_heat", "depyrogenation", "gas", "radiation", "external_reference", "SIP", "CIP", "sterile_filtration",
@@ -97,7 +100,7 @@ function NewCycleProfileModal({ siteId, onClose, onDone }: { siteId: string | nu
             <Select value={processType} onChange={(e) => setProcessType(e.target.value)}>
               {PROCESS_TYPES.map((t) => (
                 <option key={t} value={t}>
-                  {t}
+                  {humanizeLabel(t)}
                 </option>
               ))}
             </Select>
@@ -463,16 +466,32 @@ function CycleListCard({ siteId, reloadToken, onOpen }: { siteId: string | null;
 }
 
 export default function SterilizationPage() {
-  const { me } = useMe();
+  const { me, loading: meLoading } = useMe();
   const { siteId } = useSiteId();
   const [reloadToken, setReloadToken] = useState(0);
   const [newProfileOpen, setNewProfileOpen] = useState(false);
+  const [installOpen, setInstallOpen] = useState(false);
+  const [completeOpen, setCompleteOpen] = useState(false);
+  const [openUseId, setOpenUseId] = useState<string | null>(null);
+  const [filterReloadToken, setFilterReloadToken] = useState(0);
   const {
     data: cycleProfilesPage,
     loading: profilesLoading,
     reload: reloadProfiles,
   } = useApiResource<Paged<CycleProfile>>("/sterilization/v1/profiles?state=&page_size=100");
   const cycleProfiles = cycleProfilesPage?.items ?? null;
+
+  // Deep link from the Workflow Actions bell (`?cycle_id=<uuid>`) -- same `window.location.search`
+  // shape as cleaning/page.tsx's own deep link. `openRecord` is captured in a ref during render (it
+  // isn't itself stable across renders) rather than read from a dependency array; by the time this
+  // mount-only effect runs, the ref is already populated (afterHeader runs during the child's render,
+  // which commits before this effect fires).
+  const cycleOpenerRef = useRef<(id: string) => void>(() => {});
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const linkedCycleId = params.get("cycle_id");
+    if (linkedCycleId) cycleOpenerRef.current(linkedCycleId);
+  }, []);
 
   return (
     <div>
@@ -482,18 +501,41 @@ export default function SterilizationPage() {
         detailInModal
         hideLookup
         headerAction={
-          canCreateCycleProfile(me) ? (
-            <Button variant="secondary" onClick={() => setNewProfileOpen(true)}>
-              <Icon name="plus" /> New sterilization cycle profile
-            </Button>
-          ) : undefined
+          meLoading ? (
+            <div className="flex gap-2">
+              {[200, 170].map((w, i) => (
+                <Skeleton key={i} width={w} height={36} radius="var(--radius-md)" />
+              ))}
+            </div>
+          ) : (
+            <>
+              {canCreateCycleProfile(me) && (
+                <Button variant="secondary" onClick={() => setNewProfileOpen(true)}>
+                  <Icon name="plus" /> New sterilization cycle profile
+                </Button>
+              )}
+              {canOperateFilter(me) && (
+                <>
+                  <Button variant="secondary" onClick={() => setInstallOpen(true)}>
+                    <Icon name="plus" /> Install / integrity test
+                  </Button>
+                  <Button variant="primary" onClick={() => setCompleteOpen(true)}>
+                    <Icon name="pen-line" /> Complete a filter use
+                  </Button>
+                </>
+              )}
+            </>
+          )
         }
-        afterHeader={(openRecord) => (
-          <>
-            <CycleProfileListCard profiles={cycleProfiles} loading={profilesLoading} />
-            <CycleListCard siteId={siteId} reloadToken={reloadToken} onOpen={openRecord} />
-          </>
-        )}
+        afterHeader={(openRecord) => {
+          cycleOpenerRef.current = openRecord;
+          return (
+            <>
+              <CycleProfileListCard profiles={cycleProfiles} loading={profilesLoading} />
+              <CycleListCard siteId={siteId} reloadToken={reloadToken} onOpen={openRecord} />
+            </>
+          );
+        }}
         onCreated={() => setReloadToken((n) => n + 1)}
       />
       {newProfileOpen && (
@@ -506,8 +548,190 @@ export default function SterilizationPage() {
           }}
         />
       )}
-      {canOperateFilter(me) && <FiltrationSection siteId={siteId} />}
+      {meLoading ? (
+        <Card>
+          <CardHeader title="Sterile filter uses" meta="" />
+          <TableSkeleton columns={[{ header: "Filter" }, { header: "Area" }, { header: "Installed" }, { header: "Status" }, { header: "" }]} />
+        </Card>
+      ) : (
+        canOperateFilter(me) && (
+        <FiltrationSection
+          siteId={siteId}
+          installOpen={installOpen}
+          setInstallOpen={setInstallOpen}
+          completeOpen={completeOpen}
+          setCompleteOpen={setCompleteOpen}
+          openUseId={openUseId}
+          setOpenUseId={setOpenUseId}
+          reloadToken={filterReloadToken}
+          bumpReloadToken={() => setFilterReloadToken((n) => n + 1)}
+        />
+        )
+      )}
     </div>
+  );
+}
+
+// Matches app/modules/equipment/sterilization_router.py::_filter_use_dict (list-row subset).
+interface FilterUse {
+  id: string;
+  site_id: string;
+  filter_lot: string | null;
+  filter_serial: string;
+  filter_type: string | null;
+  manufacturer: string | null;
+  batch_id: string | null;
+  batch_number: string | null;
+  batch_product_name: string | null;
+  batch_product_code: string | null;
+  sterilization_cycle_id: string | null;
+  sterilization_cycle_label: string | null;
+  housing_location: string | null;
+  direction: string | null;
+  installed_by_user_id: string | null;
+  installed_by_full_name: string | null;
+  installed_by_username: string | null;
+  installed_at: string | null;
+  state: string;
+  pre_use_integrity_result: string | null;
+  pre_use_integrity_ref: Record<string, unknown> | null;
+  post_use_integrity_result: string | null;
+  post_use_integrity_ref: Record<string, unknown> | null;
+  process_parameters: Record<string, unknown> | null;
+  reuse_count: number;
+  performer_user_id: string | null;
+  performer_full_name: string | null;
+  performer_username: string | null;
+  requires_deviation: boolean;
+  deviation_reference_id: string | null;
+  deviation_number: string | null;
+  version: number;
+  created_at: string;
+}
+
+function filterUseColumns(onOpen: (id: string) => void): DataTableColumn<FilterUse>[] {
+  return [
+    {
+      key: "filter_serial",
+      header: "Filter serial",
+      sortable: true,
+      render: (u) => <span className="fs-2 font-semibold">{u.filter_serial}</span>,
+    },
+    { key: "filter_type", header: "Type", render: (u) => <span className="fs-2">{u.filter_type ?? "—"}</span> },
+    { key: "state", header: "State", sortable: true, render: (u) => <WorkflowStatePill state={u.state} /> },
+    {
+      key: "integrity",
+      header: "Integrity (pre / post)",
+      render: (u) => (
+        <span className="fs-2">
+          {u.pre_use_integrity_result ?? "—"} / {u.post_use_integrity_result ?? "—"}
+        </span>
+      ),
+    },
+    {
+      key: "open",
+      header: "",
+      align: "right",
+      render: (u) => (
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpen(u.id);
+          }}
+        >
+          Open
+        </Button>
+      ),
+    },
+  ];
+}
+
+function FilterUseListCard({ reloadToken, onOpen }: { reloadToken: number; onOpen: (id: string) => void }) {
+  const fetchUses = pagedFetcher<FilterUse>("/filtration/v1/filters");
+  return (
+    <Card pad className="mb-4">
+      <CardHeader title="Sterile filter uses" meta="" />
+      <DataTable
+        columns={filterUseColumns(onOpen)}
+        fetchPage={fetchUses}
+        rowKey={(u) => u.id}
+        searchPlaceholder="Search filter serial…"
+        emptyMessage='No sterile filter uses yet - use "Install / integrity test" above to add one.'
+        defaultSort={{ by: "created_at", dir: "desc" }}
+        onRowClick={(u) => onOpen(u.id)}
+        reloadToken={reloadToken}
+      />
+    </Card>
+  );
+}
+
+function FilterUseDetailModal({ useId, onClose }: { useId: string; onClose: () => void }) {
+  const [result, setResult] = useState<FilterUse | undefined>(undefined);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<FilterUse>(`/filtration/v1/filters/${encodeURIComponent(useId)}`)
+      .then((r) => {
+        if (!cancelled) setResult(r);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Load failed");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [useId]);
+
+  return (
+    <Modal open onClose={onClose} title="Sterile filter use" large>
+      {error && <p className="error-text">{error}</p>}
+      {result ? (
+        <>
+          <FactGrid>
+            <Fact label="Filter serial">{result.filter_serial}</Fact>
+            <Fact label="Filter type">{result.filter_type ?? "—"}</Fact>
+            <Fact label="Filter lot">{result.filter_lot ?? "—"}</Fact>
+            <Fact label="Manufacturer">{result.manufacturer ?? "—"}</Fact>
+            {result.batch_id && (
+              <Fact label="Batch">
+                {result.batch_number ? `${result.batch_number} - ${result.batch_product_name} (${result.batch_product_code})` : result.batch_id}
+              </Fact>
+            )}
+            {result.sterilization_cycle_id && (
+              <Fact label="Sterilization cycle">{result.sterilization_cycle_label ?? result.sterilization_cycle_id}</Fact>
+            )}
+            <Fact label="Housing location">{result.housing_location ?? "—"}</Fact>
+            <Fact label="Direction">{result.direction ?? "—"}</Fact>
+            <Fact label="State">
+              <WorkflowStatePill state={result.state} />
+            </Fact>
+            <Fact label="Pre-use integrity">{result.pre_use_integrity_result ?? "—"}</Fact>
+            <Fact label="Post-use integrity">{result.post_use_integrity_result ?? "—"}</Fact>
+            <Fact label="Reuse count">{result.reuse_count}</Fact>
+            {result.installed_by_full_name && (
+              <Fact label="Installed by">{`${result.installed_by_full_name} (${result.installed_by_username})`}</Fact>
+            )}
+            {result.performer_full_name && (
+              <Fact label="Completed by">{`${result.performer_full_name} (${result.performer_username})`}</Fact>
+            )}
+            <Fact label="Requires deviation">{result.requires_deviation ? "Yes" : "No"}</Fact>
+            {result.deviation_reference_id && (
+              <Fact label="Deviation">{result.deviation_number ?? result.deviation_reference_id}</Fact>
+            )}
+            <Fact label="Record version">{result.version}</Fact>
+          </FactGrid>
+          <JsonPanel title="Pre-use integrity reference" value={result.pre_use_integrity_ref} />
+          <JsonPanel title="Post-use integrity reference" value={result.post_use_integrity_ref} />
+          <JsonPanel title="Process parameters" value={result.process_parameters} />
+        </>
+      ) : (
+        !error && <p className="hint">Loading…</p>
+      )}
+    </Modal>
   );
 }
 
@@ -519,109 +743,121 @@ export default function SterilizationPage() {
  * `FormConsole` + `SignedJsonForm` pair (each free to declare its own full path) fits this backend's
  * actual shape without changing a component every other WP-06 page depends on.
  *
- * Every op here requires sterile_filter_use.create/.complete (Admin + Sterilization Operator only) —
- * gated at the call site above via canOperateFilter rather than per-op, since the whole section is one
- * permission boundary (audit finding 2026-09-18: this had no gate at all before). */
-function FiltrationSection({ siteId }: { siteId: string | null }) {
+ * "Install / integrity test" and "Complete a filter use" are triggered from the page's own header
+ * (alongside "New sterilization cycle profile") rather than a separate buttons-in-a-card here, so their
+ * open/close state is owned by `SterilizationPage` and passed down — this component only renders the
+ * list + the two popups + the per-row detail popup. The former by-id "Filter use status" lookup card is
+ * replaced by that real browsable list. Neither `FormConsole` nor `SignedJsonForm` expose a success
+ * callback, so the list is refreshed on modal close (the best available signal) rather than on the
+ * mutation's own success. */
+function FiltrationSection({
+  siteId,
+  installOpen,
+  setInstallOpen,
+  completeOpen,
+  setCompleteOpen,
+  openUseId,
+  setOpenUseId,
+  reloadToken,
+  bumpReloadToken,
+}: {
+  siteId: string | null;
+  installOpen: boolean;
+  setInstallOpen: (v: boolean) => void;
+  completeOpen: boolean;
+  setCompleteOpen: (v: boolean) => void;
+  openUseId: string | null;
+  setOpenUseId: (id: string | null) => void;
+  reloadToken: number;
+  bumpReloadToken: () => void;
+}) {
   return (
     <>
-      <FormConsole
-        title="Sterile filtration - install & integrity testing"
-        root="/filtration/v1"
-        ops={[
-          {
-            path: "filters/install",
-            label: "Install a filter",
-            fields: [
-              { name: "site_id", label: "Site ID", required: true, hint: `This deployment's site ID: ${siteId ?? "loading…"}` },
-              { name: "filter_serial", label: "Filter serial", required: true },
-              { name: "filter_lot", label: "Filter lot" },
-              { name: "filter_type", label: "Filter type" },
-              { name: "manufacturer", label: "Manufacturer" },
-              { name: "batch_id", label: "Batch", type: "batchSelect", hint: "Optional." },
-              { name: "sterilization_cycle_id", label: "Sterilization cycle ID", hint: "Optional - the cycle that sterilized this filter." },
-              { name: "housing_location", label: "Housing location" },
-              { name: "direction", label: "Direction" },
-            ],
-          },
-          {
-            path: "filters/{use_id}/integrity-tests",
-            label: "Record an integrity test",
-            fields: [
-              { name: "use_id", label: "Filter use ID", required: true },
-              { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
-              { name: "phase", label: "Phase", type: "select", required: true, options: [
-                { value: "pre", label: "Pre-use" }, { value: "post", label: "Post-use" }] },
-              { name: "result", label: "Result", type: "select", required: true, options: [
-                { value: "pass", label: "Pass" }, { value: "fail", label: "Fail" }] },
-              { name: "test_ref", label: "Test reference", type: "kv", hint: "e.g. method, instrument ID, bubble-point value." },
-            ],
-          },
-        ]}
-      />
+      <FilterUseListCard reloadToken={reloadToken} onOpen={setOpenUseId} />
 
-      <FilterStatusCard />
-
-      <SignedJsonForm
-        title="Complete a filter use - signed"
-        subtitle="Only a filter with a recorded post-use test can be completed."
-        root="/filtration/v1"
-        ops={[
-          {
-            postPath: "uses/{use_id}/complete",
-            challengePath: "uses/{use_id}/signature-challenges",
-            action: "complete",
-            label: "Complete filter use",
-            fields: [
-              { name: "use_id", label: "Filter use ID", required: true },
-              { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
-              { name: "process_parameters", label: "Process parameters", type: "kv" },
-              { name: "reason", label: "Reason" },
-            ],
-          },
-        ]}
-      />
-    </>
-  );
-}
-
-function FilterStatusCard() {
-  const [useId, setUseId] = useState("");
-  const [result, setResult] = useState<unknown>(undefined);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function lookup() {
-    if (!useId.trim()) return;
-    setBusy(true);
-    setError(null);
-    try {
-      setResult(await api.get<unknown>(`/filtration/v1/filters/${encodeURIComponent(useId.trim())}`));
-    } catch (err) {
-      setResult(undefined);
-      setError(err instanceof Error ? err.message : "Lookup failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Card pad className="mb-4">
-      <CardHeader title="Filter use status" />
-      <div className="flex flex-wrap items-end gap-3">
-        <Field label="Filter use ID">
-          <Input value={useId} onChange={(e) => setUseId(e.target.value)} style={{ minWidth: 260 }} />
-        </Field>
-        <Button variant="secondary" disabled={busy || !useId.trim()} onClick={lookup}>
-          <Icon name="search" /> {busy ? "Loading…" : "Look up"}
-        </Button>
-      </div>
-      {error && <p className="error-text mt-3">{error}</p>}
-      {result !== undefined && (
-        <div className="mt-3">
-          <JsonPanel title="Filter use" value={result} />
-        </div>
+      {installOpen && (
+        <Modal
+          open
+          onClose={() => {
+            setInstallOpen(false);
+            bumpReloadToken();
+          }}
+          title="Sterile filtration - install & integrity testing"
+          large
+        >
+          <FormConsole
+            title="Sterile filtration - install & integrity testing"
+            root="/filtration/v1"
+            ops={[
+              {
+                path: "filters/install",
+                label: "Install a filter",
+                fields: [
+                  { name: "site_id", label: "Site", type: "siteSelect", required: true, default: siteId ?? undefined },
+                  { name: "filter_serial", label: "Filter serial", required: true },
+                  { name: "filter_lot", label: "Filter lot" },
+                  { name: "filter_type", label: "Filter type" },
+                  { name: "manufacturer", label: "Manufacturer" },
+                  { name: "batch_id", label: "Batch", type: "batchSelect", hint: "Optional." },
+                  {
+                    name: "sterilization_cycle_id", label: "Sterilization cycle", type: "sterilizationCycleSelect",
+                    hint: "Optional - the cycle that sterilized this filter.",
+                  },
+                  { name: "housing_location", label: "Housing location" },
+                  { name: "direction", label: "Direction" },
+                ],
+              },
+              {
+                path: "filters/{use_id}/integrity-tests",
+                label: "Record an integrity test",
+                fields: [
+                  { name: "use_id", label: "Filter use", type: "filterUseSelect", required: true },
+                  { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
+                  { name: "phase", label: "Phase", type: "select", required: true, options: [
+                    { value: "pre", label: "Pre-use" }, { value: "post", label: "Post-use" }] },
+                  { name: "result", label: "Result", type: "select", required: true, options: [
+                    { value: "pass", label: "Pass" }, { value: "fail", label: "Fail" }] },
+                  { name: "test_ref", label: "Test reference", type: "kv", hint: "e.g. method, instrument ID, bubble-point value." },
+                ],
+              },
+            ]}
+          />
+        </Modal>
       )}
-    </Card>
+
+      {completeOpen && (
+        <Modal
+          open
+          onClose={() => {
+            setCompleteOpen(false);
+            bumpReloadToken();
+          }}
+          title="Complete a filter use"
+          large
+        >
+          <SignedJsonForm
+            title="Complete a filter use - signed"
+            subtitle="Only a filter with a recorded post-use test can be completed."
+            root="/filtration/v1"
+            ops={[
+              {
+                postPath: "uses/{use_id}/complete",
+                challengePath: "uses/{use_id}/signature-challenges",
+                action: "complete",
+                label: "Complete filter use",
+                fields: [
+                  { name: "use_id", label: "Filter use", type: "filterUseSelect", required: true },
+                  { name: "expected_version", label: "Expected version", type: "number", required: true, default: "1" },
+                  { name: "process_parameters", label: "Process parameters", type: "kv" },
+                  { name: "reason", label: "Reason" },
+                ],
+              },
+            ]}
+          />
+        </Modal>
+      )}
+
+      {openUseId && <FilterUseDetailModal useId={openUseId} onClose={() => setOpenUseId(null)} />}
+    </>
   );
 }

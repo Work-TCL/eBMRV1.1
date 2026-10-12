@@ -6,11 +6,14 @@ scope (SG-107/SG-108).
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
 from app.modules.iam.models import User
+from app.modules.qc.models import OosRecord
+from app.modules.qms.models import DeviationRecord
+from app.modules.qms.ncr_models import NonconformanceRecord
 from app.modules.qms.quality_metrics_models import (
     EFFECTIVENESS_RESULTS,
     EffectivenessCheck,
@@ -251,9 +254,48 @@ class CalculateSnapshotCommand(CommandEnvelope):
     metric_definition_id: uuid.UUID
     period_start: datetime
     period_end: datetime
-    result: dict
+    result: dict | None = None
     scope: dict | None = None
     threshold_exceeded: bool = False
+
+
+# MET-FR-003/004/009 (deviation/CAPA/NCR/OOS/OOT/complaint/supplier/audit/training/batch-quality -- nine
+# families total per SG-107) -- client gap-closure item #8 (2026-10-09, project-owner-directed: "Just 2-3
+# straightforward ones", chosen over "wire to the real check" for all nine or a minimal stub). Three of the
+# nine source tables are wired to a real internal count query, keyed by the already-existing
+# `source_model_id` field (CreateMetricDefinitionCommand's own free-text source identifier -- no new field
+# invented). Deliberately NOT a true "rate" against a denominator: `denominator_definition` names a real
+# JSONB field Document 37 itself declares, but no cross-module query contract exists yet for what a
+# generic denominator source should be (batch count? site day-count? something else), and guessing one
+# would be exactly the regulated-analytics-formula invention CLAUDE.md's AG-15 warns against for something
+# a QA user will read as an official number -- so this computes an honest `opened_count`, leaving `rate`/
+# `denominator` for whoever adds a real denominator contract. The other six families (CAPA, complaint,
+# supplier, audit, training, batch-quality) are untouched, matching SG-107's own remaining scope exactly.
+AUTO_COMPUTE_SOURCE_MODELS: dict[str, type] = {
+    "deviation_record": DeviationRecord,
+    "nonconformance_record": NonconformanceRecord,
+    "oos_record": OosRecord,
+}
+
+
+async def _auto_compute_result(
+    session: AsyncSession, *, definition: QualityMetricDefinition, site_id: uuid.UUID,
+    period_start: datetime, period_end: datetime,
+) -> dict | None:
+    model = AUTO_COMPUTE_SOURCE_MODELS.get(definition.source_model_id)
+    if model is None:
+        return None
+    opened_count = (
+        await session.execute(
+            select(func.count()).select_from(model).where(
+                model.site_id == site_id, model.created_at >= period_start, model.created_at < period_end,
+            )
+        )
+    ).scalar_one()
+    return {
+        "opened_count": opened_count, "source_model_id": definition.source_model_id,
+        "period_start": period_start.isoformat(), "period_end": period_end.isoformat(), "auto_computed": True,
+    }
 
 
 async def calculate_snapshot(session: AsyncSession, cmd: CalculateSnapshotCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
@@ -267,12 +309,18 @@ async def calculate_snapshot(session: AsyncSession, cmd: CalculateSnapshotComman
         raise NotFoundError("Quality metric definition not found")
     if definition.state != "RELEASED":
         raise MetricDefinitionNotReleasedError("Metric definition must be released before it can be calculated", current_state=definition.state)
-    if not cmd.result:
-        raise MetricSourceIncompleteError("result must not be empty")
+
+    result = cmd.result
+    if not result:
+        result = await _auto_compute_result(
+            session, definition=definition, site_id=cmd.site_id, period_start=cmd.period_start, period_end=cmd.period_end,
+        )
+    if not result:
+        raise MetricSourceIncompleteError("result must not be empty (no internal aggregation exists for this source_model_id)")
 
     snapshot = QualityMetricSnapshot(
         site_id=cmd.site_id, metric_definition_id=definition.id, period_start=cmd.period_start, period_end=cmd.period_end,
-        scope=cmd.scope, source_cutoff=datetime.now(timezone.utc), result=cmd.result, formula_version=str(definition.version_no),
+        scope=cmd.scope, source_cutoff=datetime.now(timezone.utc), result=result, formula_version=str(definition.version_no),
         threshold_exceeded=cmd.threshold_exceeded, state="COMPLETE",
     )
     session.add(snapshot)

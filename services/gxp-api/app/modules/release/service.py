@@ -17,7 +17,10 @@ from app.modules.packaging.models import PackagingRun
 from app.modules.qa_review import service as qa_review_service
 from app.modules.qc.models import OosRecord, OotRecord, QcResult, QcSample, QcTestOrder
 from app.modules.qms.capa_models import CapaRecord
+from app.modules.qms.internal_audit_models import AuditFinding
 from app.modules.qms.models import DeviationRecord
+from app.modules.qms.ncr_models import NonconformanceRecord
+from app.modules.qms.risk_models import RiskRecord
 from app.modules.release.models import ReleaseDecision, ReleaseEvaluation, ReleaseScope
 from app.modules.vault import service as vault_service
 from app.modules.yield_reconciliation.models import ManufacturingCalculation, ReconciliationRecord
@@ -402,6 +405,71 @@ async def _capa_signals(session: AsyncSession, batch_id: uuid.UUID) -> list[dict
     ]
 
 
+async def _ncr_signals(session: AsyncSession, batch_id: uuid.UUID) -> list[dict]:
+    """Project-owner-directed 2026-10-09 (NCR-FR-011/SG-067 resolved): an NCR attributed to this batch
+    (source_type="batch", the same convention Deviation/OOS already use) with release_blocker_active=true
+    (existing column, previously never settable -- wired through disposition_ncr()) blocks while still
+    open. CLOSED is the only terminal state (REOPENED is deliberately NOT excluded -- a reopened NCR's
+    blocker concern is, by definition, not yet resolved again)."""
+    blocking_ncrs = (
+        await session.execute(
+            select(NonconformanceRecord.id).where(
+                NonconformanceRecord.source_type == "batch",
+                NonconformanceRecord.source_id == batch_id,
+                NonconformanceRecord.release_blocker_active.is_(True),
+                NonconformanceRecord.state != "CLOSED",
+            )
+        )
+    ).scalars().all()
+    return [
+        _blocker("OPEN_NCR", "CRITICAL", "nonconformance_record", str(ncr_id), "release.blocker.open_ncr", "RESOLVE_NCR")
+        for ncr_id in blocking_ncrs
+    ]
+
+
+async def _internal_audit_signals(session: AsyncSession, batch_id: uuid.UUID) -> list[dict]:
+    """Project-owner-directed 2026-10-09 (migration 0143): an audit finding attributed to this batch
+    (source_type="batch") blocks release until it reaches VERIFIED -- OPEN/RESPONSE_SUBMITTED both mean
+    the finding's impact on this batch hasn't been independently confirmed resolved yet."""
+    open_findings = (
+        await session.execute(
+            select(AuditFinding.id).where(
+                AuditFinding.source_type == "batch",
+                AuditFinding.source_id == batch_id,
+                AuditFinding.state != "VERIFIED",
+            )
+        )
+    ).scalars().all()
+    return [
+        _blocker(
+            "OPEN_AUDIT_FINDING", "CRITICAL", "audit_finding", str(finding_id),
+            "release.blocker.open_audit_finding", "VERIFY_AUDIT_FINDING",
+        )
+        for finding_id in open_findings
+    ]
+
+
+async def _risk_signals(session: AsyncSession, product_version_id: uuid.UUID) -> list[dict]:
+    """Project-owner-directed 2026-10-09: a risk record scoped to this batch's exact product version
+    (`RiskRecord.context->>'product_version_id'`, the same "product/version" object-mapping RSK-FR-011
+    already describes -- no new field, just a documented key within the existing free-form JSONB) blocks
+    release while it hasn't reached ACCEPTED. `NEW_VERSION` (a review decided reassessment is required) is
+    deliberately included as blocking -- it means the risk's last acceptance is no longer considered
+    current."""
+    unaccepted = (
+        await session.execute(
+            select(RiskRecord.id).where(
+                RiskRecord.context["product_version_id"].astext == str(product_version_id),
+                RiskRecord.state != "ACCEPTED",
+            )
+        )
+    ).scalars().all()
+    return [
+        _blocker("UNACCEPTED_RISK", "CRITICAL", "risk_record", str(risk_id), "release.blocker.unaccepted_risk", "ACCEPT_RISK")
+        for risk_id in unaccepted
+    ]
+
+
 async def _yield_signals(session: AsyncSession, batch_id: uuid.UUID) -> tuple[list[dict], list[dict]]:
     """2026-09-19, project-owner-directed follow-up -- correcting a stale claim: this docstring (and
     docs/testing/demo-gujarati/12) used to say Document 17 (yield/reconciliation) "was never built". It
@@ -588,5 +656,9 @@ async def evaluate_eligibility(session: AsyncSession, batch: Batch) -> tuple[lis
     yield_blockers, yield_warnings = await _yield_signals(session, batch.id)
     blockers.extend(yield_blockers)
     warnings.extend(yield_warnings)
+    # 2026-10-09, project-owner-directed: 3 more signal sources (NCR/Internal Audit/Risk Register).
+    blockers.extend(await _ncr_signals(session, batch.id))
+    blockers.extend(await _internal_audit_signals(session, batch.id))
+    blockers.extend(await _risk_signals(session, batch.product_version_id))
 
     return blockers, warnings

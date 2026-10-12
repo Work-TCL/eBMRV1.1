@@ -6,6 +6,7 @@ import { useDebouncedValue } from "@/lib/hooks";
 import { Icon } from "./Icon";
 import { Input } from "./Input";
 import { Select } from "./Select";
+import { Skeleton } from "./Skeleton";
 import { EmptyState } from "./Table";
 
 export interface DataTableColumn<T> {
@@ -160,9 +161,19 @@ export function DataTable<T>({
           </thead>
           <tbody>
             {loading && items.length === 0 ? (
-              <tr className="table-loading-row">
-                <td colSpan={columns.length}>Loading…</td>
-              </tr>
+              // Skeleton rows shaped like the real ones rather than a bare "Loading…" row — headers are
+              // already real above, so only the body is placeholder and nothing about the table's shape
+              // changes once data lands. Capped independently of `pageSize` (which can be 100) so the
+              // placeholder never dwarfs what a typical page actually renders.
+              Array.from({ length: Math.min(pageSize, 8) }).map((_, r) => (
+                <tr key={`skeleton-${r}`}>
+                  {columns.map((col, c) => (
+                    <td key={col.key} style={col.align === "right" ? { textAlign: "right" } : undefined}>
+                      <Skeleton width={`${46 + ((r + c * 3) % 4) * 14}%`} height={14} />
+                    </td>
+                  ))}
+                </tr>
+              ))
             ) : error ? (
               <tr className="table-loading-row">
                 <td colSpan={columns.length} className="error-text">

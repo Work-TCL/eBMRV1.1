@@ -6,6 +6,7 @@ import { useRequireAdmin } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
+import { TableSkeleton } from "@/components/ui/Skeleton";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -128,7 +129,9 @@ export default function SitesAdminPage() {
 
       <Card>
         <CardHeader title="Sites" />
-        {loading ? null : siteList.length === 0 ? (
+        {loading ? (
+          <TableSkeleton columns={[{ header: "Code" }, { header: "Name" }, { header: "" }]} rows={3} />
+        ) : siteList.length === 0 ? (
           <EmptyState icon="building">No sites yet.</EmptyState>
         ) : (
           <Table>
