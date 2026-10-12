@@ -25,6 +25,7 @@ from app.modules.qms.complaint_commands import (
     triage_complaint,
 )
 from app.modules.qms.complaint_models import ComplaintCommunication, ComplaintRecord, ComplaintReportabilityAssessment
+from app.modules.product_master.models import ProductVersion
 from app.modules.qms.read_support import filtered, iso, sid
 from app.modules.qms.signature_support import SignatureChallengeRequest, create_qms_signature_challenge
 from app.mutation.errors import NotFoundError, ValidationFailedError
@@ -221,8 +222,12 @@ async def get_complaint(
             select(ComplaintCommunication).where(ComplaintCommunication.complaint_id == complaint_id)
         )
     ).scalars().all()
+    # 2026-10 UUID-display audit: product_ref was shown as a raw id with no resolved name.
+    product_version = await session.get(ProductVersion, record.product_ref) if record.product_ref else None
     return {
         **_complaint_dict(record),
+        "product_code": product_version.product_code if product_version else None,
+        "product_name": product_version.name if product_version else None,
         "lot_batch_serial_refs": record.lot_batch_serial_refs,
         "complainant_info": record.complainant_info,
         "triage": record.triage,

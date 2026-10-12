@@ -67,11 +67,11 @@ Class R gaps are **not** resolved by this package on its own authority. Each has
 | SG-049 | E | no | `device_component_usage`/`device_test_result`/`device_defect`/`device_evidence_inheritance` (Document 12) are prose-only field-name lists, not DDL-ready | — (open) | Data Architect + Device module owner |
 | SG-050 | D | no | 21 Document 12 requirements depend on modules/infrastructure that don't exist yet (Equipment master, NCR/QMS, sterilization, packaging/labeling, DDCP profiles, WP-08/09 dependencies) | — (open) | Platform Architect |
 | SG-051 | E | no | `POST /genealogy/v1/impact-assessments` and `POST /genealogy/v1/exports` (Document 13) have no backing entity anywhere in the 2-entity data model catalogue | — (open) | Data Architect + Genealogy module owner |
-| SG-052 | D | no | Document 13's own event-driven write path has no real domain-event producers yet, and 5 further requirements depend on modules/infrastructure that don't exist (complaint module WP-09, node-type-transition matrix, migration feature, performance benchmarking) | — (open) | Platform Architect |
+| SG-052 | D | no | Document 13's own event-driven write path has no real domain-event producers yet, and 5 further requirements depend on modules/infrastructure that don't exist (complaint module WP-09, node-type-transition matrix, migration feature, performance benchmarking) | PARTIALLY RESOLVED 2026-10-09 (Packaging/Sterilization/DDCP wired as real producers); GEN-FR-019 + compatibility matrix + migration + load-test open | Platform Architect |
 | SG-053 | E | no | `qa_review_item`/`qa_review_comment` (Document 14) are prose-only field-name lists, not DDL-ready | — (open) | Data Architect + QA Review module owner |
 | SG-054 | D | no | 16 Document 14 requirements depend on modules/infrastructure that don't exist yet (QC/materials/equipment/environment/genealogy-completeness/packaging/yield review detail, a checklist entity, Document 11's unreached Production Complete state) | — (open) | Platform Architect |
 | SG-055 | D | no | 15 Document 15 requirements depend on modules/infrastructure that don't exist yet (DDCP constituent tracking, rework/reprocess/destruction routes, device-serial release, expiry/QMS/material/equipment/environment/packaging/genealogy/yield eligibility detail, ERP/WMS distribution, SLA analytics); non-batch scope types are not supported | — (open) | Platform Architect |
-| SG-056 | D | no | 20 Document 16 requirements depend on entities/infrastructure that don't exist anywhere in this codebase (label-master, print_job, application-verification, inspection, reconciliation-waiver, aggregation-correction, tamper-evident, UDI, artwork-evidence, ERP/WMS, printer/scanner registration); Document 16's own API list has no GET operation and no hold/reprint endpoint despite naming both capabilities | — (open) | Platform Architect |
+| SG-056 | D | no | 20 Document 16 requirements depend on entities/infrastructure that don't exist anywhere in this codebase (label-master, print_job, application-verification, inspection, reconciliation-waiver, aggregation-correction, tamper-evident, UDI, artwork-evidence, ERP/WMS, printer/scanner registration); Document 16's own API list has no GET operation and no hold/reprint endpoint despite naming both capabilities | PARTIALLY RESOLVED 2026-10-09 (PKG-FR-009 real line-clearance check; PKG-FR-003/006 label_master/print_job minimal entities); other 18 requirements open | Platform Architect |
 | SG-057 | D | no | Document 18's approved_supplier_material/purchase_requisition/purchase_order_ref all key on a "material specification version" entity (architecture rule C-014) that does not exist anywhere in this codebase | — (open) | Data Architect + Materials/Supplier-Quality module owner |
 | SG-058 | D | no | 5 Document 18 requirements have no entity, and one (RFQ) has no API operation, anywhere in Document 18 itself | — (open) | Data Architect + Supplier-Quality module owner + QMS module owner |
 | SG-059 | D | no | DEV-FR-002/022 (Document 26): automatic candidate creation from other modules, and wiring deviations into release eligibility, are cross-module integration no other module performs yet | RELEASE-BLOCKING HALF RESOLVED 2026-09-18 (see prose note below the yaml block) | Platform Architect + Release module owner + QMS module owner |
@@ -82,11 +82,11 @@ Class R gaps are **not** resolved by this package on its own authority. Each has
 | SG-064 | D | no | CAPA-FR-020/022 (Document 27): metrics/dashboard and export have no operation in Document 27's own 8-op API list | — (open) | Data Architect + QMS module owner |
 | SG-065 | R | no | CAPA-FR-021 conflicts with Document 27's own section 6 API table on which actions require a signature | — (open) | Document 27 author + Platform Architect + QMS module owner |
 | SG-066 | D | no | 9 Document 23 requirements depend on entities/modules that don't exist yet: material-scope test specifications (same root cause as SG-057), Document 25's OOS/OOT records, WP-06 Equipment, and a Method-master entity Document 23 never defines | — (open) | Data Architect + QC module owner + Equipment module owner (WP-06) |
-| SG-067 | D | no | NCR-FR-002/010/011/012/014 (Document 28): cross-module integration (automatic source, supplier/SCAR link, release-eligibility wiring, CAPA auto-creation, inventory/destruction transaction) not performed this pass | — (open) | Platform Architect + Release module owner + Materials module owner + Supplier-Quality module owner + QMS module owner |
+| SG-067 | D | no | NCR-FR-002/010/011/012/014 (Document 28): cross-module integration (automatic source, supplier/SCAR link, release-eligibility wiring, CAPA auto-creation, inventory/destruction transaction) not performed this pass | PARTIALLY RESOLVED 2026-10-09 (NCR-FR-011/012: release blocker + CAPA auto-create); NCR-FR-002/010/014 open | Platform Architect + Release module owner + Materials module owner + Supplier-Quality module owner + QMS module owner |
 | SG-068 | D | no | NCR-FR-017/018 (Document 28): trend metrics and export have no operation in Document 28's own 6-op API list | — (open) | Data Architect + QMS module owner |
-| SG-069 | D | no | NCR-FR-016 (Document 28): reopen has no operation in Document 28's own 6-op API list | — (open) | Data Architect + QMS module owner |
+| SG-069 | D | no | NCR-FR-016 (Document 28): reopen has no operation in Document 28's own 6-op API list | RESOLVED 2026-10-09 (POST /ncr/.../reopen mirroring Deviation/CAPA reopen) | Data Architect + QMS module owner |
 | SG-070 | D | no | 4 Document 24 requirements depend on infrastructure that doesn't exist yet: real machine-identity source authentication, Document 25's OOS records, and a test-environment simulator | — (open) | Platform Architect + QC module owner |
-| SG-071 | D | no | CHG-FR-019 (Document 29): rollback has no operation anywhere in Document 29's own 8-op API list | — (open) | Data Architect + QMS module owner |
+| SG-071 | D | no | CHG-FR-019 (Document 29): rollback has no operation anywhere in Document 29's own 8-op API list | RESOLVED 2026-10-09 (new ROLLED_BACK terminal state via close()'s rollback_reason, mirroring cancellation_reason) | Data Architect + QMS module owner |
 | SG-072 | D | no | CHG-FR-022/023 (Document 29): software PR/build/SBOM traceability and master-record back-linkage are cross-module integration not performed this pass | — (open) | Platform Architect + QMS module owner + Product/Recipe module owners |
 | SG-073 | D | no | CHG-FR-015/024 (Document 29): no operation to update/complete an existing change_task, and no export operation, in Document 29's own 8-op API list | — (open) | Data Architect + QMS module owner |
 | SG-074 | D | no | 7 Document 25 gaps: no CAPA/Change Control link schema, no /reopen/dashboard/export endpoints, no QA-review-package or release-engine wiring, and no numeric retest-count policy value | — (open) | Platform Architect + QC module owner |
@@ -94,14 +94,14 @@ Class R gaps are **not** resolved by this package on its own authority. Each has
 | SG-076 | D | no | Document 19's RCV-FR-023/024/025 need a material-scoped QC test specification -- PARTIALLY RESOLVED 2026-09-23: scope_type="material" now buildable; required-test-blocks-release enforcement stays open | qc/models.py, qc/commands.py, tests/test_qc.py | Data Architect + Materials module owner + QC module owner |
 | SG-077 | D | no | Document 19 requirements needing infrastructure this codebase does not have yet: UOM conversion, edge/equipment integration, a warehouse/location master, and ERP reconciliation | — (open) | Platform Architect + Materials module owner |
 | SG-078 | D | no | DOC-FR-011/023/024 (Document 30): uncontrolled-copy marking, general search and export have no operation in Document 30's own 7-op API list | DOC-FR-023 PARTIALLY RESOLVED 2026-09-24 (code search + pagination) | Data Architect + QMS module owner |
-| SG-079 | D | no | DOC-FR-013/014 (Document 30): training assignment wiring and per-user acknowledgment capture are not performed this pass | — (open) | Data Architect + QMS module owner + Training module owner |
+| SG-079 | D | no | DOC-FR-013/014 (Document 30): training assignment wiring and per-user acknowledgment capture are not performed this pass | PARTIALLY RESOLVED 2026-10-09 (DOC-FR-014 unsigned acknowledgment log); DOC-FR-013 open | Data Architect + QMS module owner + Training module owner |
 | SG-080 | D | no | DOC-FR-022 (Document 30): no historical-document migration pathway exists distinct from the normal signed-release flow | — (open) | Data Architect + QMS module owner |
 | SG-081 | D | no | `warehouse_location` (INV-FR-001/002, Document 20) has no CRUD operation anywhere in Document 20's own 8-op API list | 2026-09-07 partial (read + create live; update/delete/rename still open) | Data Architect + Materials module owner |
 | SG-082 | D | no | Document 20 requirements needing infrastructure this codebase does not have yet: barcode/scanner integration, storage-condition excursion/monitoring integration, label-reprint infrastructure, and ERP reconciliation | — (open) | Platform Architect + Materials module owner |
 | SG-083 | D | no | Document 20's FEFO/FIFO deviation-override path and material-spec-version-scoped eligibility, and alternative-material recipe/deviation compatibility, all need a deviation/change-approval entity and a material-specification-version entity that don't exist (SG-057 family) | — (open) | Data Architect + Materials module owner |
 | SG-084 | D | no | Document 20's cycle-count adjustment (INV-FR-020) has no Document 106 signature-policy row despite spec prose implying approval; physical-count freeze (INV-FR-021) has no entity/operation in Document 20's own API list | — (open) | Data Architect + Materials module owner |
 | SG-085 | D | no | Document 20's container split/merge/transfer provenance (INV-FR-030) -- RESOLVED_APPROVED: SPLIT_FROM wired 2026-09-23; merge RESOLVED_APPROVED 2026-10-02 via Client Topic 2 (MERGED_FROM-equivalent genealogy edges wired into merge_containers); transfer confirmed out of scope for genealogy (same-container location change, no new node). True cross-site inter-site transfer (INV-FR-009) still not built, unrelated to Topic 2 | split: material/commands.py split_container(); merge: material/commands.py merge_containers(); transfer: investigation only | Platform Architect + Materials module owner + Genealogy module owner |
-| SG-086 | R | no | `qms.qualification_record` (Document 31) and pre-existing `iam.qualifications` (Document 07) are two stores for what looks like the same real-world concept; authority/reconciliation unresolved | — (open) | Data Architect + IAM module owner + QMS module owner |
+| SG-086 | R | no | `qms.qualification_record` (Document 31) and pre-existing `iam.qualifications` (Document 07) are two stores for what looks like the same real-world concept; authority/reconciliation unresolved | RESOLVED 2026-10-09 (project-owner-directed: iam.qualifications declared authoritative, enforcement already correct by construction) | Data Architect + IAM module owner + QMS module owner |
 | SG-087 | D | no | Document 31's TRN-FR-007 "attempt rules" has no numeric max-attempt or backoff policy anywhere in the baseline | — (open) | Quality/Training process owner |
 | SG-088 | D | no | Document 31's TRN-FR-016/010 platform-wide training/qualification execution gate is not wired into any other module's Mutation Gateway calls | — (open) | Platform Architect + every module owner |
 | SG-089 | D | no | Document 31's TRN-FR-013 retraining-on-document-release is not wired into Document 30's release()/make_effective() | — (open) | QMS module owner (Document 30 + Document 31) |
@@ -116,13 +116,13 @@ Class R gaps are **not** resolved by this package on its own authority. Each has
 | SG-098 | D | no | Document 22 requirements needing infrastructure this codebase does not have yet: automatic-consumption integration, released reconciliation-tolerance rule, batch-completion gate, and ERP posting | — (open) | Platform Architect + Materials module owner + Batch module owner + Rules Engine owner |
 | SG-099 | D | no | RSK-FR-007's risk-level-tiered acceptance-authority escalation matrix is not defined anywhere in the baseline | — (open) | Platform Architect + QMS module owner + Head of Quality |
 | SG-100 | D | no | RSK-FR-009/010/014's cross-module automatic risk-review triggering (Deviation/OOS/Complaint/Audit/Change Control) has no owning command to call yet | — (open) | Platform Architect + QMS module owner |
-| SG-101 | D | no | AUDIT-FR-008/012/015/016/017 have no operation/entity in Document 34's own 6-op API list or data model catalogue (CAPA link flag-only, no reschedule/metrics/export endpoint, no external-audit entity) | — (open) | Platform Architect + QMS module owner |
+| SG-101 | D | no | AUDIT-FR-008/012/015/016/017 have no operation/entity in Document 34's own 6-op API list or data model catalogue (CAPA link flag-only, no reschedule/metrics/export endpoint, no external-audit entity) | PARTIALLY RESOLVED 2026-10-09 (AUDIT-FR-008 CAPA auto-create); AUDIT-FR-012/015/016/017 open | Platform Architect + QMS module owner |
 | SG-102 | D | no | AUDIT-FR-003's auditor-independence check is limited to same-person auditor/auditee overlap; no department/function-ownership data model exists anywhere in this codebase to check the broader "own function" case | — (open) | Platform Architect + IAM module owner + QMS module owner |
-| SG-103 | D | no | CMP-FR-011/013/014/015/016/017/018/024 have no operation/cross-module wiring in Document 35's own 7-op API list (genealogy lookup, external MDR/eMDR/FAERS submission, trend, CAPA, field-action and export) | — (open) | Platform Architect + QMS module owner |
+| SG-103 | D | no | CMP-FR-011/013/014/015/016/017/018/024 have no operation/cross-module wiring in Document 35's own 7-op API list (genealogy lookup, external MDR/eMDR/FAERS submission, trend, CAPA, field-action and export) | PARTIALLY RESOLVED 2026-10-09 (CMP-FR-017 CAPA half auto-create); others open | Platform Architect + QMS module owner |
 | SG-104 | D | no | CMP-FR-022's privacy/minimization requirement has no field-level encryption or redaction mechanism anywhere in this codebase; complainant PII is ordinary RBAC-gated JSONB | — (open) | Platform Architect + Security Officer + QMS module owner |
 | SG-105 | D | no | FAR-FR-008's ERP/WMS/CRM consignee-scope resolution is caller-supplied JSONB, not a real cross-system query (no ERP/WMS integration exists yet) | — (open) | Platform Architect + QMS module owner |
-| SG-106 | D | no | FAR-FR-016/020 have no cross-module wiring/operation in Document 36's own 8-op API list (CAPA link flag-only, no export endpoint) | — (open) | Platform Architect + QMS module owner |
-| SG-107 | D | no | MET-FR-003..011/015/017's nine metric-family calculations, drilldown query and threshold-rule evaluation are not computed internally; calculate() accepts a caller-supplied result/threshold_exceeded | — (open) | Platform Architect + QMS module owner + Analytics owner |
+| SG-106 | D | no | FAR-FR-016/020 have no cross-module wiring/operation in Document 36's own 8-op API list (CAPA link flag-only, no export endpoint) | PARTIALLY RESOLVED 2026-10-09 (FAR-FR-016 CAPA auto-create); FAR-FR-020 open | Platform Architect + QMS module owner |
+| SG-107 | D | no | MET-FR-003..011/015/017's nine metric-family calculations, drilldown query and threshold-rule evaluation are not computed internally; calculate() accepts a caller-supplied result/threshold_exceeded | PARTIALLY RESOLVED 2026-10-09 (deviation/NCR/OOS count-only auto-compute); rate/denominator + other 6 families + drilldown/threshold-engine open | Platform Architect + QMS module owner + Analytics owner |
 | SG-108 | D | no | MET-FR-019's failed-effectiveness escalation and MET-FR-018's cross-module effectiveness-check source reference are flag-only/unenforced, no owning escalation command called | — (open) | Platform Architect + QMS module owner |
 | SG-132 | D | no | 6 Document 17 requirements need cross-module or external integration this pass did not build — **PARTIALLY RESOLVED 2026-08-27, 5 of 6 closed (YLD-FR-012/013/021/026/027); YLD-FR-030 promoted to SG-137** (Document 16 packaging's own label reconciliation, Document 12's DeviceUnit serial identity, Document 53's ERP reconciliation-difference engine, app/modules/qms's deviation/disposition workflow, and an eDHR export module that does not exist anywhere) | — (open) | Platform Architect |
 | SG-133 | E | no | 9 Document 17 requirements have no distinct implementation this pass beyond the generic yield/reconciliation mechanics (automated-equipment auto-verification profile, externally-precomputed-value entry path, unit-count vocabulary, UOM conversion, correction command, sub-lot/serial aggregation-to-parent, async large-scale reconciliation) | — (open) | Platform Architect |
@@ -3215,9 +3215,46 @@ options:
     (rejected — the risk above).
 blocking: false
 owner: Platform Architect
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "Packaging/Sterilization/DDCP write-path wiring RESOLVED 2026-10-09, project-owner-directed (client gap-closure item #11, exactly Option A's own named 'packaging Document 16' plus two more owning modules of the same shape). GEN-FR-019 (complaint-triggered review) and the node-type x edge-type transition matrix/migration/load-test items remain open."
+status: PARTIALLY_RESOLVED  # 3 more real producers wired 2026-10-09 (packaging/sterilization/DDCP); GEN-FR-019 + compatibility matrix + migration + load-test still open
 ```
+
+**Packaging/Sterilization/DDCP write-path wiring RESOLVED 2026-10-09, project-owner-directed** (client
+gap-closure item #11, decided across the 3-batch AskUserQuestion walkthrough: "Packaging (PACKAGED_AS
+edges), Sterilization (evidence edges), DDCP (device assembly edges)" — three more real domain-event
+producers, following exactly the precedent `batch_execution.commands.py`'s own `DrugBatchProduced`/
+`drug_batch` wiring already set on 2026-09-19 (first entry in this gap's own `affected_functions`
+history). All three call the pre-existing, previously test-only `genealogy_service.get_or_create_node()`/
+`create_edge()` directly from the owning module's own already-signed/already-gated command — no new
+genealogy write endpoint, no event-bus consumer, matching Document 13 section 8's own direct-call intent
+(no public write API was ever meant to exist for this engine).
+
+- **Packaging** (`app/modules/packaging/commands.py::complete_packaging_run()`): on `PackagingCompleted`
+  (already the named event, unchanged), creates the real `PackageNode` row `create_package_node()`
+  already had zero callers for, a `drug_batch`/`package` node pair, and a `PACKAGED_AS` edge between them.
+- **Sterilization** (`app/modules/equipment/sterilization_commands.py::review_cycle()`): on the
+  independent-reviewer `accept` decision only (STR-FR-009 -- never a self-attested result), when
+  `cycle.batch_id` is set, creates an `evidence_record` node for the accepted cycle and a
+  `STERILIZED_IN` edge from the batch.
+- **DDCP** (`app/modules/ddcp/commands.py::record_device_assembly_step()`): on a `PASS` result only (a
+  `FAIL`/`REWORK` step doesn't imply real incorporation), creates a `device_unit` node for the assembly
+  record and an `ASSEMBLED_INTO` edge from the batch. The other two `DeviceAssemblyRecord` producers
+  (`injector_commands.py`, `coated_device_commands.py`, same table/shape) are not wired this pass --
+  same explicit "2-3 straightforward ones" scoping used throughout this gap-closure session, not all
+  producers of a given shape.
+
+Known simplification, disclosed rather than guessed further: no `device_unit` master table exists to
+deduplicate assembly-record-derived nodes against, so each successful assembly-step record gets its own
+genealogy node rather than one node per physical unit across its multiple steps -- an acceptable minimal-
+version limitation, not a correctness defect (every edge is still real and traceable back to its
+originating record). Verified: 67/67 passed across the full packaging/sterilization/ddcp/genealogy
+regression sweep (no new tests added specifically for the wiring -- existing lifecycle tests already
+exercise every changed code path end to end and continued passing); live round-trip against the demo DB
+(a real packaging run completed through to `state=complete`) produced a real `drug_batch` genealogy node
+with a `PACKAGED_AS` edge to a real `package` node, confirmed via
+`GET /genealogy/v1/nodes/{id}/descendants`. GEN-FR-019 (complaint-triggered review, WP-09 dependency), the
+node-type x edge-type compatibility matrix, the migration-provenance exercise and load-test infrastructure
+all remain open, out of scope for this change.
 
 ### SG-053 — `qa_review_item`/`qa_review_comment` (Document 14) are prose-only field-name lists, not DDL-ready
 
@@ -3588,9 +3625,55 @@ options:
   - (B) Guess the schemas/endpoints now (rejected — the risk above).
 blocking: false
 owner: Data Architect + Packaging module owner
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "PKG-FR-009 real-clearance enforcement RESOLVED 2026-10-09, project-owner-directed (client gap-closure item #9). PKG-FR-003/006 (label_master/print_job minimal entities) RESOLVED 2026-10-09, project-owner-directed (client gap-closure item #10, 'Build a minimal version'). The other 18 requirements listed above remain open."
+status: PARTIALLY_RESOLVED  # PKG-FR-009 real-check + PKG-FR-003/006 minimal entities resolved 2026-10-09; the other 18 requirements above still open
 ```
+
+**PKG-FR-009 real-clearance enforcement RESOLVED 2026-10-09, project-owner-directed** (client
+gap-closure item #9, decided when asked "wire to the real check" vs. a minimal stub vs. leaving it
+flag-only: chose the real check -- found live, not originally itemized in this SG's own 20-requirement
+list above, since the actual defect wasn't "no entity exists" but "a real entity (`equipment.
+line_clearances`, Document 39/40) exists and is unused by Packaging's own flag"). Before this fix,
+`POST /packaging/v1/runs/{id}/line-clearance` unconditionally flipped `packaging_run.
+line_clearance_completed` to `true` with no reference to the real line-clearance record Document 39/40
+already builds. Now it calls a new `app/modules/equipment/cleaning_commands.py::get_batch_line_clearance_status()`
+(same shape as the pre-existing `get_area_line_clearance_status()` ASP-FR-006 uses, but keyed by
+`LineClearance.next_batch_id` rather than `area_id` -- more precise than adding a new `area_id` FK column
+to `packaging_run`, and Document 39/40's own `LineClearance.next_batch_id` already names exactly which
+batch a clearance is for) and fails closed with the pre-existing-but-previously-unused
+`LINE_CLEARANCE_REQUIRED` error code unless a `CLEARED` (non-expired) clearance targets the batch.
+Verified: 1 new test (`test_line_clearance_rejected_without_real_equipment_clearance`) plus 3 existing
+tests updated to establish a real clearance first, 11/11 packaging suite passed, plus a 46/46
+cleaning/aseptic regression sweep (unaffected); live round-trip against the demo DB (packaging
+line-clearance correctly rejected `LINE_CLEARANCE_REQUIRED` against a fresh batch with no clearance,
+then succeeded once a real signed `CLEARED` clearance targeting that batch was created).
+
+**PKG-FR-003/006 (label_master/print_job minimal entities) RESOLVED 2026-10-09, project-owner-directed**
+(client gap-closure item #10, decided when asked "build a minimal version" vs. a full artwork-lifecycle
+module vs. leaving the columns unenforced: chose minimal). New `ebmr.label_master` (migration
+`c4e8b2a6f1d9`/0146) models the "label template/artwork version" Document 16 section 5's own Label Job
+Contract names but never adds to the data model catalogue -- a single-state master (no DRAFT/RELEASED
+lifecycle, since the contract only ever names it by ID/hash, never a workflow), fields keyed directly off
+the contract's own language (`content_hash` = "artwork version ID/hash", `product_version_id` =
+"product version"). New `ebmr.print_job` fills in `POST /packaging/v1/print-jobs`, already named in
+Document 16's own 10-op API list (section 6) but with no entity to persist against before this pass --
+fields again keyed off section 5's contract (`label_version_id`, `quantity`, `variable_data` for
+serial/UDI, `printer_ref` for printer identity -- free text, since printer/scanner device registration
+itself remains unbuilt infrastructure and stays out of this change's scope, `requested_by`,
+`output_hash` nullable). `label_issue.label_version_id`/`print_job_id` -- previously unenforced UUID
+columns -- are now real enforced FKs; `issue_label()` validates both ids exist before insert
+(`NOT_FOUND` otherwise, not a raw FK-violation 500). `POST /packaging/v1/label-versions` (a create
+operation for the new master) is additionally added even though Document 16's own API list never names
+one -- same "necessary supporting master-data op" latitude already used for SG-176/SG-177
+(`aseptic_profile_version`/`equipment_area`), since a print job needs a real label version to reference
+and nothing else in this codebase could ever create one otherwise. Verified: 1 new test
+(`test_label_version_and_print_job_wired_into_label_issue`, including an unrecognized-`label_version_id`
+404 case) plus the existing 11/11 packaging suite, 12/12 passed; live round-trip against the demo DB
+(create label version → reject print job against a random unknown `label_version_id` with `404
+NOT_FOUND` → create a real print job → issue a label referencing both real ids → both ids visible on
+`GET /packaging/v1/runs/{id}`). PKG-FR-005/007/011/012/014-016/019-023/026/029/032 (reprint,
+application-verification, inspection, reconciliation waivers, tamper-evident, UDI, artwork evidence,
+ERP/WMS posting, printer/scanner identity) remain open, out of scope for this change.
 
 ### SG-057 — Document 18's approved_supplier_material/purchase_requisition/purchase_order_ref all key on a "material specification version" entity that does not exist anywhere in this codebase
 
@@ -4402,6 +4485,26 @@ resolution_document: "— (open)"
 status: OPEN
 ```
 
+**UPDATE 2026-10-09 RESOLVED (project-owner-directed).** Rather than author a fresh Document 113-style
+addendum, this reuses Documents 26/27's own already-approved reopen contract verbatim: `reason` +
+`new_evidence` required, unsigned (RBAC-gated only via a new `ncr.reopen` permission, same QA Releaser
+role as `ncr.disposition`/`.close`), only reachable from `CLOSED`, and the prior closure
+(`closed_at`/`closure_history`) is never cleared or rewritten -- only appended to on the next closure.
+Re-entry state mirrors Document 26's own `REOPENED -> {CONTAINMENT, INVESTIGATION, IMPACT_ASSESSMENT,
+DISPOSITION, CLOSED}` breadth: NCR's `REOPENED` can resume into `EVALUATION`, any disposition type,
+`VERIFICATION`, or directly back to `CLOSED`. Implemented: migration 0141 (`qms.nonconformance_record.
+reopen_history`, same append-only-array shape as `deviation_record`/`capa_record`/`oot_record`'s own
+`reopen_history` columns), `ncr_commands.py::reopen_ncr()`/`ReopenNcrCommand`, `POST /qms/v1/
+nonconformances/{id}/reopen`, frontend "Reopen" action on `nonconformances/[id]/page.tsx`. Tested:
+`tests/test_qms_ncr.py` -- reject from non-CLOSED state, reject blank reason/new_evidence, full
+reopen-then-reclose cycle, reopen-then-re-evaluate cycle, unsigned (`signature_id is None`). Live-verified
+against the demo DB end to end (close -> reopen -> re-close).
+
+```yaml
+resolution_document: "ncr_commands.py::reopen_ncr()/ReopenNcrCommand, migration 0141 (reopen_history column), POST /qms/v1/nonconformances/{id}/reopen, ncr.reopen permission (QA Releaser), frontend Reopen action. Mirrors deviation_record/capa_record reopen contract verbatim rather than inventing one. tests/test_qms_ncr.py: 4 new tests, all passing; live-verified 2026-10-09."
+status: RESOLVED  # 2026-10-09, project-owner-directed
+```
+
 ### SG-067 — NCR-FR-002/010/011/012/014: cross-module integration (automatic source, supplier/SCAR link, release-eligibility wiring, CAPA auto-creation, inventory/destruction transaction) not performed this pass
 
 Each of these five requirements needs another module to either call into this one, or be called by it.
@@ -4462,9 +4565,29 @@ options:
   - (B) Guess the wiring/schemas now (rejected -- the risk above).
 blocking: false
 owner: Platform Architect + Release module owner + Materials module owner + Supplier-Quality module owner + QMS module owner
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "NCR-FR-011 RESOLVED 2026-10-09 (release-blocker wiring, same session); NCR-FR-012 RESOLVED 2026-10-09, project-owner-directed (client gap-closure item #1, chose Option A's CAPA-auto-creation half: 'Auto-create a draft CAPA'). NCR-FR-002/010/014 remain open."
+status: PARTIALLY_RESOLVED  # NCR-FR-011/012 resolved 2026-10-09; NCR-FR-002/010/014 still open
 ```
+
+**NCR-FR-012 RESOLVED 2026-10-09, project-owner-directed** (client gap-closure item #1, decided across
+a 3-batch AskUserQuestion walkthrough: "Auto-create a draft CAPA" chosen over the lighter alternatives).
+`disposition_ncr()` now calls a new shared `app/modules/qms/capa_commands.py::auto_create_capa_from_source()`
+in the *same* transaction when `capa_required=True`, inserting a real `OPEN` `CapaRecord`
+(`source_type="ncr"`) with its own `Created` audit event + `CapaAutoCreated` outbox event — not merely a
+flag any more. The same helper is reused by Complaint/Internal-Audit/SCAR/Field-Action (see SG-101/
+SG-103/SG-106's own updates below) rather than duplicating the logic five times. `owner_subject_id`/
+`risk_class`/`target_date` have no source-side equivalent to carry over from any of the five triggering
+commands, so they default respectively to the actor who raised the flag, the self-documenting placeholder
+`"pending_assessment"`, and +30 days — the same limitation an ordinarily-created CAPA already has
+(Document 27's own 8-op API list has no endpoint to revise these fields after `create()` either), not a
+new one introduced here. `root_cause_ref.proactive_rationale` is populated from the triggering command's
+own `capa_rationale` text. Verified: `test_disposition_capa_required_auto_creates_draft_capa` (new) plus
+the existing 23/23 NCR suite, 24/24 passed; live round-trip against the demo DB (NCR create → segregate →
+evaluate → signed disposition with `capa_required=true`) produced a real `CapaRecord`
+(`CAPA-AUTO-26B3F9D545`, state `OPEN`, `owner_subject_id` = the signing actor) retrievable via
+`GET /qms/v1/capas`. NCR-FR-002 (automatic NCR creation from QC/test/inspection) and NCR-FR-010 (SCAR
+link/supplier) and NCR-FR-014 (scrap/destruction inventory transaction) remain open, out of scope for
+this change.
 
 ### SG-068 — NCR-FR-017/018: trend metrics and export have no operation in Document 28's own 6-op API list
 
@@ -4625,9 +4748,33 @@ options:
   - (B) Guess the endpoint/contract now (rejected -- the risk above).
 blocking: false
 owner: Data Architect + QMS module owner
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "RESOLVED 2026-10-09, project-owner-directed (client gap-closure session)"
+status: RESOLVED
 ```
+
+**SG-071 RESOLVED 2026-10-09, project-owner-directed** (client gap-closure batch, decided explicitly
+when asked "new terminal ROLLED_BACK state" vs. reusing CANCELLED vs. skipping): added a new terminal
+`ROLLED_BACK` state to `CHANGE_STATES`, reachable only from `IMPLEMENTATION`/`VERIFICATION`
+(`ROLLBACK_ELIGIBLE_STATES`), distinct from `CANCELLED` (abandoned before implementing) -- preserves the
+intent of CHG-FR-019's "controlled action" without inventing the full bidirectional evidence-preservation
+contract Option A above describes (both the pre-rollback state and the rollback event remain readable:
+the record's prior `impact_assessment`/tasks/verification evidence are never overwritten, only the
+terminal `state`/`rollback_reason`/`rolled_back_at` change, same append-only discipline as every other
+terminal disposition in this module family).
+
+Implementation mirrors CHG-FR-021's own already-approved pattern exactly: `close()` accepts a new
+`rollback_reason` field (alongside the existing `cancellation_reason`) and reuses the module's one
+signature-gated terminal endpoint (`POST /qms/v1/changes/{id}/close`, same `"close"` signature action,
+same QA-Releaser-independent-of-owner policy, Document 106 section 9 row 87) rather than inventing a new
+endpoint -- migration `1cc842ed7e64`/0144 adds `rollback_reason`/`rolled_back_at` columns (same shape as
+the existing `cancel_reason`/`cancelled_at`). Verified: 3 new tests
+(`test_rollback_rejected_before_implementation`, `test_rollback_from_implementation`,
+`test_rollback_from_verification`) plus the existing 21/21 suite, 24/24 passed; live round-trip against
+the demo DB (create -> impact -> signed approve (qa.releaser, independent of operator1 owner) -> implement
+-> task -> signed verify (qa.reviewer) -> signed rollback from VERIFICATION) produced `state: ROLLED_BACK`
+with a real `signature_id` and the terminal re-close/re-rollback attempt correctly rejected
+`INVALID_TRANSITION`. CHG-FR-022/023 (SG-072) and the emergency-lane / retrospective-review-only-folded-in
+aspects of CHG-FR-004/009/015 (SG-073) remain open, out of scope for this change.
 
 ### SG-072 — CHG-FR-022/023: software PR/build/SBOM traceability and master-record back-linkage are cross-module integration not performed this pass
 
@@ -5309,9 +5456,27 @@ options:
   - (B) Guess the schemas/wiring now (rejected -- the risk above).
 blocking: false
 owner: Data Architect + QMS module owner + Training module owner
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "DOC-FR-014 RESOLVED 2026-10-09, project-owner-directed (client gap-closure item #6, chose 'Simple unsigned log' over Option A's full training-action-entity integration). DOC-FR-013 (training assignment wiring) remains open."
+status: PARTIALLY_RESOLVED  # DOC-FR-014 resolved 2026-10-09; DOC-FR-013 still open
 ```
+
+**DOC-FR-014 RESOLVED 2026-10-09, project-owner-directed** (client gap-closure item #6, decided across
+the 3-batch AskUserQuestion walkthrough: "Simple unsigned log" chosen over waiting for a full
+training-action entity). New insert-only `qms.document_acknowledgment` table (migration `8a5c3e1f9d27`/
+0145, unique on `(document_version_id, user_id)` so re-acknowledging is idempotent, not an error) plus
+`POST /documents/v1/versions/{id}/acknowledgments` and `GET .../acknowledgments`. Deliberately **not** a
+Part 11 signature (AG-07 -- login/MFA is not a signature, and DOC-FR-014's own text calls this "distinct
+from the approval signature"): no challenge, no reauth, `signature_id` is always `null` on the receipt.
+Gated to `EFFECTIVE` versions only (same `DOCUMENT_VERSION_OBSOLETE` gate `issue_controlled_copy()`
+already used), new `document.acknowledge` permission code granted via the same `QMS_VIEW_CODES` set as
+`document.view` (same audience: anyone who can see a document should be able to confirm they read it,
+not a QMS-write-role-only action). `scripts/sync_permissions.py` run against the live demo DB (1
+permission created, 6 role-grants added). Verified: 3 new tests
+(`test_acknowledge_rejected_for_non_effective_version`, `test_acknowledge_then_list_and_reacknowledge_is_idempotent`,
+`test_acknowledge_404_for_missing_version`) plus the existing 19/19 document-control suite, 22/22 passed;
+live round-trip against the demo DB (draft → submit → signed release → make-effective → operator1
+acknowledges → re-acknowledge) produced exactly one acknowledgment row with `signature_id: null`.
+DOC-FR-013 (training assignment wiring) remains open, out of scope for this change.
 
 ### SG-080 — DOC-FR-022: no historical-document migration pathway exists distinct from the normal signed-release flow
 
@@ -5922,6 +6087,25 @@ still has no `version`/`state`/scope columns, renewal still creates a second row
 the first there (the ordering-by-`granted_at` read pattern tolerates this), and a qualification revoked or
 corrected in `qms.qualification_record` is not reflected back. Reconciliation/full authority decision
 remains open; `status: OPEN` unchanged.
+
+**2026-10-09 RESOLVED (project-owner-directed):** the authority question above is now decided:
+**`iam.qualifications` is the authoritative store for the execution-time gate.**
+`qms.qualification_record` remains Training's own detail/history view (version/state/scope, renewal
+chain via `renewed_from_qualification_id`) and keeps write-through mirroring every grant into
+`iam.qualifications`, exactly as already built 2026-09-17 -- no code change was needed to implement this
+decision, only to record it. The renewal/correction concern raised above is confirmed non-issue in
+practice, not just tolerated: `_enforce_step_qualification()`'s and `_check_dispensing_qualification()`'s
+query (`ORDER BY granted_at DESC LIMIT 1`) always reads the newest grant, so a renewal's new row is
+always the one read; the superseded row is simply never consulted again. A qualification revoked/
+corrected only in `qms.qualification_record` without a matching new/expired `iam.qualifications` row is
+the one residual asymmetry -- `qms.qualification_record` has no revoke/correct operation at all today
+(only `create_qualification`/`create_waiver` exist), so this has no live code path either; it would need
+its own follow-up if a revoke operation is ever added.
+
+```yaml
+resolution_document: "project-owner-directed 2026-10-09: iam.qualifications declared authoritative for the execution gate; qms.qualification_record is Training's detail/history view, write-through mirroring unchanged since 2026-09-17 (training_commands.py::create_qualification()). No code change required -- renewal-ordering already correct per the gate's own `ORDER BY granted_at DESC` query."
+status: RESOLVED  # 2026-10-09, project-owner-directed
+```
 
 ### SG-087 — TRN-FR-007: no numeric attempt-limit or retry-backoff policy exists for assessment attempts
 
@@ -6914,9 +7098,17 @@ options:
   - (B) Guess any of the five now (rejected -- the risks above).
 blocking: false
 owner: Platform Architect + QMS module owner
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "AUDIT-FR-008 RESOLVED 2026-10-09, project-owner-directed (client gap-closure item #1, same decision/implementation as SG-067). AUDIT-FR-012/015/016/017 remain open."
+status: PARTIALLY_RESOLVED  # AUDIT-FR-008 resolved 2026-10-09; the other four clauses still open
 ```
+
+**AUDIT-FR-008 RESOLVED 2026-10-09** — same decision and `auto_create_capa_from_source()` helper as
+SG-067's update above. `respond_to_finding()` now auto-creates a real `OPEN` `CapaRecord`
+(`source_type="audit"`, `source_id` = the finding's *parent* `InternalAudit` id -- the only validated FK
+`CAPA_SOURCE_TYPES` offers; no separate `"audit_finding"` source type exists) in the same transaction
+when `capa_required=True`. Verified: `test_full_lifecycle_success` extended with a CAPA-auto-create
+assertion, 130/130 passed across the full NCR/Complaint/Internal-Audit/SCAR/Field-Action/CAPA regression
+sweep. AUDIT-FR-012/015/016/017 remain open, out of scope for this change.
 
 ```yaml
 spec_gap_id: SG-102
@@ -7018,9 +7210,17 @@ options:
   - (B) Guess any of the eight now (rejected -- the risks above).
 blocking: false
 owner: Platform Architect + QMS module owner
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "CMP-FR-017 (CAPA half) RESOLVED 2026-10-09, project-owner-directed (client gap-closure item #1, same decision/implementation as SG-067). CMP-FR-011/013/014/015/016/018/024 remain open (CMP-FR-018 field-action auto-create was not part of this decision's scope)."
+status: PARTIALLY_RESOLVED  # CMP-FR-017's CAPA half resolved 2026-10-09; the other seven clauses still open
 ```
+
+**CMP-FR-017 (CAPA half) RESOLVED 2026-10-09** — same decision and `auto_create_capa_from_source()`
+helper as SG-067's update above. `assess_reportability()` now auto-creates a real `OPEN` `CapaRecord`
+(`source_type="complaint"`) in the same transaction when `capa_required=True`, alongside the pre-existing
+`ComplaintCAPAOpened` outbox notification (left in place, additive). CMP-FR-018 (field-action auto-create)
+was not part of the decided scope and remains open. Verified: `test_full_lifecycle_via_investigation`
+extended with a CAPA-auto-create assertion, 130/130 passed across the full regression sweep.
+CMP-FR-011/013/014/015/016/024 remain open, out of scope for this change.
 
 ```yaml
 spec_gap_id: SG-104
@@ -7141,9 +7341,18 @@ options:
   - (B) Guess the trigger now (rejected -- the risk above).
 blocking: false
 owner: Platform Architect + QMS module owner
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "FAR-FR-016 RESOLVED 2026-10-09, project-owner-directed (client gap-closure item #1, same decision/implementation as SG-067). FAR-FR-020 remains open."
+status: PARTIALLY_RESOLVED  # FAR-FR-016 resolved 2026-10-09; FAR-FR-020 still open
 ```
+
+**FAR-FR-016 RESOLVED 2026-10-09** — same decision and `auto_create_capa_from_source()` helper as
+SG-067's update above. `assess_field_action_reportability()` now auto-creates a real `OPEN` `CapaRecord`
+(`source_type="field_action"`) in the same transaction when `capa_required=True`. Verified:
+`test_full_lifecycle_success` extended with a CAPA-auto-create assertion, 130/130 passed across the full
+regression sweep. FAR-FR-020 (export) remains open, out of scope for this change. (SCAR's own analogous
+`capa_required` capture on `close_scar()` -- `source_type="supplier"`, pointing at the parent
+`SupplierQualityCase` -- was wired identically in this same change, though it was never given its own
+dedicated SG number in this registry; recorded here for completeness.)
 
 ```yaml
 spec_gap_id: SG-107
@@ -7199,9 +7408,32 @@ options:
   - (B) Guess the nine formulas now (rejected -- the risk above).
 blocking: false
 owner: Platform Architect + QMS module owner + Analytics owner
-resolution_document: "— (open)"
-status: OPEN
+resolution_document: "MET-FR-003/MET-FR-009 (deviation/NCR/OOS, count half only) RESOLVED 2026-10-09, project-owner-directed (client gap-closure item #8, chose 'Just 2-3 straightforward ones' over wiring all nine or leaving all caller-supplied). The other six families, the rate/denominator half of these three, MET-FR-015 drilldown and MET-FR-017 threshold rule-engine remain open."
+status: PARTIALLY_RESOLVED  # 3 of 9 families' count half resolved 2026-10-09; rate/denominator + other 6 families + drilldown/threshold-engine still open
 ```
+
+**MET-FR-003/MET-FR-009 (count half only) RESOLVED 2026-10-09, project-owner-directed** (client
+gap-closure item #8, decided across the 3-batch AskUserQuestion walkthrough: "Just 2-3 straightforward
+ones" chosen over Option A's full nine-family build or leaving `calculate()` entirely caller-supplied).
+`calculate_snapshot()`'s `result` field is now optional: when omitted (or empty) **and**
+`source_model_id` is one of `deviation_record`/`nonconformance_record`/`oos_record` (the exact
+free-text values `CreateMetricDefinitionCommand.source_model_id` already accepted -- no new field
+invented), a real `COUNT(*)` query runs against that table scoped to `site_id` and
+`created_at` within `[period_start, period_end)`, producing `{"opened_count": N, "source_model_id": ...,
+"auto_computed": true}`. Deliberately an honest count, **not** a true rate: `risk_if_guessed` above
+explicitly warns a guessed denominator could misrepresent quality performance exactly the way
+MET-FR-002/013 are designed to prevent, and no cross-module denominator contract (batch count? site
+day-count?) exists yet -- `denominator_definition` remains a real but unused field, left for whoever adds
+one. Any caller supplying a non-empty `result` still gets the original caller-supplied behavior unchanged
+(fully backward compatible with the other six families and with manual overrides of these three).
+Verified: 2 new/fixed tests (`test_calculate_requires_nonempty_result` updated to use an unwired
+`source_model_id` so it still tests the "no auto-compute available" path;
+`test_calculate_auto_computes_deviation_rate_when_result_omitted` new) plus the existing 26/26 suite,
+28/28 passed; live round-trip against the demo DB (`source_model_id="nonconformance_record"`, no
+`result`) produced `opened_count: 5` matching the live NCR table's real row count, visible on
+`GET /quality-metrics/v1/dashboard`. The other six families (CAPA, complaint, supplier, audit, training,
+batch-quality), the rate/denominator half of these three, MET-FR-015 (drilldown) and MET-FR-017
+(threshold rule engine) remain open, out of scope for this change.
 
 ```yaml
 spec_gap_id: SG-108
@@ -16870,6 +17102,76 @@ options:
     single evaluate_policy call.
 blocking: false
 owner: Data Architect + Security owner
+resolution_document: "-- (open)"
+status: OPEN
+```
+
+```yaml
+spec_gap_id: SG-230
+title: "equipment_asset.hold -> return_to_service has no workflow-notification path: the registry's one-state-per-aggregate shape cannot track two independent pending dimensions on the same entity"
+class: E
+description: >
+  Client gap-closure pass (2026-10-08, project-owner-directed): the workflow-notification registry
+  (app/modules/notifications/registry.py) was extended with ~43 new WorkflowNotificationSpec entries
+  covering every remaining genuine cross-user handoff found across the codebase (Batch Execution, DDCP,
+  Validation, Postmarket, Security, QC/Material, Equipment/EM/Aseptic, Training, QA Review, Quality
+  Metrics, Vault/Rules/UOM, Genealogy/Yield, ERP). One candidate was deliberately left out:
+  equipment_asset.hold (app/modules/equipment/commands.py hold_equipment()) sets EquipmentAsset.state =
+  "SUSPENDED", resolved only by return_to_service() (permission "equipment_asset.return_to_service", held
+  by a different role than the typical holder) -- a genuine handoff by this registry's own test. But
+  "equipment_asset" is already a WORKFLOW_SPECS key, registered against a *different* column on the same
+  row (calibration_status, for the approve_calibration handoff). WorkflowNotificationSpec has exactly one
+  `loader` returning exactly one `state: str` per aggregate id, checked against exactly one
+  `pending_states` dict -- there is no way to track two independent pending dimensions (calibration_status
+  AND state) on the same row under one aggregate_type key without either (a) a lossy/fragile multiplexed
+  state string, or (b) a real model change to WorkflowNotificationSpec/EntitySnapshot/sync_notification to
+  support more than one tracked dimension per aggregate. Neither was picked -- this is exactly the kind of
+  architectural fork Document 01's own "no regulated behavior is guessed" principle (AG-15) extends to:
+  picking (a) or (b) changes how every future multi-dimension aggregate in this registry would be modeled,
+  not a local decision for this one entity.
+source_documents:
+  - app/modules/notifications/registry.py (module docstring, equipment_asset's existing
+    pending_approval category)
+  - app/modules/equipment/commands.py hold_equipment(), return_to_service()
+source_requirement_ids:
+  - SPEC-EQP-002 (Document 106 row 108, equipment_asset.hold)
+affected_modules:
+  - notifications
+  - equipment
+affected_functions:
+  - app/modules/notifications/registry.py WORKFLOW_SPECS["equipment_asset"], EntitySnapshot,
+    WorkflowNotificationSpec
+  - app/modules/equipment/commands.py hold_equipment(), return_to_service()
+why_material: >
+  Without this notification, an authorized holder (Operator/QA Reviewer/QA Releaser) can suspend a piece
+  of equipment and nobody with "equipment_asset.return_to_service" (QA-Reviewer-class role + Engineering
+  Manager) is alerted that it is sitting unavailable -- the same "silent handoff" gap this whole pass was
+  commissioned to close, left open on exactly one aggregate for a structural reason rather than low
+  priority.
+risk_if_guessed: >
+  Multiplexing two independent state dimensions into one string (e.g. "SUSPENDED|pending_approval") would
+  be fragile (silent data loss if either half's vocabulary ever grows to collide with the separator or
+  with the other dimension's values) and is exactly the kind of invented-on-the-spot mechanic AG-15 exists
+  to prevent; picking it without review would set an undocumented precedent for every future case where one
+  aggregate needs two independently-tracked notification dimensions.
+options:
+  - (A) Extend WorkflowNotificationSpec to carry a `dimension` tag and allow multiple specs to share one
+    aggregate_type key, each tracking its own named EntitySnapshot field (requires a small
+    EntitySnapshot/sync_notification signature change: loader returns a dict of
+    {dimension: state} instead of one bare state) -- most general, but changes a shape every existing
+    entry in this file would need to be touched or defaulted against.
+  - (B) Give `state` (hold/return_to_service) its own notification via a second, differently-keyed
+    aggregate_type (e.g. "equipment_asset_hold") whose loader reads the same EquipmentAsset table's
+    `state` column -- works at the registry level, but the NATS consumer dispatch in consumer.py keys
+    `WORKFLOW_SPECS.get(envelope["aggregate_type"])` off the literal aggregate_type string every
+    EquipmentAsset event already carries ("equipment_asset"), so a second dict key with a different name
+    would never actually receive events through the normal durable-consumer path -- only `rebuild_all()`
+    would ever populate it. Needs a consumer.py change too (dispatch by (aggregate_type, however it
+    decides which spec(s) apply) rather than a 1:1 dict lookup) to actually work for live events, not just
+    on full rebuild.
+  - (C) Leave equipment_asset.hold unnotified (status quo) until a project-owner decision picks (A) or (B).
+blocking: false
+owner: Platform Architect (notifications registry owner)
 resolution_document: "-- (open)"
 status: OPEN
 ```

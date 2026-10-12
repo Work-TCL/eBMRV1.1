@@ -45,13 +45,13 @@ lot-level release readiness.
 
 | Route | કરે છે |
 |---|---|
-| `/devices` | Serial lookup (browsable list ઇરાદાપૂર્વક નથી — નીચે ૪.૪ જુઓ), unit hold, device-lot readiness check, (Admin/Supervisor) lot create + bulk unit create |
+| `/devices` | **Browsable DataTable** (units + lots, search by serial) + by-id detail, unit hold, device-lot readiness check (હવે real dropdown, નીચે ૪.૪ જુઓ), (Admin/Supervisor) lot create + bulk unit create |
 
 | Action | Permission | કોણ | Signed? |
 |---|---|---|---|
 | Device Lot / Bulk Units Create | `device.create` | Admin, **Supervisor** | ના |
 | Hold Unit | `device.execute` | બ્રોડ operational roles | ના |
-| View/Lookup/Readiness | `device.view` | બ્રોડ operational roles | — |
+| View/List/Readiness | `device.view` | બ્રોડ operational roles | — |
 
 **Example:** Serial `SN-000123` — Device Lot `DVC-LOT-2026-04`.
 
@@ -72,12 +72,15 @@ lot-level release readiness.
 ## ૪.૪ ધ્યાન રાખવા જેવી બાબતો
 
 1. **Equipment lifecycle માં ફક્ત Hold signed છે**, બાકીના actions RBAC-only.
-2. **`/devices` પર browsable list નથી — આ deliberate spec boundary છે, bug/gap નથી** (2026-09-19
-   ચકાસાયેલ): Document 12 નું પોતાનું ૧૧-API list (`ebmr-edhr/docs/generated/06_API_CATALOGUE.yaml`)
-   માં કોઈ `GET /devices/v1/units` (list) operation જ નથી — ફક્ત by-serial lookup
-   (`GET .../units/by-serial/{serial}`), unit history, અને lot release-readiness. "Document ના own
-   API list ની બહાર endpoint invent ના કરવું" — આ codebase ની throughout followed discipline પ્રમાણે,
-   list endpoint ઉમેરવું ખોટું ગણાય.
+2. ~~`/devices` પર browsable list નથી — આ deliberate spec boundary છે, bug/gap નથી (2026-09-19 ચકાસાયેલ):
+   Document 12 નું પોતાનું ૧૧-API list માં કોઈ `GET /devices/v1/units` (list) operation જ નથી... list
+   endpoint ઉમેરવું ખોટું ગણાય.~~ **✅ Fixed (2026-10-09, real user report)** — આ reasoning એ જ session ના
+   બાકીના બધા module (process_cycle/aseptic_operation/sterile_filter_use/cleaning_execution/
+   line_clearance) પર actually લાગુ **નહોતું** કરેલ — દરેક ત્યાં "SG-081 read-side precedent: plain
+   read-only GET listing કોઈ future write/CRUD contract સાથે conflict નથી કરતું" ના આધારે ઉમેરાયેલ,
+   Devices એ જ rule નો અપવાદ રાખવાનું કોઈ વાસ્તવિક કારણ નહોતું. `GET /devices/v1/units` ઉમેર્યું
+   (paginated, `site_id`/`batch_id`/`device_lot_id`/`lots_only` filter, batch/product/lot label
+   resolved) — `/devices` હવે real DataTable બતાવે છે, serial-only lookup replaced.
 3. ~~"Hold unit" બટન `canViewDevices` ચેક વાપરે છે, naming imprecise~~ **✅ Fixed** — હવે
    `canExecuteDevice()` (`device.execute`) વાપરે છે, backend ના `device.execute` gate સાથે
    1:1 match (`frontend/src/app/devices/page.tsx`, commit `f7a2899`).

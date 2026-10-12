@@ -27,7 +27,7 @@ from app.modules.qms.capa_commands import (
     reopen_capa,
 )
 from app.modules.qms.capa_models import CapaAction, CapaEffectivenessCheck, CapaRecord
-from app.modules.qms.read_support import filtered, iso, sid
+from app.modules.qms.read_support import filtered, iso, resolve_source_label, resolve_user_names, sid
 from app.modules.qms.signature_support import SignatureChallengeRequest, create_qms_signature_challenge
 from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.schemas import MutationReceipt
@@ -181,7 +181,7 @@ CAPA_SORTABLE = {
 }
 
 
-def _capa_dict(record: CapaRecord) -> dict:
+def _capa_dict(record: CapaRecord, source_label: str | None = None) -> dict:
     return {
         "id": str(record.id),
         "site_id": str(record.site_id),
@@ -189,6 +189,7 @@ def _capa_dict(record: CapaRecord) -> dict:
         "capa_number": record.capa_number,
         "source_type": record.source_type,
         "source_id": str(record.source_id),
+        "source_label": source_label,
         "source_version": record.source_version,
         "problem_statement": record.problem_statement,
         "scope_type": record.scope_type,
@@ -234,7 +235,13 @@ async def list_capas(
     rows, envelope = await paginate(
         session, stmt, params, sortable=CAPA_SORTABLE, default_sort=CapaRecord.created_at
     )
-    return {**envelope, "items": [_capa_dict(r) for (r,) in rows]}
+    records = [r for (r,) in rows]
+    return {
+        **envelope,
+        "items": [
+            _capa_dict(r, await resolve_source_label(session, r.source_type, r.source_id)) for r in records
+        ],
+    }
 
 
 @capa_router.get("/{capa_id}")
@@ -255,8 +262,14 @@ async def get_capa(
             select(CapaEffectivenessCheck).where(CapaEffectivenessCheck.capa_id == capa_id)
         )
     ).scalars().all()
+    # 2026-10 UUID-display audit: owner_subject_id was shown as a raw id with no resolved name.
+    user_by_id = await resolve_user_names(session, {record.owner_subject_id})
+    owner = user_by_id.get(str(record.owner_subject_id))
+    source_label = await resolve_source_label(session, record.source_type, record.source_id)
     return {
-        **_capa_dict(record),
+        **_capa_dict(record, source_label),
+        "owner_full_name": owner[0] if owner else None,
+        "owner_username": owner[1] if owner else None,
         "scope_refs": record.scope_refs,
         "root_cause_ref": record.root_cause_ref,
         "effectiveness_plan": record.effectiveness_plan,

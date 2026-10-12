@@ -39,8 +39,9 @@ from app.modules.equipment.sterilization_models import (
 )
 from app.modules.iam.models import User
 from app.modules.material.models import Material, MaterialLot
-from app.modules.policy.service import evaluate_policy
+from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.product_master.models import ProductVersion
+from app.modules.qms.models import DeviationRecord
 from app.modules.signature.service import create_challenge
 from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.schemas import MutationReceipt
@@ -216,17 +217,20 @@ async def list_cycles(
 
     `batch_id` is optional (additive) -- built for the Batch Workspace, which needs a batch's
     sterilization activity without paging through the whole site; `ProcessCycle.batch_id` already
-    existed on the row, this just exposes it as a filter."""
-    async with session.begin():
-        stmt = select(ProcessCycle).where(ProcessCycle.site_id == site_id)
-        if batch_id is not None:
-            stmt = stmt.where(ProcessCycle.batch_id == batch_id)
-        if params.q:
-            stmt = stmt.where(ProcessCycle.process_type.ilike(f"%{params.q}%"))
-        rows, envelope = await paginate(session, stmt, params, sortable=CYCLE_SORTABLE, default_sort=ProcessCycle.created_at)
-        cycles = [c for (c,) in rows]
-        refs = await _resolve_cycle_refs(session, cycles)
-        return {**envelope, "items": [_cycle_dict(c, refs.get(c.id)) for c in cycles]}
+    existed on the row, this just exposes it as a filter.
+
+    2026-10-08: had no policy check at all until now -- any authenticated actor, any role, any site,
+    could list another site's cycles. Found live while testing a real user report."""
+    await evaluate_policy(session, actor.user_id, action="process_cycle.view", site_id=site_id)
+    stmt = select(ProcessCycle).where(ProcessCycle.site_id == site_id)
+    if batch_id is not None:
+        stmt = stmt.where(ProcessCycle.batch_id == batch_id)
+    if params.q:
+        stmt = stmt.where(ProcessCycle.process_type.ilike(f"%{params.q}%"))
+    rows, envelope = await paginate(session, stmt, params, sortable=CYCLE_SORTABLE, default_sort=ProcessCycle.created_at)
+    cycles = [c for (c,) in rows]
+    refs = await _resolve_cycle_refs(session, cycles)
+    return {**envelope, "items": [_cycle_dict(c, refs.get(c.id)) for c in cycles]}
 
 
 PROFILE_SORTABLE = {
@@ -314,6 +318,8 @@ async def get_cycle(
     cycle = await session.get(ProcessCycle, cycle_id)
     if cycle is None:
         raise NotFoundError("Process cycle not found")
+    # 2026-10-08: same gap as list_cycles above -- no policy check at all until now.
+    await evaluate_policy(session, actor.user_id, action="process_cycle.view", site_id=cycle.site_id)
     refs = await _resolve_cycle_refs(session, [cycle])
     load_items = (
         (
@@ -345,6 +351,7 @@ class CycleSignatureChallengeRequest(BaseModel):
 
 
 _CYCLE_CHALLENGE_MEANINGS = {"start": "Performed", "review": "Reviewed"}
+_CYCLE_CHALLENGE_PERMISSIONS = {"start": "process_cycle.start", "review": "process_cycle.review"}
 
 
 @router.post("/cycles/{cycle_id}/signature-challenges")
@@ -359,8 +366,13 @@ async def post_cycle_signature_challenge(
         if cycle is None:
             raise NotFoundError("Process cycle not found")
         meaning = _CYCLE_CHALLENGE_MEANINGS.get(body.action)
-        if meaning is None:
+        permission = _CYCLE_CHALLENGE_PERMISSIONS.get(body.action)
+        if meaning is None or permission is None:
             raise ValidationFailedError("Unknown action", action=body.action)
+        # 2026-10-08: this endpoint had no policy check at all -- any authenticated user of any role
+        # could mint a challenge for any cycle, same gap as yield_reconciliation's own signature-
+        # challenges route (fixed earlier this session).
+        await evaluate_policy(session, actor.user_id, action=permission, site_id=cycle.site_id)
         challenge = await create_challenge(
             session, user_id=actor.user_id, record_type="process_cycle", record_id=cycle.id,
             record_version=cycle.version, record_hash=cycle_record_hash(cycle), meaning=meaning,
@@ -481,7 +493,8 @@ async def get_status(
         return await get_item_status(session, item_id)
 
 
-def _filter_use_dict(use: SterileFilterUse) -> dict:
+def _filter_use_dict(use: SterileFilterUse, refs: dict | None = None) -> dict:
+    refs = refs or {}
     return {
         "id": str(use.id),
         "site_id": str(use.site_id),
@@ -490,10 +503,16 @@ def _filter_use_dict(use: SterileFilterUse) -> dict:
         "filter_type": use.filter_type,
         "manufacturer": use.manufacturer,
         "batch_id": str(use.batch_id) if use.batch_id else None,
+        "batch_number": refs.get("batch_number"),
+        "batch_product_name": refs.get("batch_product_name"),
+        "batch_product_code": refs.get("batch_product_code"),
         "sterilization_cycle_id": str(use.sterilization_cycle_id) if use.sterilization_cycle_id else None,
+        "sterilization_cycle_label": refs.get("sterilization_cycle_label"),
         "housing_location": use.housing_location,
         "direction": use.direction,
         "installed_by_user_id": str(use.installed_by_user_id) if use.installed_by_user_id else None,
+        "installed_by_full_name": refs.get("installed_by_full_name"),
+        "installed_by_username": refs.get("installed_by_username"),
         "installed_at": use.installed_at.isoformat() if use.installed_at else None,
         "state": use.state,
         "pre_use_integrity_result": use.pre_use_integrity_result,
@@ -503,11 +522,119 @@ def _filter_use_dict(use: SterileFilterUse) -> dict:
         "process_parameters": use.process_parameters,
         "reuse_count": use.reuse_count,
         "performer_user_id": str(use.performer_user_id) if use.performer_user_id else None,
+        "performer_full_name": refs.get("performer_full_name"),
+        "performer_username": refs.get("performer_username"),
         "requires_deviation": use.requires_deviation,
         "deviation_reference_id": str(use.deviation_reference_id) if use.deviation_reference_id else None,
+        "deviation_number": refs.get("deviation_number"),
         "version": use.version,
         "created_at": use.created_at.isoformat() if use.created_at else None,
     }
+
+
+async def _resolve_filter_use_refs(session: AsyncSession, uses: list[SterileFilterUse]) -> dict[uuid.UUID, dict]:
+    """Batch-resolves every foreign key `_filter_use_dict` needs a human-readable label for -- batch/
+    product, the sterilization cycle that prepared this filter, the installer/performer users, and (best-
+    effort, `deviation_reference_id` carries no FK constraint -- see the model's own docstring) a linked
+    deviation's number. Same one-query-per-referenced-table shape as `_resolve_cycle_refs` above."""
+    if not uses:
+        return {}
+
+    batch_ids = {u.batch_id for u in uses if u.batch_id}
+    cycle_ids = {u.sterilization_cycle_id for u in uses if u.sterilization_cycle_id}
+    user_ids = {u.installed_by_user_id for u in uses if u.installed_by_user_id}
+    user_ids |= {u.performer_user_id for u in uses if u.performer_user_id}
+    deviation_ids = {u.deviation_reference_id for u in uses if u.deviation_reference_id}
+
+    batch_by_id: dict[uuid.UUID, tuple[str, str, str]] = {}
+    if batch_ids:
+        batch_by_id = {
+            row.id: (row.batch_number, row.name, row.product_code)
+            for row in (
+                await session.execute(
+                    select(Batch.id, Batch.batch_number, ProductVersion.name, ProductVersion.product_code)
+                    .join(ProductVersion, ProductVersion.id == Batch.product_version_id)
+                    .where(Batch.id.in_(batch_ids))
+                )
+            ).all()
+        }
+    cycle_by_id: dict[uuid.UUID, str] = {}
+    if cycle_ids:
+        rows = (
+            await session.execute(
+                select(ProcessCycle.id, ProcessCycle.process_type, ProcessCycleProfileVersion.profile_number)
+                .join(ProcessCycleProfileVersion, ProcessCycleProfileVersion.id == ProcessCycle.profile_version_id)
+                .where(ProcessCycle.id.in_(cycle_ids))
+            )
+        ).all()
+        cycle_by_id = {row.id: f"{row.profile_number} ({row.process_type})" for row in rows}
+    user_by_id: dict[uuid.UUID, tuple[str, str]] = {}
+    if user_ids:
+        user_by_id = {
+            row.id: (row.full_name, row.username)
+            for row in (await session.execute(select(User.id, User.full_name, User.username).where(User.id.in_(user_ids)))).all()
+        }
+    deviation_by_id: dict[uuid.UUID, str] = {}
+    if deviation_ids:
+        deviation_by_id = dict(
+            (
+                await session.execute(
+                    select(DeviationRecord.id, DeviationRecord.deviation_number).where(DeviationRecord.id.in_(deviation_ids))
+                )
+            ).all()
+        )
+
+    resolved: dict[uuid.UUID, dict] = {}
+    for u in uses:
+        batch_number, product_name, product_code = batch_by_id.get(u.batch_id, (None, None, None)) if u.batch_id else (None, None, None)
+        installed_by = user_by_id.get(u.installed_by_user_id) if u.installed_by_user_id else None
+        performer = user_by_id.get(u.performer_user_id) if u.performer_user_id else None
+        resolved[u.id] = {
+            "batch_number": batch_number,
+            "batch_product_name": product_name,
+            "batch_product_code": product_code,
+            "sterilization_cycle_label": cycle_by_id.get(u.sterilization_cycle_id) if u.sterilization_cycle_id else None,
+            "installed_by_full_name": installed_by[0] if installed_by else None,
+            "installed_by_username": installed_by[1] if installed_by else None,
+            "performer_full_name": performer[0] if performer else None,
+            "performer_username": performer[1] if performer else None,
+            "deviation_number": deviation_by_id.get(u.deviation_reference_id) if u.deviation_reference_id else None,
+        }
+    return resolved
+
+
+FILTER_USE_SORTABLE = {
+    "created_at": SterileFilterUse.created_at,
+    "filter_serial": SterileFilterUse.filter_serial,
+    "state": SterileFilterUse.state,
+}
+
+
+@filtration_router.get("/filters")
+async def list_filter_uses(
+    session: AsyncSession = Depends(get_session),
+    params: PageParams = Depends(page_params),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """Browsable list for /sterilization's own filtration section -- previously no way to see what
+    filter uses existed at all, only open one already-known by id (the "Filter use status" lookup card
+    this replaces). Same SG-081 read-side precedent as every other list added this pass, including the
+    same "no site scoping on this table" call as cleaning.router.list_executions.
+
+    2026-10-08: had no policy check at all until now -- any authenticated actor, any role, could list
+    every site's filter uses. The query itself stays unscoped by site (unchanged design, see above) --
+    `resolve_site_scope(site_id=None)` here is a pure permission check (actor holds the permission at
+    at least one site), not a row filter."""
+    await resolve_site_scope(session, actor.user_id, None, action="sterile_filter_use.view")
+    stmt = select(SterileFilterUse)
+    if params.q:
+        stmt = stmt.where(SterileFilterUse.filter_serial.ilike(f"%{params.q}%"))
+    rows, envelope = await paginate(
+        session, stmt, params, sortable=FILTER_USE_SORTABLE, default_sort=SterileFilterUse.created_at
+    )
+    uses = [u for (u,) in rows]
+    refs = await _resolve_filter_use_refs(session, uses)
+    return {**envelope, "items": [_filter_use_dict(u, refs.get(u.id)) for u in uses]}
 
 
 @filtration_router.post("/filters/install", response_model=MutationReceipt)
@@ -530,7 +657,10 @@ async def get_filter_use(
     use = await session.get(SterileFilterUse, use_id)
     if use is None:
         raise NotFoundError("Sterile filter use not found")
-    return _filter_use_dict(use)
+    # 2026-10-08: same gap as list_filter_uses above -- no policy check at all until now.
+    await evaluate_policy(session, actor.user_id, action="sterile_filter_use.view", site_id=use.site_id)
+    refs = await _resolve_filter_use_refs(session, [use])
+    return _filter_use_dict(use, refs.get(use.id))
 
 
 @filtration_router.post("/filters/{use_id}/integrity-tests", response_model=MutationReceipt)
@@ -567,6 +697,9 @@ async def post_filter_use_signature_challenge(
             raise NotFoundError("Sterile filter use not found")
         if body.action != "complete":
             raise ValidationFailedError("Unknown action", action=body.action)
+        # 2026-10-08: this endpoint had no policy check at all -- same gap as process_cycle's own
+        # signature-challenges route above.
+        await evaluate_policy(session, actor.user_id, action="sterile_filter_use.complete", site_id=use.site_id)
         challenge = await create_challenge(
             session, user_id=actor.user_id, record_type="sterile_filter_use", record_id=use.id,
             record_version=use.version, record_hash=filter_use_record_hash(use), meaning="Performed",

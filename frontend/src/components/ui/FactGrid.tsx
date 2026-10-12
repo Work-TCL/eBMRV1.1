@@ -45,3 +45,29 @@ export function IdFact({ label, value, action }: { label: ReactNode; value: stri
     </div>
   );
 }
+
+/** A user-reference fact: shows the resolved name/username a backend serializer added alongside a raw
+ * `*_subject_id`/`*_user_id` field, falling back to the raw id (then "—") if no resolution exists --
+ * never a dead end, since a caller whose backend hasn't been updated yet still sees the id exactly as
+ * `IdFact` would show it. Promoted from a page-local `ActorName` component (2026-10 UUID-display
+ * audit) so every page resolving a user id converges on one component instead of re-implementing the
+ * same `fullName || username || id || "—"` fallback chain per page. */
+export function UserFact({
+  label,
+  fullName,
+  username,
+  id,
+}: {
+  label: ReactNode;
+  fullName?: string | null;
+  username?: string | null;
+  id?: string | null;
+}) {
+  return (
+    <Fact label={label}>
+      <span className="tabular fs-2" style={{ wordBreak: "break-all" }}>
+        {fullName || username || id || "—"}
+      </span>
+    </Fact>
+  );
+}

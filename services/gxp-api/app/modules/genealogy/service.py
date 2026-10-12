@@ -158,6 +158,11 @@ FINAL_PRODUCT_NODE_TYPES = (
     "carton",
     "pallet",
     "distribution_reference",
+    # Project-owner-directed 2026-10-09: a non-device/non-packaged product (e.g. an oral-solid tablet
+    # batch) consuming a recalled lot must itself surface as an affected product -- a recall query that
+    # never names the batch that consumed the bad lot would be a genuine safety gap, not an honest
+    # scope limitation. Previously excluded (doc #22.10's own prior "known limitation, not fixed" entry).
+    "drug_batch",
 )
 
 

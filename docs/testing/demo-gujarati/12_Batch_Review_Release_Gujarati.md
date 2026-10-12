@@ -150,16 +150,27 @@ Completeness `complete` હોય તો જ → Signature "Reviewed".
 ## ૧૨.૫ Genealogy — હવે auto-populate થાય છે (✅ 2026-09-19, completeness ચેક તરીકે નહીં)
 
 Document 13 §8 પ્રમાણે genealogy nodes/edges domain events (MaterialConsumed, DrugBatchProduced, ...) એ
-generate કરવાના હતા, પણ કોઈ module એ events ક્યારેય emit નહોતું કરતું (schema-only, ડેટા ખાલી). હવે ૨
+generate કરવાના હતા, પણ કોઈ module એ events ક્યારેય emit નહોતું કરતું (schema-only, ડેટા ખાલી). હવે ૫
 real write path wired છે:
 
 | Event (Document 13 §8) | ક્યાં wired | શું બને |
 |---|---|---|
 | `MaterialConsumed` | `material/commands.py::issue_material_to_batch` | `material_lot` node + `drug_batch` node (get-or-create) + `CONSUMED_IN` edge |
 | `DrugBatchProduced` | `batch_execution/commands.py::production_complete_batch` | `drug_batch` node (get-or-create, જો material issue પહેલેથી ના બનાવેલ હોય તો) |
+| 🔧 `PackagingCompleted` (2026-10-09, project-owner-directed, client gap-closure item #11) | `packaging/commands.py::complete_packaging_run()` | `drug_batch` node (get-or-create) + real `package` node (પહેલાં dead-code `PackageNode`) + `PACKAGED_AS` edge |
+| 🔧 Sterilization cycle `accept` (2026-10-09) | `equipment/sterilization_commands.py::review_cycle()` | `drug_batch` node + `evidence_record` node (accepted cycle) + `STERILIZED_IN` edge — **ફક્ત independent-reviewer `accept` decision પર**, ક્યારેય self-attested result પર નહીં; `cycle.batch_id` set હોય ત્યારે જ |
+| 🔧 DDCP device assembly step `PASS` (2026-10-09) | `ddcp/commands.py::record_device_assembly_step()` | `drug_batch` node + `device_unit` node (assembly record) + `ASSEMBLED_INTO` edge — **ફક્ત `result="PASS"` પર** (FAIL/REWORK edge બનાવતું નથી). `injector_commands.py`/`coated_device_commands.py` ની સમાન-shape records આ pass માં wired નથી (scope ફક્ત ૩ "straightforward" producer પૂરતો હતો) |
 
 **ડેમો:** Material issue કરો (`/material-lots` → batch માં issue) → `/genealogy` પેજ પર batch node ના
 ancestors જુઓ — issue થયેલ material lot node CONSUMED_IN edge સાથે દેખાશે.
+
+🔧 **PACKAGED_AS/STERILIZED_IN/ASSEMBLED_INTO ઉદાહરણ** (concrete copy-paste steps + live-verified
+values) → **doc #૨૨.૧૦ Genealogy** section જુઓ — same batch `B-2026-0001` વાપરીને, OPS-GEN-09/10/11
+test cases.
+
+> **જાણીતી simplification:** DDCP wiring માટે કોઈ `device_unit` master table નથી (dedupe કરવા), એટલે
+> દરેક સફળ assembly-step record પોતાનો અલગ genealogy node બનાવે છે — same physical unit ના multiple
+> steps માટે એક જ node નથી. Data/edges real અને traceable છે, પણ "એક unit = એક node" ગેરંટી નથી.
 
 > ⚠️ **Review/Release ના completeness ચેક માં genealogy હજુ blocker/warning તરીકે વપરાતું નથી** — "batch
 > ની genealogy ક્યારે complete ગણાય" (દા.ત. શું દરેક recipe material issue થવું ફરજિયાત છે?) એ regulated

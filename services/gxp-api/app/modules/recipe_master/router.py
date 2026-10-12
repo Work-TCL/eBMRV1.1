@@ -12,8 +12,9 @@ from app.modules.material_specification.models import MaterialSpecificationVersi
 from app.modules.policy.service import evaluate_policy, resolve_site_scope
 from app.modules.product_master.models import ProductVersion
 from app.modules.qc.models import QcTestSpecification
+from app.modules.qms.read_support import resolve_vault_object_label
 from app.modules.recipe_master import service as recipe_master_service
-from app.modules.recipe_master.models import EquipmentClass, RecipeFamily
+from app.modules.recipe_master.models import EquipmentClass, RecipeFamily, RecipeVersion
 from app.modules.recipe_master.commands import (
     CreateEquipmentClassCommand,
     CreateRecipeDraftCommand,
@@ -60,7 +61,10 @@ _CHALLENGE_MEANINGS = {
 }
 
 
-def _version_dict(version, product_version: ProductVersion | None = None, site: Site | None = None) -> dict:
+def _version_dict(
+    version, product_version: ProductVersion | None = None, site: Site | None = None, refs: dict | None = None
+) -> dict:
+    refs = refs or {}
     return {
         "recipe_version_id": str(version.id),
         "recipe_family_id": str(version.recipe_family_id),
@@ -76,10 +80,12 @@ def _version_dict(version, product_version: ProductVersion | None = None, site: 
         "batch_size_uom_id": str(version.batch_size_uom_id) if version.batch_size_uom_id else None,
         "lifecycle_state": version.lifecycle_state,
         "superseded_by_version_id": str(version.superseded_by_version_id) if version.superseded_by_version_id else None,
+        "superseded_by_version_no": refs.get("superseded_by_version_no"),
         "effective_from": version.effective_from.isoformat() if version.effective_from else None,
         "effective_to": version.effective_to.isoformat() if version.effective_to else None,
         "graph_version": version.graph_version,
         "released_vault_object_id": str(version.released_vault_object_id) if version.released_vault_object_id else None,
+        "released_vault_object_label": refs.get("released_vault_object_label"),
         "version_hash": version.version_hash,
         "version": version.version,
     }
@@ -441,7 +447,19 @@ async def get_versions(
         raise NotFoundError("Recipe family not found")
     await evaluate_policy(session, actor.user_id, action="recipe.view", site_id=family.site_id)
     versions = await recipe_master_service.list_versions_for_family(session, recipe_family_id)
-    return [_version_dict(v) for v in versions]
+
+    versions_by_id = {v.id: v for v in versions}
+    vault_ids = {v.released_vault_object_id for v in versions if v.released_vault_object_id}
+    vault_labels_by_id = {vid: await resolve_vault_object_label(session, vid) for vid in vault_ids}
+
+    def _refs(v) -> dict:
+        superseded = versions_by_id.get(v.superseded_by_version_id) if v.superseded_by_version_id else None
+        return {
+            "superseded_by_version_no": superseded.version_no if superseded else None,
+            "released_vault_object_label": vault_labels_by_id.get(v.released_vault_object_id),
+        }
+
+    return [_version_dict(v, refs=_refs(v)) for v in versions]
 
 
 @router.get("/versions/{recipe_version_id}")
@@ -483,7 +501,14 @@ async def get_version_detail(
         ).scalars().all()
         qc_specs_by_id = {q.id: q for q in rows}
 
-    body = _version_dict(version, product_version, site)
+    superseded_by = (
+        await session.get(RecipeVersion, version.superseded_by_version_id) if version.superseded_by_version_id else None
+    )
+    version_refs = {
+        "superseded_by_version_no": superseded_by.version_no if superseded_by else None,
+        "released_vault_object_label": await resolve_vault_object_label(session, version.released_vault_object_id),
+    }
+    body = _version_dict(version, product_version, site, version_refs)
     body["sections"] = [_section_dict(s) for s in graph["sections"]]
     body["steps"] = [_step_dict(s) for s in graph["steps"]]
     body["dependencies"] = [_dependency_dict(d) for d in graph["dependencies"]]

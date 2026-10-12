@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
 from app.modules.iam.models import User
+from app.modules.qms.capa_commands import auto_create_capa_from_source
 from app.modules.qms.internal_audit_models import AuditFinding, InternalAudit
 from app.modules.qms.signature_support import enforce_signer_policy
 from app.modules.signature import service as signature_service
@@ -276,6 +277,11 @@ class AddFindingCommand(CommandEnvelope):
     owner_subject_id: uuid.UUID
     evidence: dict | None = None
     due_date: datetime | None = None
+    # Project-owner-directed 2026-10-09 (migration 0143): optional batch attribution so release can
+    # block on this finding until verified. source_type="batch" is the only value release/service.py
+    # currently checks, same convention as deviation_record/capa_record/nonconformance_record.
+    source_type: str | None = None
+    source_id: uuid.UUID | None = None
 
 
 async def add_finding(session: AsyncSession, cmd: AddFindingCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
@@ -304,6 +310,7 @@ async def add_finding(session: AsyncSession, cmd: AddFindingCommand, actor_user_
         requirement_ref=cmd.requirement_ref, observation=cmd.observation, evidence=cmd.evidence,
         severity=cmd.severity, owner_subject_id=cmd.owner_subject_id, due_date=cmd.due_date,
         is_repeat_finding=bool(repeat), state="OPEN",
+        source_type=cmd.source_type, source_id=cmd.source_id,
     )
     session.add(finding)
     await session.flush()
@@ -369,12 +376,19 @@ async def respond_to_finding(session: AsyncSession, cmd: RespondToFindingCommand
     finding.state = "RESPONSE_SUBMITTED"
     finding.version += 1
 
-    return await _write_finding_receipt(
+    receipt = await _write_finding_receipt(
         session, cmd=cmd, payload_hash=payload_hash, finding=finding, action="Changed", actor_user_id=actor_user_id,
         reason=cmd.reason, old_state=old_state, event_type="AuditFindingOpened",
         event_payload={"id": str(finding.id), "state": finding.state}, signature_id=None,
         expected_version=cmd.expected_version, command_type="RespondToFinding",
     )
+    if cmd.capa_required:
+        await auto_create_capa_from_source(
+            session, site_id=finding.site_id, source_type="audit", source_id=finding.audit_id,
+            source_version=None, capa_rationale=cmd.capa_rationale, actor_user_id=actor_user_id,
+            correlation_id=receipt.correlation_id,
+        )
+    return receipt
 
 
 # ---------------------------------------------------------------------------

@@ -8,7 +8,8 @@ from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.policy.service import evaluate_policy, resolve_site_scope
-from app.modules.qms.read_support import filtered, iso, sid
+from app.modules.material.models import Material
+from app.modules.qms.read_support import filtered, iso, resolve_user_names, sid
 from app.modules.qms.scar_commands import (
     CloseScarCommand,
     CreateSupplierCaseCommand,
@@ -25,6 +26,7 @@ from app.modules.qms.scar_commands import (
 )
 from app.modules.qms.scar_models import ScarRecord, SupplierQualityCase
 from app.modules.qms.signature_support import SignatureChallengeRequest, create_qms_signature_challenge
+from app.modules.supplier_quality.models import Supplier, SupplierSite
 from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.schemas import MutationReceipt
 
@@ -221,8 +223,22 @@ async def get_supplier_case(
     scars = (
         await session.execute(select(ScarRecord).where(ScarRecord.case_id == case_id))
     ).scalars().all()
+    # 2026-10 UUID-display audit: supplier_id/supplier_site_id/material_id/internal_owner_subject_id
+    # were all shown as raw ids with no resolved name, despite all four being real FKs.
+    user_by_id = await resolve_user_names(session, {record.internal_owner_subject_id})
+    owner = user_by_id.get(str(record.internal_owner_subject_id))
+    supplier = await session.get(Supplier, record.supplier_id)
+    supplier_site = await session.get(SupplierSite, record.supplier_site_id) if record.supplier_site_id else None
+    material = await session.get(Material, record.material_id) if record.material_id else None
     return {
         **_case_dict(record),
+        "internal_owner_full_name": owner[0] if owner else None,
+        "internal_owner_username": owner[1] if owner else None,
+        "supplier_code": supplier.supplier_code if supplier else None,
+        "supplier_legal_name": supplier.legal_name if supplier else None,
+        "supplier_site_name": supplier_site.site_name if supplier_site else None,
+        "material_code": material.code if material else None,
+        "material_name": material.name if material else None,
         "material_spec_ref": record.material_spec_ref,
         "containment": record.containment,
         "asl_impact": record.asl_impact,

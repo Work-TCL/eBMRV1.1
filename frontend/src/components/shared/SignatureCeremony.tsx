@@ -7,6 +7,7 @@ import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 /** Arguments handed to the caller's `onSign`: everything a signed mutation endpoint in this codebase
  * expects on its body, already assembled. The caller adds the domain fields and picks the URL.
@@ -162,7 +163,22 @@ export function SignatureCeremony({
         </>
       }
     >
-      <Banner tone="info" title={meaning ? `Signature meaning: ${meaning}` : "Electronic signature"}>
+      <Banner
+        tone="info"
+        // The challenge POST is the only genuinely async part of this modal (everything else — summary,
+        // fields, password input — is already known from props); skeleton just that title line instead
+        // of flashing a generic "Electronic signature" placeholder that then rewrites itself once the
+        // real meaning arrives.
+        title={
+          challengeId === null && !error ? (
+            <Skeleton width={190} height={14} />
+          ) : meaning ? (
+            `Signature meaning: ${meaning}`
+          ) : (
+            "Electronic signature"
+          )
+        }
+      >
         {summary}
       </Banner>
 

@@ -28,9 +28,14 @@ alongside REWORK per NCR-FR-006's own text ("Rework, repair where allowed...").
 
 NCR-FR-016 ("Reopen: New evidence can reopen") has **no operation** in Document 28's own 6-op API list --
 unlike Documents 26/27, which both had a `reopen` endpoint, this document's own API section simply omits
-one despite naming the capability in its requirements table. No reopen operation is built this pass --
-see docs/generated/18_SPEC_GAPS.md SG-069 (same "don't invent an endpoint" discipline as everywhere else
-in this codebase) -- so CLOSED is a genuine terminal state here.
+one despite naming the capability in its requirements table. **SG-069 resolved 2026-10-09
+(project-owner-directed):** rather than invent a new contract, this mirrors Documents 26/27's own
+already-approved reopen pattern exactly -- `reason` + `new_evidence` required, unsigned, `ncr.reopen`
+permission (QA Releaser, same role as `.disposition`/`.close`), only from `CLOSED`, re-entering
+`REOPENED` (migration 0141 adds `reopen_history`, the same append-only-array shape as
+`deviation_record`/`capa_record`/`oot_record`'s own `reopen_history` columns). From `REOPENED`, the
+normal lifecycle operations (evaluate/disposition/verify/close) resume -- matching Document 26's own
+`REOPENED -> {CONTAINMENT, INVESTIGATION, IMPACT_ASSESSMENT, DISPOSITION, CLOSED}` breadth.
 """
 
 import uuid
@@ -47,8 +52,12 @@ from app.core.db import Base
 # NCR-FR-001: the scope types Document 28 itself enumerates.
 NCR_SCOPE_TYPES = ("material", "component", "subassembly", "device", "packaging", "finished_output")
 
-# NCR-FR-002: the automatic-source types Document 28 itself enumerates ("Failed QC/test/inspection").
-NCR_SOURCE_TYPES = ("qc_result", "test", "inspection")
+# NCR-FR-002: the automatic-source types Document 28 itself enumerates ("Failed QC/test/inspection"),
+# plus "batch" (project-owner-directed 2026-10-09, NCR-FR-011/SG-067 resolved): same source_type="batch"
+# attribution convention Deviation/CAPA already use, letting release/service.py attribute an NCR to the
+# exact batch it blocks -- release_blocker_active (existing column, previously never settable) is wired
+# through disposition_ncr() below.
+NCR_SOURCE_TYPES = ("qc_result", "test", "inspection", "batch")
 
 # NCR-FR-006: the disposition outcomes Document 28 itself enumerates ("Rework, repair where allowed,
 # return, scrap/destroy, concession/use-as-is").
@@ -58,7 +67,7 @@ REWORK_LIKE_DISPOSITIONS = ("REWORK", "REPAIR")
 
 NCR_STATES = (
     "OPEN", "SEGREGATED", "EVALUATION", "REWORK", "REPAIR", "RETURN", "SCRAP", "USE_AS_IS",
-    "VERIFICATION", "CLOSED",
+    "VERIFICATION", "CLOSED", "REOPENED",
 )
 
 NCR_ALLOWED_TRANSITIONS: dict[str, set[str]] = {
@@ -70,8 +79,14 @@ NCR_ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "RETURN": {"REWORK", "REPAIR", "RETURN", "SCRAP", "USE_AS_IS", "VERIFICATION"},
     "SCRAP": {"REWORK", "REPAIR", "RETURN", "SCRAP", "USE_AS_IS", "VERIFICATION"},
     "USE_AS_IS": {"REWORK", "REPAIR", "RETURN", "SCRAP", "USE_AS_IS", "VERIFICATION"},
-    "VERIFICATION": {"CLOSED"},
-    "CLOSED": set(),
+    # Project-owner-directed 2026-10-09: a re-verification round (failed first attempt, independent
+    # re-check) must be reachable -- was previously only {"CLOSED"}, making a second verify unreachable.
+    "VERIFICATION": {"VERIFICATION", "CLOSED"},
+    # NCR-FR-016/SG-069 resolved: CLOSED is no longer a terminal dead end -- new evidence can reopen.
+    "CLOSED": {"REOPENED"},
+    # Mirrors Document 26's own REOPENED breadth (CONTAINMENT/INVESTIGATION/IMPACT_ASSESSMENT/
+    # DISPOSITION/CLOSED): every substantive forward state can resume from here, plus direct re-close.
+    "REOPENED": {"EVALUATION", *NCR_DISPOSITION_TYPES, "VERIFICATION", "CLOSED"},
 }
 
 
@@ -104,9 +119,15 @@ class NonconformanceRecord(Base):
     capa_rationale: Mapped[str | None] = mapped_column(Text)
     release_blocker_active: Mapped[bool] = mapped_column(nullable=False, default=False)
     verification: Mapped[dict | None] = mapped_column(JSONB)
+    # 2026-10-09 (migration 0142): append-only record of every verify() call -- `verification` above
+    # stays the latest snapshot for existing consumers, this never loses a prior round's evidence.
+    verification_history: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     state: Mapped[str] = mapped_column(String(50), nullable=False, default="OPEN")
     version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)
     closure_history: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    # SG-069 resolved (migration 0141): same append-only-array shape as deviation_record/capa_record/
+    # oot_record's own reopen_history columns.
+    reopen_history: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     closed_at: Mapped[datetime | None] = mapped_column()
 

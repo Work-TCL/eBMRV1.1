@@ -23,11 +23,15 @@ import { JsonPanel } from "@/components/ui/JsonPanel";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
 import { useCommand } from "@/components/qms/QmsDetailShell";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
+import { humanizeLabel } from "@/lib/format";
 
 interface ReviewPackage {
   package_id: string;
   site_id: string;
   batch_id: string;
+  batch_number: string | null;
+  product_code: string | null;
+  product_name: string | null;
   batch_version: number;
   record_hash: string;
   exception_index_version: number;
@@ -136,7 +140,7 @@ export default function QaReviewPage() {
                 <option value="">All</option>
                 {PACKAGE_STATES.map((s) => (
                   <option key={s} value={s}>
-                    {s}
+                    {humanizeLabel(s)}
                   </option>
                 ))}
               </Select>
@@ -160,8 +164,12 @@ export default function QaReviewPage() {
             <tbody>
               {packages.map((p) => (
                 <tr key={p.package_id}>
-                  <td className="tabular fs-2" style={{ wordBreak: "break-all" }}>
-                    {p.batch_id}
+                  <td className="fs-2">
+                    {p.batch_number ? (
+                      `${p.batch_number}${p.product_name ? ` - ${p.product_name} (${p.product_code})` : ""}`
+                    ) : (
+                      <span className="tabular" style={{ wordBreak: "break-all" }}>{p.batch_id}</span>
+                    )}
                   </td>
                   <td>
                     <WorkflowStatePill state={p.state} />
@@ -347,7 +355,11 @@ function PackageModal({
         <Fact label="Index version">v{p.exception_index_version}</Fact>
         <Fact label="Completed">{p.completed_at ? formatDateTime(p.completed_at) : "—"}</Fact>
         <Fact label="Record version">{p.version}</Fact>
-        <IdFact label="Batch" value={p.batch_id} />
+        {p.batch_number ? (
+          <Fact label="Batch">{p.product_name ? `${p.batch_number} - ${p.product_name} (${p.product_code})` : p.batch_number}</Fact>
+        ) : (
+          <IdFact label="Batch" value={p.batch_id} />
+        )}
         <IdFact label="Record hash" value={p.record_hash} />
       </FactGrid>
 
@@ -388,10 +400,14 @@ function PackageModal({
               <Icon name="refresh" /> Reindex
             </Button>
           )}
-          {/* Only READY_FOR_REVIEW/REOPENED allow completing (ALLOWED_TRANSITIONS) - offering this once
-             already REVIEW_COMPLETE is exactly what produced the live INVALID_TRANSITION report: the old
-             `p.state !== "COMPLETE"` check compared against a state string this module never uses. */}
-          {canAct && p.state !== "REVIEW_COMPLETE" && (
+          {/* 2026-10-09 real bug fixed: only READY_FOR_REVIEW allows completing
+             (models.py ALLOWED_TRANSITIONS: {"READY_FOR_REVIEW": {"REVIEW_COMPLETE"}, "REOPENED":
+             {"READY_FOR_REVIEW"}}) -- REOPENED does NOT go straight to REVIEW_COMPLETE, it must
+             "Reindex" back to READY_FOR_REVIEW first. The previous `p.state !== "REVIEW_COMPLETE"`
+             check also showed this button on REOPENED, where clicking it always 409'd
+             InvalidTransitionError (same "frontend allowed-transition vs backend accepted-state"
+             bug class already fixed in NCR's verify/close buttons this session). */}
+          {canAct && p.state === "READY_FOR_REVIEW" && (
             <Button variant="primary" disabled={busy} onClick={() => setSigning(true)}>
               <Icon name="pen" /> Complete review
             </Button>

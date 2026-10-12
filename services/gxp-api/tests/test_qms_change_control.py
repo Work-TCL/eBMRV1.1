@@ -351,6 +351,91 @@ async def test_cancellation(client, seeded, db):
     assert change.cancel_reason == "requirement superseded by CHG-0099"
 
 
+# --- Rollback (CHG-FR-019/SG-071 resolved 2026-10-09, project-owner-directed) ---------------------
+
+
+async def test_rollback_rejected_before_implementation(client, seeded, db):
+    owner = await _setup(db, seeded, "40", signed=False)
+    token = await login(client, "admin.chg40")
+    change_id = await _create(client, token, seeded["site_id"], owner.id)
+
+    resp = await client.post(
+        f"/qms/v1/changes/{change_id}/close",
+        json={"idempotency_key": idem(), "change_id": change_id, "expected_version": 1, "rollback_reason": "too early"},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["code"] == "INVALID_TRANSITION"
+
+
+async def test_rollback_from_implementation(client, seeded, db):
+    owner = await _setup(db, seeded, "41", signed=False)
+    token = await login(client, "admin.chg41")
+    change_id = await _create(client, token, seeded["site_id"], owner.id)
+
+    resp = await client.post(
+        f"/qms/v1/changes/{change_id}/impact", json=_impact_body(change_id, 1), headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.text
+    resp = await client.post(
+        f"/qms/v1/changes/{change_id}/approve",
+        json={"idempotency_key": idem(), "change_id": change_id, "expected_version": 2},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.text
+    resp = await client.post(
+        f"/qms/v1/changes/{change_id}/implement",
+        json={"idempotency_key": idem(), "change_id": change_id, "expected_version": 3},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.text  # state now IMPLEMENTATION, version 4
+
+    resp = await client.post(
+        f"/qms/v1/changes/{change_id}/close",
+        json={
+            "idempotency_key": idem(), "change_id": change_id, "expected_version": 4,
+            "rollback_reason": "implementation revealed an unforeseen interaction with RCP-MJ-PFS-V1 step 6; reverting",
+        },
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    from app.modules.qms.change_models import ChangeControl
+    change = await db.get(ChangeControl, uuid.UUID(change_id))
+    assert change.state == "ROLLED_BACK"
+    assert change.rollback_reason.startswith("implementation revealed")
+    assert change.rolled_back_at is not None
+
+    # Terminal -- a further close/rollback attempt is rejected.
+    resp = await client.post(
+        f"/qms/v1/changes/{change_id}/close",
+        json={"idempotency_key": idem(), "change_id": change_id, "expected_version": 5, "cancellation_reason": "x"},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["code"] == "INVALID_TRANSITION"
+
+
+async def test_rollback_from_verification(client, seeded, db):
+    owner = await _setup(db, seeded, "42", signed=False)
+    token = await login(client, "admin.chg42")
+    change_id = await _create(client, token, seeded["site_id"], owner.id)
+    next_version = await _advance_to_verification(client, token, change_id, owner.id)  # now VERIFICATION
+
+    resp = await client.post(
+        f"/qms/v1/changes/{change_id}/close",
+        json={"idempotency_key": idem(), "change_id": change_id, "expected_version": next_version, "rollback_reason": "verification failed"},
+        headers=auth_headers(token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    from app.modules.qms.change_models import ChangeControl
+    change = await db.get(ChangeControl, uuid.UUID(change_id))
+    assert change.state == "ROLLED_BACK"
+    assert change.rollback_reason == "verification failed"
+    assert change.rolled_back_at is not None
+
+
 async def test_approve_requires_signature_when_policy_requires_it(client, seeded, db):
     owner = await _setup(db, seeded, "11", signed=True)
     await _indep_qa_releaser(db, seeded, "qa.chg11")

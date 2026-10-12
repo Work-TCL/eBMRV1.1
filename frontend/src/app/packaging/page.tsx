@@ -94,11 +94,14 @@ export default function PackagingPage() {
     {
       key: "batch_id",
       header: "Batch",
-      render: (r) => (
-        <span className="tabular fs-2" style={{ wordBreak: "break-all" }}>
-          {r.batch_id}
-        </span>
-      ),
+      render: (r) =>
+        r.batch_number ? (
+          <span className="fs-2">{r.batch_number}</span>
+        ) : (
+          <span className="tabular fs-2" style={{ wordBreak: "break-all" }}>
+            {r.batch_id}
+          </span>
+        ),
     },
     { key: "state", header: "State", sortable: true, render: (r) => <WorkflowStatePill state={r.state} /> },
     {
@@ -307,8 +310,12 @@ function RunModal({
         <Fact label="Started">{r.started_at ? formatDateTime(r.started_at) : "—"}</Fact>
         <Fact label="Ended">{r.ended_at ? formatDateTime(r.ended_at) : "—"}</Fact>
         <Fact label="Record version">{r.version}</Fact>
-        <IdFact label="Batch" value={r.batch_id} />
-        <IdFact label="Product version" value={r.product_version_id} />
+        {r.batch_number ? <Fact label="Batch">{r.batch_number}</Fact> : <IdFact label="Batch" value={r.batch_id} />}
+        {r.product_code ? (
+          <Fact label="Product">{`${r.product_name} (${r.product_code})`}</Fact>
+        ) : (
+          <IdFact label="Product version" value={r.product_version_id} />
+        )}
       </FactGrid>
 
       <p className="fact-k mb-2 mt-4">Label issues</p>
@@ -320,6 +327,7 @@ function RunModal({
             <tr>
               <th>Issued</th>
               <th style={{ textAlign: "right" }}>Quantity</th>
+              <th>Serial range</th>
               <th>State</th>
             </tr>
           </thead>
@@ -329,6 +337,11 @@ function RunModal({
                 <td className="tabular fs-2">{formatDateTime(i.issued_at)}</td>
                 <td className="tabular" style={{ textAlign: "right" }}>
                   {i.quantity_issued}
+                </td>
+                <td className="tabular fs-2">
+                  {i.serial_range && typeof i.serial_range.start === "string" && typeof i.serial_range.end === "string"
+                    ? `${i.serial_range.start} - ${i.serial_range.end}`
+                    : "—"}
                 </td>
                 <td className="fs-2"><WorkflowStatePill state={i.state} /></td>
               </tr>
@@ -451,6 +464,30 @@ function RunModal({
   );
 }
 
+/** Expands a "start" / "end" serial pair (e.g. `SN-26010001` .. `SN-26010500`) into the explicit
+ * `{serials: [...]}` shape `packaging_service.assert_no_duplicate_serials` actually checks against —
+ * that function's own docstring is explicit that a `{start, end}` range shape is silently ignored
+ * ("only checks explicit serial lists ... numeric range-based allocation dedup is not built this pass,
+ * SG-056"). Requires both ids to share a common non-numeric prefix and end with digits of the same
+ * width (true for every realistic sequential serial scheme); returns null if that pattern doesn't hold,
+ * so the caller can fall back to recording the range as plain metadata without a false dedup guarantee.
+ * Capped at 20,000 serials so a typo'd end value can't try to generate millions of rows. */
+function expandSerialRange(start: string, end: string): string[] | null {
+  const m1 = start.match(/^(.*?)(\d+)$/);
+  const m2 = end.match(/^(.*?)(\d+)$/);
+  if (!m1 || !m2) return null;
+  const [, prefix1, digits1] = m1;
+  const [, prefix2, digits2] = m2;
+  if (prefix1 !== prefix2 || digits1.length !== digits2.length) return null;
+  const from = Number(digits1);
+  const to = Number(digits2);
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from || to - from > 20_000) return null;
+  const width = digits1.length;
+  const serials: string[] = [];
+  for (let n = from; n <= to; n++) serials.push(`${prefix1}${String(n).padStart(width, "0")}`);
+  return serials;
+}
+
 function ActionModal({
   run: packagingRun,
   action,
@@ -464,6 +501,11 @@ function ActionModal({
 }) {
   const { busy, error, run } = useCommand(onDone);
   const [quantity, setQuantity] = useState("");
+  // 2026-10-08 fix: `IssueLabelCommand.serial_range` (packaging/commands.py) is a real, accepted field --
+  // the module's own stated purpose is anti-diversion/serial-traceability control -- but this form never
+  // had fields for it at all, so no packaging run ever recorded a real serial range through the UI.
+  const [serialStart, setSerialStart] = useState("");
+  const [serialEnd, setSerialEnd] = useState("");
   const [labelCounts, setLabelCounts] = useState({
     applied: "0",
     returned: "0",
@@ -493,8 +535,16 @@ function ActionModal({
       switch (action) {
         case "line_clearance":
           return api.post(`${path}/line-clearance`, { ...base, reason: reason || null });
-        case "issue_labels":
-          return api.post(`${path}/labels/issue`, { ...base, quantity_issued: Number(quantity) });
+        case "issue_labels": {
+          const start = serialStart.trim();
+          const end = serialEnd.trim();
+          const serials = start && end ? expandSerialRange(start, end) : null;
+          return api.post(`${path}/labels/issue`, {
+            ...base,
+            quantity_issued: Number(quantity),
+            serial_range: start && end ? { start, end, ...(serials ? { serials } : {}) } : null,
+          });
+        }
         case "reconcile_labels":
           return api.post(`${path}/reconcile-labels`, {
             ...base,
@@ -521,16 +571,26 @@ function ActionModal({
         )}
 
         {action === "issue_labels" && (
-          <Field label="Quantity issued" required>
-            <Input
-              type="number"
-              min={1}
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              required
-              autoFocus
-            />
-          </Field>
+          <>
+            <Field label="Quantity issued" required>
+              <Input
+                type="number"
+                min={1}
+                value={quantity}
+                onChange={(e) => setQuantity(e.target.value)}
+                required
+                autoFocus
+              />
+            </Field>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Serial range - start" hint="Optional - e.g. SN-26010001.">
+                <Input value={serialStart} onChange={(e) => setSerialStart(e.target.value)} />
+              </Field>
+              <Field label="Serial range - end" hint="Optional - e.g. SN-26011000. Duplicate-serial detection only works when start/end share a common prefix and equal-width trailing digits.">
+                <Input value={serialEnd} onChange={(e) => setSerialEnd(e.target.value)} />
+              </Field>
+            </div>
+          </>
         )}
 
         {action === "reconcile_labels" && (

@@ -583,6 +583,80 @@ async def test_line_clearance_eligible_equipment_installed_passes(client, seeded
     assert detail["state"] == "CLEARED"
 
 
+async def test_create_cleaning_procedure_version_succeeds_and_is_usable(client, seeded):
+    # cleaning_procedure_version.create (added 2026-10-08) -- Admin/QA Reviewer author, direct-to-
+    # RELEASED, no signature. `seeded["cleaning_procedures"]["CLN-PROC-001"]` (used by every test above)
+    # is inserted directly via the DB fixture, predating this command -- this exercises the real HTTP
+    # path instead. Mirrors tests/test_sterilization_flow.py's SG-203 create-profile test field-for-field.
+    qa_token = await login(client, "qa.reviewer")
+    site_id = seeded["site_id"]
+    resp = await client.post(
+        "/cleaning/v1/procedure-versions",
+        json={
+            "idempotency_key": idem(), "site_id": str(site_id), "procedure_number": "CLN-PROC-NEW-001",
+            "version_no": 1, "cleaning_type": "deep_clean",
+            "agents": {"agent": "IPA 70%"}, "steps": {"1": "RINSE", "2": "SCRUB", "3": "DRY"},
+            "dirty_hold_limit_minutes": 240, "clean_hold_limit_minutes": 4320,
+            "validation_reference": "VAL-CLN-TEST-001",
+        },
+        headers=auth_headers(qa_token),
+    )
+    assert resp.status_code == 200, resp.text
+    procedure_id = resp.json()["aggregate_id"]
+
+    # Immediately usable as a real execution's procedure_version_id -- not just stored, actually wired.
+    listing = await client.get("/cleaning/v1/procedure-versions", headers=auth_headers(qa_token))
+    assert any(p["id"] == procedure_id and p["procedure_number"] == "CLN-PROC-NEW-001" for p in listing.json()["items"])
+
+    admin_token = await login(client, "equipment.admin")
+    equipment_class_id = await _create_equipment_class(client)
+    resp = await client.post(
+        "/equipment/v1/assets",
+        json={
+            "idempotency_key": idem(), "site_id": str(site_id), "equipment_class_id": equipment_class_id,
+            "is_computer_operated": False, "equipment_code": "EQP-CLN-NEWPROC",
+        },
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+    equipment_id = resp.json()["aggregate_id"]
+
+    op_token = await login(client, "sanitation.operator")
+    execution_id = await _create_execution(client, op_token, site_id, procedure_id, equipment_id=equipment_id)
+    assert execution_id
+
+
+async def test_create_cleaning_procedure_version_requires_role(client, seeded):
+    op_token = await login(client, "sanitation.operator")
+    site_id = seeded["site_id"]
+    resp = await client.post(
+        "/cleaning/v1/procedure-versions",
+        json={
+            "idempotency_key": idem(), "site_id": str(site_id), "procedure_number": "CLN-PROC-DENIED-001",
+            "version_no": 1, "cleaning_type": "routine",
+        },
+        headers=auth_headers(op_token),
+    )
+    assert resp.status_code == 403
+    assert resp.json()["code"] == "ROLE_MISSING"
+
+
+async def test_create_cleaning_procedure_version_rejects_duplicate(client, seeded):
+    qa_token = await login(client, "qa.reviewer")
+    site_id = seeded["site_id"]
+    payload = {
+        "idempotency_key": idem(), "site_id": str(site_id), "procedure_number": "CLN-PROC-DUP-001",
+        "version_no": 1, "cleaning_type": "routine",
+    }
+    first = await client.post("/cleaning/v1/procedure-versions", json=payload, headers=auth_headers(qa_token))
+    assert first.status_code == 200, first.text
+
+    dup_payload = dict(payload, idempotency_key=idem())
+    second = await client.post("/cleaning/v1/procedure-versions", json=dup_payload, headers=auth_headers(qa_token))
+    assert second.status_code == 422
+    assert second.json()["code"] == "VALIDATION_FAILED"
+
+
 async def test_line_clearance_non_equipment_items_untouched(client, seeded):
     # Backward compatibility: a dict-shaped (not list) items payload -- the pre-existing convention used
     # by test_line_clearance_full_flow -- must still pass through untouched (no crash, no false rejection).

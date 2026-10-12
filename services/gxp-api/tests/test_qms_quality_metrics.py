@@ -153,14 +153,47 @@ async def test_calculate_requires_released_definition(client, seeded, db):
 
 
 async def test_calculate_requires_nonempty_result(client, seeded, db):
+    """source_model_id="capa_record" has no internal auto-compute wiring (client gap-closure item #8 only
+    wired deviation/ncr/oos, SG-107's other 6 families remain open) -- an empty result still fails."""
     owner = await _setup(db, seeded, "3", signed=False)
     token = await login(client, "admin.met3")
-    definition_id = await _create_definition(client, token, seeded["site_id"], owner.id)
+    definition_id = await _create_definition(client, token, seeded["site_id"], owner.id, source_model_id="capa_record")
     await _release(client, token, definition_id, 1)
 
     resp = await _calculate(client, token, seeded["site_id"], definition_id, result={})
     assert resp.status_code == 422, resp.text
     assert resp.json()["code"] == "METRIC_SOURCE_INCOMPLETE"
+
+
+async def test_calculate_auto_computes_deviation_rate_when_result_omitted(client, seeded, db):
+    """Client gap-closure item #8 (2026-10-09, project-owner-directed: "Just 2-3 straightforward ones"):
+    omitting `result` for a known source_model_id runs a real internal count query instead of failing."""
+    owner = await _setup(db, seeded, "33", signed=False)
+    token = await login(client, "admin.met33")
+    definition_id = await _create_definition(client, token, seeded["site_id"], owner.id, source_model_id="deviation_record")
+    await _release(client, token, definition_id, 1)
+
+    from app.modules.qms.models import DeviationRecord
+    async with db.begin():
+        for i in range(3):
+            db.add(DeviationRecord(
+                site_id=seeded["site_id"], deviation_number=f"DEV-METAUTO-{i}", deviation_type="process",
+                source_type="batch", source_id=uuid.uuid4(), severity="minor", owner_subject_id=owner.id,
+            ))
+
+    resp = await _calculate(
+        client, token, seeded["site_id"], definition_id,
+        result=None, period_start=(datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),
+        period_end=(datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+    )
+    assert resp.status_code == 200, resp.text
+    snapshot_id = resp.json()["aggregate_id"]
+
+    from app.modules.qms.quality_metrics_models import QualityMetricSnapshot
+    snapshot = await db.get(QualityMetricSnapshot, uuid.UUID(snapshot_id))
+    assert snapshot.result["auto_computed"] is True
+    assert snapshot.result["opened_count"] == 3
+    assert snapshot.result["source_model_id"] == "deviation_record"
 
 
 async def test_full_lifecycle_success(client, seeded, db):
@@ -406,6 +439,40 @@ async def test_dashboard_reports_latest_snapshot(client, seeded, db):
     matching = [m for m in payload["metrics"] if m["latest_result"] == {"rate": 0.05, "count": 12}]
     assert matching
     assert matching[0]["threshold_exceeded"] is True
+    # 2026-10-09 real bug fixed: these fields never round-tripped (frontend needs `definition_id` to even
+    # select a metric for "Calculate snapshot"); additive alongside the flat fields asserted above.
+    assert matching[0]["definition_id"] == definition_id
+    assert matching[0]["state"] == "RELEASED"
+    assert matching[0]["latest_snapshot"]["result"] == {"rate": 0.05, "count": 12}
+    assert matching[0]["latest_snapshot"]["threshold_exceeded"] is True
+
+
+async def test_list_definitions_includes_draft_and_released(client, seeded, db):
+    owner = await _setup(db, seeded, "18b", signed=False)
+    token = await login(client, "admin.met18b")
+    draft_id = await _create_definition(client, token, seeded["site_id"], owner.id, metric_code="QM-DRAFT-18B")
+    released_id = await _create_definition(client, token, seeded["site_id"], owner.id, metric_code="QM-RELEASED-18B")
+    await _release(client, token, released_id, 1)
+
+    resp = await client.get(f"/quality-metrics/v1/definitions?site_id={seeded['site_id']}", headers=auth_headers(token))
+    assert resp.status_code == 200, resp.text
+    by_id = {d["id"]: d for d in resp.json()}
+    assert by_id[draft_id]["state"] == "DRAFT"
+    assert by_id[released_id]["state"] == "RELEASED"
+    assert by_id[draft_id]["owner_subject_id"] == str(owner.id)
+
+
+async def test_list_effectiveness_checks(client, seeded, db):
+    await _setup(db, seeded, "18c", signed=False)
+    token = await login(client, "admin.met18c")
+    create_resp = await _create_check(client, token, seeded["site_id"], uuid.uuid4())
+    assert create_resp.status_code == 200, create_resp.text
+    check_id = create_resp.json()["aggregate_id"]
+
+    resp = await client.get(f"/effectiveness/v1/checks?site_id={seeded['site_id']}", headers=auth_headers(token))
+    assert resp.status_code == 200, resp.text
+    ids = [c["id"] for c in resp.json()]
+    assert check_id in ids
 
 
 # --- Signature-challenge ceremony entry point (SG-138 engineering half) -------------------------

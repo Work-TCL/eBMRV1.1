@@ -772,7 +772,14 @@ async def verify_record(
         raise NotFoundError("Record not found")
     if record.version != cmd.expected_version:
         raise StaleVersionError("Record was modified since it was read", expected_version=cmd.expected_version, current_version=record.version)
-    if record.state not in ("CALCULATED", "OUT_OF_LIMIT", "OUT_OF_TOLERANCE"):
+    # 2026-10-08: "ACCEPTABLE" was missing here -- `_persist_reconciliation` always sets a new, in-
+    # tolerance ReconciliationRecord to "ACCEPTABLE" (never "CALCULATED"; that value is only ever
+    # produced for ManufacturingCalculation), but this gate didn't accept it. The result: release's own
+    # `_yield_signals()` surfaces a RECONCILIATION_NOT_VERIFIED warning with resolution_action
+    # VERIFY_RECONCILIATION for exactly this state, yet every attempt to act on that warning failed here
+    # with VALIDATION_FAILED -- the most common (within-tolerance) reconciliation outcome could never be
+    # verified at all. Found live while testing doc 22's Yield & Reconciliation walkthrough.
+    if record.state not in ("CALCULATED", "ACCEPTABLE", "OUT_OF_LIMIT", "OUT_OF_TOLERANCE"):
         raise ValidationFailedError("Only a calculated (or out-of-limit/tolerance, post-disposition) record can be verified", current_state=record.state)
     if record.evaluated_by_user_id == actor_user_id:
         raise MissingSignatureError("Verifier must be independent of the performer (SIG-FR-018)", performer_id=str(record.evaluated_by_user_id))
@@ -852,6 +859,13 @@ async def get_batch_summary(session: AsyncSession, batch_id: uuid.UUID) -> dict:
 
     blocked = any(c.state in _UNRESOLVED_STATES for c in calculations) or any(r.state in _UNRESOLVED_STATES for r in reconciliations)
 
+    # Neither table has a human-facing business code (only `version`/`state`) -- `supersedes_id` always
+    # points at another row of the same type already in this same batch-scoped list, so the best
+    # available label is that row's own version number, resolved from the list already in hand rather
+    # than a second query (2026-10 UUID-display audit).
+    calc_version_by_id = {c.id: c.version for c in calculations}
+    recon_version_by_id = {r.id: r.version for r in reconciliations}
+
     return {
         "batch_id": str(batch_id),
         "release_blocked": blocked,
@@ -877,6 +891,7 @@ async def get_batch_summary(session: AsyncSession, batch_id: uuid.UUID) -> dict:
                 "verified_by_user_id": str(c.verified_by_user_id) if c.verified_by_user_id is not None else None,
                 "verified_at": c.verified_at.isoformat() if c.verified_at is not None else None,
                 "supersedes_id": str(c.supersedes_id) if c.supersedes_id is not None else None,
+                "supersedes_version": calc_version_by_id.get(c.supersedes_id) if c.supersedes_id is not None else None,
                 "verified": c.state == "VERIFIED", "version": c.version, "created_at": c.created_at.isoformat(),
             }
             for c in calculations
@@ -896,6 +911,7 @@ async def get_batch_summary(session: AsyncSession, batch_id: uuid.UUID) -> dict:
                 "verified_by_user_id": str(r.verified_by_user_id) if r.verified_by_user_id is not None else None,
                 "verified_at": r.verified_at.isoformat() if r.verified_at is not None else None,
                 "supersedes_id": str(r.supersedes_id) if r.supersedes_id is not None else None,
+                "supersedes_version": recon_version_by_id.get(r.supersedes_id) if r.supersedes_id is not None else None,
                 "external_comparison": r.external_comparison,
                 "verified": r.state == "VERIFIED", "version": r.version,
             }

@@ -14,9 +14,11 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.modules.equipment.cleaning_commands import get_batch_line_clearance_status
+from app.modules.genealogy import service as genealogy_service
 from app.modules.packaging import service as packaging_service
-from app.modules.packaging.models import ALLOWED_TRANSITIONS, LabelIssue, LabelReconciliation, PackagingRun
-from app.mutation.errors import InvalidTransitionError, NotFoundError, StaleVersionError, ValidationFailedError
+from app.modules.packaging.models import ALLOWED_TRANSITIONS, LabelIssue, LabelMaster, LabelReconciliation, PackagingRun, PrintJob
+from app.mutation.errors import InvalidTransitionError, LineClearanceRequiredError, NotFoundError, StaleVersionError, ValidationFailedError
 from app.mutation.gateway import check_idempotency, record_command_receipt, write_audit_event, write_outbox_event
 from app.mutation.hashing import sha256_hex
 from app.mutation.schemas import CommandEnvelope, MutationReceipt
@@ -98,6 +100,16 @@ async def complete_line_clearance(session: AsyncSession, cmd: LineClearanceComma
         return _receipt_from_existing(existing)
 
     run = await _load_run_for_update(session, cmd.run_id, cmd.expected_version)
+    # PKG-FR-009/SG-098 resolved 2026-10-09 (project-owner-directed, client gap-closure item #9): checks
+    # the real equipment.line_clearances row targeting this batch (CLN-FR-016/020's own real entity),
+    # rather than letting the caller flip the local `line_clearance_completed` flag unconditionally.
+    clearance_status = await get_batch_line_clearance_status(session, run.batch_id)
+    if not clearance_status["cleared"]:
+        raise LineClearanceRequiredError(
+            "A CLEARED equipment line clearance targeting this batch is required before packaging line clearance can be completed",
+            batch_id=str(run.batch_id), current_state=clearance_status["state"],
+        )
+
     old_state = run.state
     await _simple_transition(session, run, "ready")
     run.line_clearance_completed = True
@@ -119,6 +131,117 @@ async def complete_line_clearance(session: AsyncSession, cmd: LineClearanceComma
 
 
 # ---------------------------------------------------------------------------
+# CreateLabelVersion — PKG-FR-003/SG-056 resolved 2026-10-09 (project-owner-directed, client gap-closure
+# item #10). Not one of Document 16's own 10-API-list operations (section 6 names no "create label
+# master" endpoint at all) -- same "necessary supporting master-data op" latitude SG-176/SG-177 already
+# used when `aseptic_profile_version`/`equipment_area` had the same shape of gap.
+# ---------------------------------------------------------------------------
+
+
+class CreateLabelVersionCommand(CommandEnvelope):
+    site_id: uuid.UUID
+    label_code: str
+    version_label: str
+    content_hash: str
+    product_version_id: uuid.UUID | None = None
+
+
+async def create_label_version(session: AsyncSession, cmd: CreateLabelVersionCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    if not cmd.label_code.strip() or not cmd.version_label.strip() or not cmd.content_hash.strip():
+        raise ValidationFailedError("label_code, version_label and content_hash are required")
+    conflict = (
+        await session.execute(
+            select(LabelMaster).where(LabelMaster.label_code == cmd.label_code, LabelMaster.version_label == cmd.version_label)
+        )
+    ).scalar_one_or_none()
+    if conflict is not None:
+        raise ValidationFailedError("This label_code/version_label combination already exists", label_code=cmd.label_code, version_label=cmd.version_label)
+
+    label_version = LabelMaster(
+        site_id=cmd.site_id, label_code=cmd.label_code, version_label=cmd.version_label,
+        content_hash=cmd.content_hash, product_version_id=cmd.product_version_id, state="active",
+    )
+    session.add(label_version)
+    await session.flush()
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=cmd.site_id, aggregate_type="label_master", aggregate_id=label_version.id, aggregate_version=1,
+        action="Created", actor_id=actor_user_id, correlation_id=correlation_id, new_value={"label_code": cmd.label_code, "version_label": cmd.version_label},
+    )
+    await write_outbox_event(
+        session, event_type="LabelVersionCreated", aggregate_type="label_master", aggregate_id=label_version.id,
+        aggregate_version=1, payload={"id": str(label_version.id)}, correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=cmd.site_id, command_type="CreateLabelVersion", aggregate_type="label_master", aggregate_id=label_version.id,
+        expected_version=None, resulting_version=1, idempotency_key=cmd.idempotency_key, command_hash=payload_hash,
+        actor_user_id=actor_user_id, payload_hash=payload_hash,
+    )
+    return MutationReceipt(command_id=receipt.id, aggregate_id=label_version.id, resulting_version=1, audit_event_id=audit_event.id, correlation_id=correlation_id)
+
+
+# ---------------------------------------------------------------------------
+# CreatePrintJob — PKG-FR-006/SG-056 resolved 2026-10-09 (project-owner-directed, client gap-closure item
+# #10). `POST /packaging/v1/print-jobs` IS named in Document 16's own 10-API-list (section 6) -- this
+# fills in an already-authorized operation that previously had no entity to persist against.
+# ---------------------------------------------------------------------------
+
+
+class CreatePrintJobCommand(CommandEnvelope):
+    run_id: uuid.UUID
+    label_version_id: uuid.UUID
+    quantity: int
+    variable_data: dict | None = None
+    printer_ref: str | None = None
+
+
+async def create_print_job(session: AsyncSession, cmd: CreatePrintJobCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    run = await session.get(PackagingRun, cmd.run_id)
+    if run is None:
+        raise NotFoundError("Packaging run not found")
+    if cmd.quantity <= 0:
+        raise ValidationFailedError("quantity must be positive")
+    label_version = await session.get(LabelMaster, cmd.label_version_id)
+    if label_version is None:
+        raise NotFoundError("Label version not found", label_version_id=str(cmd.label_version_id))
+
+    print_job = PrintJob(
+        site_id=run.site_id, packaging_run_id=run.id, label_version_id=label_version.id, quantity=cmd.quantity,
+        variable_data=cmd.variable_data, printer_ref=cmd.printer_ref, requested_by=actor_user_id, state="printed",
+    )
+    session.add(print_job)
+    await session.flush()
+
+    correlation_id = uuid.uuid4()
+    audit_event = await write_audit_event(
+        session, site_id=run.site_id, aggregate_type="print_job", aggregate_id=print_job.id, aggregate_version=1,
+        action="Created", actor_id=actor_user_id, correlation_id=correlation_id,
+        new_value={"packaging_run_id": str(run.id), "label_version_id": str(label_version.id), "quantity": cmd.quantity},
+    )
+    await write_outbox_event(
+        session, event_type="PrintJobCreated", aggregate_type="print_job", aggregate_id=print_job.id,
+        aggregate_version=1, payload={"id": str(print_job.id), "packaging_run_id": str(run.id)}, correlation_id=correlation_id,
+    )
+    receipt = await record_command_receipt(
+        session, site_id=run.site_id, command_type="CreatePrintJob", aggregate_type="print_job", aggregate_id=print_job.id,
+        expected_version=None, resulting_version=1, idempotency_key=cmd.idempotency_key, command_hash=payload_hash,
+        actor_user_id=actor_user_id, payload_hash=payload_hash,
+    )
+    return MutationReceipt(command_id=receipt.id, aggregate_id=print_job.id, resulting_version=1, audit_event_id=audit_event.id, correlation_id=correlation_id)
+
+
+# ---------------------------------------------------------------------------
 # IssueLabel — PKG-FR-004/008
 # ---------------------------------------------------------------------------
 
@@ -127,6 +250,7 @@ class IssueLabelCommand(CommandEnvelope):
     run_id: uuid.UUID
     expected_version: int
     label_version_id: uuid.UUID | None = None
+    print_job_id: uuid.UUID | None = None
     quantity_issued: int
     serial_range: dict | None = None
 
@@ -142,12 +266,16 @@ async def issue_label(session: AsyncSession, cmd: IssueLabelCommand, actor_user_
         raise ValidationFailedError("Labels can only be issued while the packaging run is ready or in progress", current_state=run.state)
     if cmd.quantity_issued <= 0:
         raise ValidationFailedError("quantity_issued must be positive")
+    if cmd.label_version_id is not None and await session.get(LabelMaster, cmd.label_version_id) is None:
+        raise NotFoundError("Label version not found", label_version_id=str(cmd.label_version_id))
+    if cmd.print_job_id is not None and await session.get(PrintJob, cmd.print_job_id) is None:
+        raise NotFoundError("Print job not found", print_job_id=str(cmd.print_job_id))
 
     await packaging_service.assert_no_duplicate_serials(session, run.product_version_id, cmd.serial_range)
 
     label = LabelIssue(
         packaging_run_id=run.id, label_version_id=cmd.label_version_id, quantity_issued=cmd.quantity_issued,
-        serial_range=cmd.serial_range, issued_by=actor_user_id, state="issued",
+        serial_range=cmd.serial_range, print_job_id=cmd.print_job_id, issued_by=actor_user_id, state="issued",
     )
     session.add(label)
 
@@ -308,6 +436,28 @@ async def complete_packaging_run(session: AsyncSession, cmd: CompletePackagingRu
     run.state = "complete"
     run.ended_at = datetime.now(timezone.utc)
     run.version += 1
+
+    # Client gap-closure item #11 (2026-10-09, project-owner-directed: "Packaging (PACKAGED_AS edges)").
+    # Document 13 section 8's own "PackagingCompleted" event (emitted right below, unchanged) was always
+    # the intended genealogy trigger for this module -- wired directly here rather than through a
+    # separate consumer, same precedent as batch_execution's own DrugBatchProduced wiring. Creates the
+    # (previously dead-code, zero callers) `PackageNode` for this run and a drug_batch -> package
+    # PACKAGED_AS edge; the batch's own `drug_batch` node is reused via get_or_create_node() if it
+    # already exists (material issuance/production-complete both already create it), never duplicated.
+    batch = await packaging_service.get_batch(session, run.batch_id)
+    package_node = await packaging_service.create_package_node(session, package_level="unit", batch_id=run.batch_id)
+    batch_genealogy_node = await genealogy_service.get_or_create_node(
+        session, site_id=run.site_id, node_type="drug_batch", authoritative_record_type="batch",
+        authoritative_record_id=run.batch_id, business_ref=batch.batch_number, actor_user_id=actor_user_id,
+    )
+    package_genealogy_node = await genealogy_service.get_or_create_node(
+        session, site_id=run.site_id, node_type="package", authoritative_record_type="package_node",
+        authoritative_record_id=package_node.id, actor_user_id=actor_user_id,
+    )
+    await genealogy_service.create_edge(
+        session, from_node_id=batch_genealogy_node.id, to_node_id=package_genealogy_node.id,
+        edge_type="PACKAGED_AS", actor_user_id=actor_user_id,
+    )
 
     correlation_id = uuid.uuid4()
     audit_event = await write_audit_event(

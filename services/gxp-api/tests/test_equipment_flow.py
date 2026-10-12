@@ -1454,3 +1454,56 @@ async def test_relocate_equipment_requires_permission(client, seeded):
     resp = await _relocate(client, op_token, asset_id, expected_version=1, new_location_id=str(uuid.uuid4()))
     assert resp.status_code == 403
     assert resp.json()["code"] == "ROLE_MISSING"
+
+
+async def test_eligibility_history_dashboard_reject_actor_with_no_role_at_that_site(client, seeded, db):
+    """2026-10-08 regression: GET .../eligibility, .../history and /dashboard held an `actor` dependency
+    but never called evaluate_policy()/resolve_site_scope() -- any authenticated actor, any role, any
+    site, could read any other site's equipment eligibility/history/dashboard. The Client Topic 15 fix
+    (2026-10-02) closed this on /assets and /areas but missed these three. Mirrors
+    test_enroll_token_scoped_to_wrong_site_rejected's cross-site setup."""
+    from app.core.security import hash_password
+    from app.modules.iam.models import Site, User
+
+    async with db.begin():
+        other_site = Site(organization_id=seeded["org_id"], code="T2-EQP", name="Second Equipment Site")
+        db.add(other_site)
+        await db.flush()
+        other_admin = User(
+            username="equipment.admin2", email="equipment.admin2@example.com", full_name="Other Site Admin",
+            password_hash=hash_password("ChangeMe123!"), status="active",
+        )
+        db.add(other_admin)
+        await db.flush()
+        db.add(UserSiteRole(user_id=other_admin.id, site_id=other_site.id, role_id=seeded["roles"]["Equipment Administrator"].id))
+        other_site_id = other_site.id
+
+    other_admin_token = await login(client, "equipment.admin2")
+    asset_id = await _create_asset(client, other_admin_token, other_site_id, equipment_code="EQP-OTHER-SITE")
+
+    # equipment.admin only holds a role at seeded["site_id"] -- not at other_site_id.
+    main_site_admin_token = await login(client, "equipment.admin")
+
+    eligibility_resp = await client.get(f"/equipment/v1/{asset_id}/eligibility", headers=auth_headers(main_site_admin_token))
+    assert eligibility_resp.status_code == 403, eligibility_resp.text
+    assert eligibility_resp.json()["code"] == "ROLE_MISSING"
+
+    history_resp = await client.get(f"/equipment/v1/{asset_id}/history", headers=auth_headers(main_site_admin_token))
+    assert history_resp.status_code == 403, history_resp.text
+    assert history_resp.json()["code"] == "ROLE_MISSING"
+
+    dashboard_resp = await client.get(
+        "/equipment/v1/dashboard", params={"site_id": str(other_site_id)}, headers=auth_headers(main_site_admin_token)
+    )
+    assert dashboard_resp.status_code == 403, dashboard_resp.text
+    assert dashboard_resp.json()["code"] == "ROLE_MISSING"
+
+    # The actor who actually holds a role at other_site_id can read all three.
+    ok_eligibility = await client.get(f"/equipment/v1/{asset_id}/eligibility", headers=auth_headers(other_admin_token))
+    assert ok_eligibility.status_code == 200, ok_eligibility.text
+    ok_history = await client.get(f"/equipment/v1/{asset_id}/history", headers=auth_headers(other_admin_token))
+    assert ok_history.status_code == 200, ok_history.text
+    ok_dashboard = await client.get(
+        "/equipment/v1/dashboard", params={"site_id": str(other_site_id)}, headers=auth_headers(other_admin_token)
+    )
+    assert ok_dashboard.status_code == 200, ok_dashboard.text
