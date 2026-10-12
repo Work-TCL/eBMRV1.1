@@ -9,6 +9,7 @@ import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { OnboardingReturnLink } from "@/components/admin/OnboardingReturnLink";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 export default function CompanyAdminPage() {
   const { isAdmin } = useRequireAdmin();
@@ -51,7 +52,7 @@ export default function CompanyAdminPage() {
 
       <Card pad>
         <CardHeader title="Company details" />
-        {org && (
+        {org ? (
           <form onSubmit={onSaveOrg}>
             <Field label="Name" required error={orgError}>
               <Input value={orgName} onChange={(e) => setOrgName(e.target.value)} required />
@@ -61,6 +62,12 @@ export default function CompanyAdminPage() {
               {orgBusy ? "Saving…" : "Save company"}
             </Button>
           </form>
+        ) : (
+          <div aria-hidden="true">
+            <Skeleton width={80} height={10} style={{ marginBottom: 6 }} />
+            <Skeleton width="100%" height={36} style={{ marginBottom: "var(--space-4)" }} />
+            <Skeleton width={140} height={36} radius="var(--radius-md)" />
+          </div>
         )}
       </Card>
     </div>

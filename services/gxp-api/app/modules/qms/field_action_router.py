@@ -33,6 +33,7 @@ from app.modules.qms.field_action_models import (
     FieldActionScopeItem,
 )
 from app.modules.qms.read_support import filtered, iso, sid
+from app.modules.qms.risk_models import RiskRecord
 from app.modules.qms.signature_support import SignatureChallengeRequest, create_qms_signature_challenge
 from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.schemas import MutationReceipt
@@ -247,8 +248,11 @@ async def get_field_action(
             .order_by(FieldActionReconciliation.created_at.desc())
         )
     ).scalars().first()
+    # 2026-10 UUID-display audit: risk_assessment_ref was shown as a raw id with no resolved name.
+    risk = await session.get(RiskRecord, record.risk_assessment_ref) if record.risk_assessment_ref else None
     return {
         **_field_action_dict(record),
+        "risk_number": risk.risk_number if risk else None,
         "trigger_ref": record.trigger_ref,
         "reportability_assessment": record.reportability_assessment,
         "effectiveness_check": record.effectiveness_check,

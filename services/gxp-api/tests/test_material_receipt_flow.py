@@ -809,6 +809,77 @@ async def test_disposition_significant_with_deviation_links_it(client, seeded, d
     assert lots == []  # rejected -- no lot ever created
 
 
+async def _hold_receipt_unapproved_supplier(client, db, op_token, site_id, code, receipt_number, internal_lot):
+    """Creates a receipt against a non-approved supplier and examines it clean -- RCV-FR-005's own
+    source_not_approved hold, same fixture shape as `test_unapproved_supplier_holds_receipt`."""
+    from app.modules.supplier_quality.models import Supplier
+
+    async with db.begin():
+        supplier = Supplier(
+            supplier_code=f"SUP-{receipt_number}", legal_name="Unapproved Supplier", role_type="supplier", status="draft"
+        )
+        db.add(supplier)
+        await db.flush()
+        supplier_id = str(supplier.id)
+
+    material_id = await _create_material(client, site_id, code=code)
+    receipt_id = await _create_receipt(
+        client, op_token, site_id, material_id, receipt_number=receipt_number, supplier_id=supplier_id
+    )
+    await _examine_clean(client, op_token, receipt_id, internal_lot=internal_lot)
+    return receipt_id
+
+
+async def test_disposition_source_not_approved_minor_rejected(client, seeded, db):
+    """project-owner-directed (2026-10-12): a disposition on a receipt held for an unapproved/suspended
+    supplier can never be waved through as 'minor' -- it's an override of the organization's own
+    supplier-suspension decision, not a shipment-level logistics issue."""
+    op_token = await login(client, "operator1")
+    qa_token = await login(client, "qa.releaser")
+    site_id = seeded["site_id"]
+    receipt_id = await _hold_receipt_unapproved_supplier(
+        client, db, op_token, site_id, "RM-DISP-SRC", "RCPT-DISP-SRC", "LOT-DISP-SRC"
+    )
+
+    resp = await _disposition(
+        client, qa_token, receipt_id, expected_version=2, severity="minor", internal_lot="LOT-DISP-SRC"
+    )
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["code"] == "VALIDATION_FAILED"
+    assert "significant" in resp.json()["message"].lower()
+
+
+async def test_disposition_source_not_approved_significant_with_deviation_succeeds(client, seeded, db):
+    from app.modules.qms.models import DeviationRecord
+
+    op_token = await login(client, "operator1")
+    qa_token = await login(client, "qa.releaser")
+    site_id = seeded["site_id"]
+    receipt_id = await _hold_receipt_unapproved_supplier(
+        client, db, op_token, site_id, "RM-DISP-SRC2", "RCPT-DISP-SRC2", "LOT-DISP-SRC2"
+    )
+
+    async with db.begin():
+        deviation = DeviationRecord(
+            site_id=site_id, deviation_number="DEV-DISP-SRC", deviation_type="process",
+            source_type="material_receipt", source_id=uuid.UUID(receipt_id), severity="major",
+        )
+        db.add(deviation)
+        await db.flush()
+        deviation_id = str(deviation.id)
+
+    resp = await _disposition(
+        client, qa_token, receipt_id, expected_version=2, severity="significant",
+        deviation_id=deviation_id, internal_lot="LOT-DISP-SRC2",
+        reason="Supplier requalification audit complete, accept this lot under deviation",
+    )
+    assert resp.status_code == 200, resp.text
+
+    receipt_detail = (await client.get(f"/materials/v1/receipts/{receipt_id}", headers=auth_headers(qa_token))).json()
+    assert receipt_detail["state"] == "disposition_accepted"
+    assert receipt_detail["disposition_deviation_id"] == deviation_id
+
+
 async def test_disposition_by_operator_role_denied(client, seeded):
     """Q8: the final decision must be made by an authorized QA/quality approver -- Operator lacks the
     material_receipt.disposition permission entirely."""

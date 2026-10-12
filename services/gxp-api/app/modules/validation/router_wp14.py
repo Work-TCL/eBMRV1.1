@@ -18,9 +18,11 @@ import uuid
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
+from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.policy.service import evaluate_policy
 from app.modules.signature.service import create_challenge
@@ -125,6 +127,55 @@ async def post_pq_signature_challenge(
             session, actor_user_id=actor.user_id, record_type="pq_scenario", record=scenario,
             action=body.action, allowed_actions=("approve",),
         )
+
+
+def _pq_scenario_dict(scenario: PqScenario) -> dict:
+    return {
+        "id": str(scenario.id),
+        "site_id": str(scenario.site_id) if scenario.site_id else None,
+        "scenario_number": scenario.scenario_number,
+        "product_profile": scenario.product_profile,
+        "process_area": scenario.process_area,
+        "intended_workflow": scenario.intended_workflow,
+        "acceptance_criteria": scenario.acceptance_criteria,
+        "is_uat": scenario.is_uat,
+        "vmp_equivalence_ref": scenario.vmp_equivalence_ref,
+        "is_template": scenario.is_template,
+        "participants": scenario.participants,
+        "retention_class": scenario.retention_class,
+        "state": scenario.state,
+        "approved_by_user_id": str(scenario.approved_by_user_id) if scenario.approved_by_user_id else None,
+        "approved_at": scenario.approved_at.isoformat() if scenario.approved_at else None,
+        "version": scenario.version,
+        "created_at": scenario.created_at.isoformat() if scenario.created_at else None,
+    }
+
+
+PQ_SCENARIO_SORTABLE = {
+    "created_at": PqScenario.created_at,
+    "scenario_number": PqScenario.scenario_number,
+    "state": PqScenario.state,
+}
+
+
+@router.get("/pq/scenarios")
+async def list_pq_scenarios(
+    session: AsyncSession = Depends(get_session),
+    params: PageParams = Depends(page_params),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> dict:
+    """Browsable list for /validation/go-live's own "PQ scenario" section -- previously no way to see
+    what scenarios existed at all (there was not even a single-record GET by id). Same SG-081
+    read-side precedent as every other list added this pass; no permission gate (no
+    `validation.pq.view` code exists, same "no site scoping on this table" posture cleaning/EM use
+    elsewhere this pass)."""
+    async with session.begin():
+        stmt = select(PqScenario)
+        if params.q:
+            stmt = stmt.where(PqScenario.scenario_number.ilike(f"%{params.q}%"))
+        rows, envelope = await paginate(session, stmt, params, sortable=PQ_SCENARIO_SORTABLE, default_sort=PqScenario.created_at)
+        scenarios = [s for (s,) in rows]
+        return {**envelope, "items": [_pq_scenario_dict(s) for s in scenarios]}
 
 
 # =====================================================================================================

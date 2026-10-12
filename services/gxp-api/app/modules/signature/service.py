@@ -56,7 +56,7 @@ async def enforce_signer_policy(
         if actor_user_id in disqualified:
             raise SodIndependenceRequiredError(
                 f"{action_label} must be independent of the record's investigator/owner/author "
-                "(Document 106 section 9 / Document 107)",
+                "",
                 action=action_label,
             )
 

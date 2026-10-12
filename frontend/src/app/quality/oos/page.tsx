@@ -157,7 +157,7 @@ export default function OosOotPage() {
     {
       key: "source_result_id",
       header: "Source result",
-      render: (r) => <span className="tabular fs-2">{r.source_result_id.slice(0, 8)}…</span>,
+      render: (r) => <span className="tabular fs-2">{r.source_sample_number ?? `${r.source_result_id.slice(0, 8)}…`}</span>,
     },
     { key: "state", header: "State", sortable: true, render: (r) => <WorkflowStatePill state={r.state} /> },
     { key: "opened_at", header: "Opened", sortable: true, render: (r) => <span className="tabular fs-2">{formatDateTime(r.opened_at)}</span> },

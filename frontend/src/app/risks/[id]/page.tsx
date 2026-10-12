@@ -14,7 +14,7 @@ import { useApiResource, useMe } from "@/lib/hooks";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { QmsDetailShell, useCommand } from "@/components/qms/QmsDetailShell";
 import { RiskMethodologyPickerField } from "@/components/shared/RiskMethodologyPicker";
-import { Fact, IdFact } from "@/components/ui/FactGrid";
+import { Fact, IdFact, UserFact } from "@/components/ui/FactGrid";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/Table";
 import { Banner } from "@/components/ui/Banner";
@@ -46,7 +46,11 @@ interface AssessmentVersion {
 }
 
 interface RiskDetail extends RiskRecord {
+  owner_full_name: string | null;
+  owner_username: string | null;
   methodology_id: string | null;
+  methodology_rule_id: string | null;
+  methodology_semantic_version: string | null;
   context: Record<string, unknown> | null;
   assessment_versions: AssessmentVersion[];
 }
@@ -123,8 +127,11 @@ export default function RiskDetailPage({ params }: { params: Promise<{ id: strin
             </Fact>
             <Fact label="Raised">{formatDateTime(data.created_at)}</Fact>
             <Fact label="Record version">{data.version}</Fact>
-            <IdFact label="Owner" value={data.owner_subject_id} />
-            <IdFact label="Methodology" value={data.methodology_id} />
+            <UserFact label="Owner" fullName={data.owner_full_name} username={data.owner_username} id={data.owner_subject_id} />
+            <IdFact
+              label="Methodology"
+              value={data.methodology_rule_id ? `${data.methodology_rule_id} v${data.methodology_semantic_version}` : data.methodology_id}
+            />
             <IdFact label="Quality event" value={data.quality_event_id} />
           </>
         )

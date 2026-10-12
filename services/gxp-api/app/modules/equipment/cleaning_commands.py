@@ -125,6 +125,97 @@ async def _mirror_cleanliness(session: AsyncSession, execution: CleaningExecutio
 
 
 # ---------------------------------------------------------------------------
+# CreateCleaningProcedureVersion — added 2026-10-08, project-owner-directed (same gap class as SG-203:
+# this table had no create command anywhere, seed/migration-only master data). Asked directly who should
+# author a procedure and whether to match a draft/review lifecycle or direct-to-RELEASED; chose Admin +
+# QA Reviewer (keeping Sanitation Operator/performer roles out of authoring their own procedure) and
+# direct-to-RELEASED, mirroring `create_process_cycle_profile_version()` (sterilization_commands.py,
+# SG-203) field-for-field in structure. No signature — Document 106 has no row for this action, same
+# "row absent, not optional" precedent as every other unsigned create in this module.
+# ---------------------------------------------------------------------------
+
+
+class CreateCleaningProcedureVersionCommand(CommandEnvelope):
+    site_id: uuid.UUID
+    procedure_number: str
+    version_no: int = 1
+    scope_equipment_id: uuid.UUID | None = None
+    scope_area_id: uuid.UUID | None = None
+    cleaning_type: str
+    agents: dict | None = None
+    steps: dict | None = None
+    disassembly_required: bool = False
+    sample_inspection_requirements: dict | None = None
+    dirty_hold_limit_minutes: int | None = None
+    clean_hold_limit_minutes: int | None = None
+    validation_reference: str | None = None
+
+
+async def create_cleaning_procedure_version(
+    session: AsyncSession, cmd: CreateCleaningProcedureVersionCommand, actor_user_id: uuid.UUID
+) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    if not cmd.procedure_number.strip():
+        raise ValidationFailedError("procedure_number is required")
+    if not cmd.cleaning_type.strip():
+        raise ValidationFailedError("cleaning_type is required")
+    if cmd.scope_equipment_id is not None and cmd.scope_area_id is not None:
+        raise ValidationFailedError("scope_equipment_id and scope_area_id are alternatives, not both")
+
+    # Matches the DB's own UniqueConstraint("procedure_number", "version_no") -- table-wide, not
+    # per-site, same precedent as ProcessCycleProfileVersion's identical constraint.
+    duplicate = (
+        await session.execute(
+            select(CleaningProcedureVersion).where(
+                CleaningProcedureVersion.procedure_number == cmd.procedure_number,
+                CleaningProcedureVersion.version_no == cmd.version_no,
+            )
+        )
+    ).scalar_one_or_none()
+    if duplicate is not None:
+        raise ValidationFailedError(
+            "A cleaning procedure with this procedure number and version already exists",
+            existing_id=str(duplicate.id),
+        )
+
+    procedure = CleaningProcedureVersion(
+        site_id=cmd.site_id,
+        procedure_number=cmd.procedure_number,
+        version_no=cmd.version_no,
+        scope_equipment_id=cmd.scope_equipment_id,
+        scope_area_id=cmd.scope_area_id,
+        cleaning_type=cmd.cleaning_type,
+        agents=cmd.agents,
+        steps=cmd.steps,
+        disassembly_required=cmd.disassembly_required,
+        sample_inspection_requirements=cmd.sample_inspection_requirements,
+        dirty_hold_limit_minutes=cmd.dirty_hold_limit_minutes,
+        clean_hold_limit_minutes=cmd.clean_hold_limit_minutes,
+        validation_reference=cmd.validation_reference,
+        state="RELEASED",
+        version=1,
+    )
+    session.add(procedure)
+    await session.flush()
+
+    return await _write_receipt(
+        session, cmd=cmd, payload_hash=payload_hash, site_id=cmd.site_id,
+        aggregate_type="cleaning_procedure_version", aggregate_id=procedure.id, version=1, action="Created",
+        actor_user_id=actor_user_id, reason=None, old_state=None,
+        event_type="CleaningProcedureVersionCreated",
+        event_payload={
+            "id": str(procedure.id), "procedure_number": procedure.procedure_number,
+            "version_no": procedure.version_no, "cleaning_type": procedure.cleaning_type,
+        },
+        expected_version=None, command_type="CreateCleaningProcedureVersion",
+    )
+
+
+# ---------------------------------------------------------------------------
 # CreateCleaningExecution — CLN-FR-003/004/005/006/007. Represents "equipment/area is dirty and cleaning
 # has started" in one step -- no separate "mark dirty" endpoint exists in the declared 7-op API list.
 # ---------------------------------------------------------------------------
@@ -597,6 +688,32 @@ async def get_area_line_clearance_status(session: AsyncSession, area_id: uuid.UU
             effective_state = "EXPIRED"
     return {
         "area_id": str(area_id),
+        "state": effective_state,
+        "cleared": effective_state == "CLEARED",
+        "latest_line_clearance_id": str(latest.id) if latest else None,
+    }
+
+
+# Client gap-closure item #9 (2026-10-09, project-owner-directed: "Yes, wire to the real check"). Same
+# shape as get_area_line_clearance_status() above but keyed by `next_batch_id` (LineClearance already
+# names the batch a clearance targets, CLN-FR-016/020) rather than area_id -- Packaging's own
+# `packaging_run` has no area FK of its own (the module's own comment: "no equipment master to FK to yet
+# (SG-050/055)" -- true when written, equipment_areas now exists, but the clearance-to-batch link this
+# function uses is the more precise match anyway, so no new FK column is added to packaging_run either).
+async def get_batch_line_clearance_status(session: AsyncSession, batch_id: uuid.UUID) -> dict:
+    result = await session.execute(
+        select(LineClearance)
+        .where(LineClearance.next_batch_id == batch_id)
+        .order_by(LineClearance.created_at.desc())
+        .limit(1)
+    )
+    latest = result.scalar_one_or_none()
+    effective_state = latest.state if latest else "NOT_STARTED"
+    if latest is not None and latest.state == "CLEARED" and latest.expiry_at is not None:
+        if datetime.now(timezone.utc) > latest.expiry_at.replace(tzinfo=timezone.utc):
+            effective_state = "EXPIRED"
+    return {
+        "batch_id": str(batch_id),
         "state": effective_state,
         "cleared": effective_state == "CLEARED",
         "latest_line_clearance_id": str(latest.id) if latest else None,

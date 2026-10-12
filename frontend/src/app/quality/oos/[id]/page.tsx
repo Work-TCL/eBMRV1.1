@@ -75,10 +75,13 @@ interface OosDetail {
   site_id: string | null;
   oos_number: string;
   source_result_id: string;
+  source_sample_number: string | null;
   sample_id: string | null;
   test_order_id: string | null;
   batch_id: string | null;
+  batch_number: string | null;
   material_lot_id: string | null;
+  material_lot_internal_lot: string | null;
   state: string;
   severity: string | null;
   hold_status: string | null;
@@ -88,6 +91,7 @@ interface OosDetail {
   opened_at: string | null;
   closed_at: string | null;
   change_control_id: string | null;
+  change_control_number: string | null;
   reopen_history: Record<string, unknown>[];
   linked_capas: OosLinkedCapa[];
   activities: OosActivity[];
@@ -144,7 +148,7 @@ export default function OosDetailPage({ params }: { params: Promise<{ id: string
     <RecordDetailShell
       recordNumber={data?.oos_number ?? ""}
       state={data?.state}
-      subtitle={data ? `Source result ${data.source_result_id.slice(0, 8)}…` : undefined}
+      subtitle={data ? `Source sample ${data.source_sample_number ?? `${data.source_result_id.slice(0, 8)}…`}` : undefined}
       backHref="/quality/oos"
       backLabel="OOS / OOT"
       loading={loading}
@@ -199,10 +203,10 @@ export default function OosDetailPage({ params }: { params: Promise<{ id: string
             <Fact label="Opened">{data.opened_at ? formatDateTime(data.opened_at) : "—"}</Fact>
             <Fact label="Closed">{data.closed_at ? formatDateTime(data.closed_at) : "—"}</Fact>
             <Fact label="Record version">{data.version}</Fact>
-            <IdFact label="Source result" value={data.source_result_id} />
-            {data.batch_id && <IdFact label="Batch" value={data.batch_id} />}
-            {data.material_lot_id && <IdFact label="Material lot" value={data.material_lot_id} />}
-            {data.change_control_id && <IdFact label="Linked change control" value={data.change_control_id} />}
+            <IdFact label="Source result" value={data.source_sample_number ?? data.source_result_id} />
+            {data.batch_id && <IdFact label="Batch" value={data.batch_number ?? data.batch_id} />}
+            {data.material_lot_id && <IdFact label="Material lot" value={data.material_lot_internal_lot ?? data.material_lot_id} />}
+            {data.change_control_id && <IdFact label="Linked change control" value={data.change_control_number ?? data.change_control_id} />}
           </>
         )
       }

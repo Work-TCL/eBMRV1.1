@@ -9,7 +9,8 @@ from app.core.db import get_session
 from app.core.pagination import PageParams, page_params, paginate
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.policy.service import evaluate_policy, resolve_site_scope
-from app.modules.qms.read_support import filtered, iso, sid
+from app.modules.qms.read_support import filtered, iso, resolve_user_names, sid
+from app.modules.rules.models import RuleDefinition
 from app.modules.qms.risk_commands import (
     AcceptRiskCommand,
     AddAssessmentCommand,
@@ -219,9 +220,19 @@ async def get_risk(
             .order_by(RiskAssessmentVersion.cycle_number)
         )
     ).scalars().all()
+    # 2026-10 UUID-display audit: owner_subject_id/methodology_id were shown as raw ids with no resolved
+    # name -- same reusable `resolve_user_names()` pattern this pass added across the QMS modules, plus
+    # a one-hop join into the rules module methodology_id already has a real FK for.
+    user_by_id = await resolve_user_names(session, {record.owner_subject_id})
+    owner = user_by_id.get(str(record.owner_subject_id))
+    methodology = await session.get(RuleDefinition, record.methodology_id) if record.methodology_id else None
     return {
         **_risk_dict(record),
+        "owner_full_name": owner[0] if owner else None,
+        "owner_username": owner[1] if owner else None,
         "methodology_id": sid(record.methodology_id),
+        "methodology_rule_id": methodology.rule_id if methodology else None,
+        "methodology_semantic_version": methodology.semantic_version if methodology else None,
         "context": record.context,
         "assessment_versions": [
             {

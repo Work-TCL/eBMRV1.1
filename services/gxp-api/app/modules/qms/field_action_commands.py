@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
 from app.modules.iam.models import User
+from app.modules.qms.capa_commands import auto_create_capa_from_source
 from app.modules.qms.field_action_models import (
     ACTION_TYPES,
     TRIGGER_TYPES,
@@ -280,12 +281,19 @@ async def assess_field_action_reportability(session: AsyncSession, cmd: Reportab
     field_action.state = "REGULATORY_DECISION"
     field_action.version += 1
 
-    return await _write_receipt(
+    receipt = await _write_receipt(
         session, cmd=cmd, payload_hash=payload_hash, field_action=field_action, action="Changed", actor_user_id=actor_user_id,
         reason=cmd.rationale, old_state=old_state, event_type="FieldActionAssessmentOpened",
         event_payload={"id": str(field_action.id), "decision": cmd.decision}, signature_id=signature_id,
         expected_version=cmd.expected_version, command_type="AssessFieldActionReportability",
     )
+    if cmd.capa_required:
+        await auto_create_capa_from_source(
+            session, site_id=field_action.site_id, source_type="field_action", source_id=field_action.id,
+            source_version=field_action.version, capa_rationale=cmd.capa_rationale, actor_user_id=actor_user_id,
+            correlation_id=receipt.correlation_id,
+        )
+    return receipt
 
 
 # ---------------------------------------------------------------------------

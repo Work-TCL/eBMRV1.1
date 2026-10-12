@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { SeverityPill, WorkflowStatePill } from "@/components/ui/StatePill";
+import { humanizeLabel } from "@/lib/format";
 
 // app/modules/qms/capa_commands.py state machine.
 // app/modules/qms/capa_models.py CAPA_STATES / CAPA_SOURCE_TYPES.
@@ -271,7 +272,7 @@ function RaiseCapaModal({
             <Select value={riskClass} onChange={(e) => setRiskClass(e.target.value)}>
               {RISK_CLASSES.map((r) => (
                 <option key={r} value={r}>
-                  {r}
+                  {humanizeLabel(r)}
                 </option>
               ))}
             </Select>
@@ -288,7 +289,7 @@ function RaiseCapaModal({
             <Select value={sourceType} onChange={(e) => changeSourceType(e.target.value)}>
               {SOURCE_TYPES.map((s) => (
                 <option key={s} value={s}>
-                  {s}
+                  {humanizeLabel(s)}
                 </option>
               ))}
             </Select>

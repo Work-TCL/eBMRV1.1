@@ -26,6 +26,7 @@ import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 import { BoolPill } from "@/components/ui/StatePill";
+import { humanizeLabel } from "@/lib/format";
 
 interface ReportabilityAssessment {
   id: string;
@@ -54,6 +55,8 @@ interface Communication {
 }
 
 interface ComplaintDetail extends Complaint {
+  product_code: string | null;
+  product_name: string | null;
   lot_batch_serial_refs: Record<string, unknown> | null;
   complainant_info: Record<string, unknown> | null;
   triage: Record<string, unknown> | null;
@@ -146,7 +149,7 @@ export default function ComplaintDetailPage({ params }: { params: Promise<{ id: 
             <Fact label="Logged">{formatDateTime(data.created_at)}</Fact>
             <Fact label="Closed">{data.closed_at ? formatDateTime(data.closed_at) : "—"}</Fact>
             <Fact label="Record version">{data.version}</Fact>
-            <IdFact label="Product version" value={data.product_ref} />
+            <IdFact label="Product version" value={data.product_name ? `${data.product_name} (${data.product_code})` : data.product_ref} />
             <IdFact label="Quality event" value={data.quality_event_id} />
           </>
         )
@@ -507,7 +510,7 @@ function TransitionModal({
                   <option value="">Not classified</option>
                   {CONSTITUENT_CLASSIFICATIONS.map((c) => (
                     <option key={c} value={c}>
-                      {c}
+                      {humanizeLabel(c)}
                     </option>
                   ))}
                 </Select>

@@ -73,11 +73,11 @@ export default function SpecificationDetailPage({ params }: { params: Promise<{ 
             <Fact label="Record version">{data.version}</Fact>
             <IdFact
               label="Scope version"
-              value={data.scope_version_id}
+              value={data.scope_record?.label ?? data.scope_version_id}
               action={
                 data.scope_record && (
                   <LinkButton href={data.scope_record.href} variant="secondary" size="sm">
-                    {data.scope_record.label} <Icon name="arrow-right" />
+                    <Icon name="arrow-right" />
                   </LinkButton>
                 )
               }

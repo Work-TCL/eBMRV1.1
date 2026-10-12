@@ -1,18 +1,35 @@
 "use client";
 
 import { useState } from "react";
-import { api, hasPermission } from "@/lib/api";
+import { api, hasPermission, pagedFetcher } from "@/lib/api";
 import { useMe, useRequirePermission } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
+import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/Button";
-import { Field } from "@/components/ui/Field";
+import { Field, RowButtonSlot } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { Modal } from "@/components/ui/Modal";
+import { Fact, FactGrid } from "@/components/ui/FactGrid";
+import { WorkflowStatePill } from "@/components/ui/StatePill";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 import { FormConsole, type FormField } from "@/components/shared/FormConsole";
 import { SignedJsonForm, type SignedJsonOp } from "@/components/shared/SignedJsonForm";
+
+// Matches app/modules/validation/router.py::_master_plan_dict.
+interface MasterPlan {
+  id: string;
+  plan_number: string;
+  scope: string;
+  methodology: string;
+  retention_class: string | null;
+  state: string;
+  released_at: string | null;
+  version: number;
+}
 
 // Parameterised GET reads — {p} placeholders filled from the single "reference" input.
 const READS = [
@@ -30,30 +47,148 @@ const READS = [
   { label: "Go-live readiness (VSR id)", path: "releases/{p}/go-live-readiness" },
 ];
 
+type BlockKey = "vmp" | "vmpSigned" | "test" | "testSigned" | "infra" | "infraSigned" | "dr" | "drSigned" | "exc" | "excSigned";
+
+function masterPlanColumns(onOpen: (p: MasterPlan) => void): DataTableColumn<MasterPlan>[] {
+  return [
+    {
+      key: "plan_number",
+      header: "Plan",
+      sortable: true,
+      render: (p) => <span className="fs-2 font-semibold">{p.plan_number}</span>,
+    },
+    { key: "methodology", header: "Methodology", render: (p) => <span className="fs-2">{p.methodology}</span> },
+    { key: "state", header: "State", sortable: true, render: (p) => <WorkflowStatePill state={p.state} /> },
+    { key: "retention_class", header: "Retention class", render: (p) => <span className="fs-2">{p.retention_class ?? "—"}</span> },
+    {
+      key: "open",
+      header: "",
+      align: "right",
+      render: (p) => (
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpen(p);
+          }}
+        >
+          View
+        </Button>
+      ),
+    },
+  ];
+}
+
+function MasterPlansListCard({ reloadToken, onOpen }: { reloadToken: number; onOpen: (p: MasterPlan) => void }) {
+  const fetchPlans = pagedFetcher<MasterPlan>("/validation/v1/master-plans");
+  return (
+    <Card pad className="mb-4">
+      <CardHeader title="Validation master plans" />
+      <DataTable
+        columns={masterPlanColumns(onOpen)}
+        fetchPage={fetchPlans}
+        rowKey={(p) => p.id}
+        searchPlaceholder="Search plan number…"
+        emptyMessage='No validation master plans yet - use "VMP · intended use · traceability" above to add one.'
+        defaultSort={{ by: "created_at", dir: "desc" }}
+        onRowClick={onOpen}
+        reloadToken={reloadToken}
+      />
+    </Card>
+  );
+}
+
 export default function ValidationPage() {
-  const { me } = useRequirePermission(["validation.gate.view", "validation.package.view", "validation.traceability.view"]);
+  const { me, loading: permLoading } = useRequirePermission(["validation.gate.view", "validation.package.view", "validation.traceability.view"]);
   // Entry permission for the validation platform console -- held broadly (Admin/Operator/QA Reviewer/
   // QA Releaser) per scripts/seed.py. The old role list excluded Operator despite it holding almost
   // every validation.* code directly -- a hidden-feature gap (audit finding 2026-09-18).
   const canWork = hasPermission(me, "validation.gate.view");
+
+  const [openBlock, setOpenBlock] = useState<BlockKey | null>(null);
+  const [plansReload, setPlansReload] = useState(0);
+  const [viewPlan, setViewPlan] = useState<MasterPlan | null>(null);
+
+  const blockTitles: Record<BlockKey, string> = {
+    vmp: "VMP · intended use · traceability",
+    vmpSigned: "VMP · function risk - signed approvals",
+    test: "Test library · IQ · OQ",
+    testSigned: "Test · IQ · OQ - signed completions & approvals",
+    infra: "Infrastructure · Part 11 · data integrity · interfaces",
+    infraSigned: "Infrastructure · Part 11 · data integrity · interfaces - signed",
+    dr: "DR · security · performance qualification",
+    drSigned: "DR · security · performance - signed operations",
+    exc: "Exceptions · revalidation",
+    excSigned: "Exceptions · periodic review - signed operations",
+  };
 
   return (
     <div>
       <PageHead
         title="Validation platform"
         subtitle="VMP, intended-use risk, traceability, test execution, IQ/OQ, Part 11, data integrity, interfaces, DR/security/performance qualification, exceptions and revalidation."
+        action={
+          // While the permission check is still in flight, `canWork` reads as false the same as a real
+          // "no access" outcome -- without `permLoading` here this header renders empty then pops in the
+          // full 10-button console a beat later (or, for a read-only user, never changes at all, so the
+          // skeleton costs nothing in that case either way).
+          permLoading ? (
+            <div className="flex gap-2 flex-wrap">
+              {[96, 120, 108].map((w, i) => (
+                <Skeleton key={i} width={w} height={32} radius="var(--radius-md)" />
+              ))}
+            </div>
+          ) : canWork ? (
+            <>
+              {(Object.keys(blockTitles) as BlockKey[]).map((key) => (
+                <Button key={key} variant="secondary" size="sm" onClick={() => setOpenBlock(key)}>
+                  {key.endsWith("Signed") ? "✎ " : ""}
+                  {blockTitles[key]}
+                </Button>
+              ))}
+            </>
+          ) : undefined
+        }
       />
 
       <ReadCard />
 
-      {!canWork && (
+      {permLoading ? (
+        <Card pad className="mb-4">
+          <CardHeader title="Validation master plans" />
+          <TableSkeleton columns={[{ header: "Plan" }, { header: "Methodology" }, { header: "State" }, { header: "Retention class" }, { header: "" }]} />
+        </Card>
+      ) : (
+        canWork && <MasterPlansListCard reloadToken={plansReload} onOpen={setViewPlan} />
+      )}
+
+      {viewPlan && (
+        <Modal open onClose={() => setViewPlan(null)} large title={`${viewPlan.plan_number} - ${viewPlan.state}`}>
+          <FactGrid>
+            <Fact label="State"><WorkflowStatePill state={viewPlan.state} /></Fact>
+            <Fact label="Methodology">{viewPlan.methodology}</Fact>
+            <Fact label="Retention class">{viewPlan.retention_class ?? "—"}</Fact>
+            <Fact label="Released at">{viewPlan.released_at ? new Date(viewPlan.released_at).toLocaleString() : "—"}</Fact>
+            <Fact label="Record version">{viewPlan.version}</Fact>
+          </FactGrid>
+          <JsonPanel title="Scope" value={viewPlan.scope} />
+          <p className="hint mt-3">
+            Use &quot;VMP · intended use · traceability&quot; (header) to update, release, add
+            deliverables or link traceability against plan ID{" "}
+            <span className="tabular">{viewPlan.id}</span>.
+          </p>
+        </Modal>
+      )}
+
+      {!permLoading && !canWork && (
         <Banner tone="info" title="Read-only">
           Authoring validation deliverables needs the QA Reviewer or QA Releaser role.
         </Banner>
       )}
 
-      {canWork && (
-        <>
+      {canWork && openBlock === "vmp" && (
+        <Modal open onClose={() => { setOpenBlock(null); setPlansReload((n) => n + 1); }} title={blockTitles.vmp} large>
           <FormConsole
             title="VMP · intended use · traceability (Docs 79–81)"
             root="/validation/v1"
@@ -176,8 +311,17 @@ export default function ValidationPage() {
               },
             ]}
           />
-          <SignedJsonForm title="VMP · function risk - signed approvals" root="/validation/v1" me={me} ops={VMP_SIGNED_OPS} />
+        </Modal>
+      )}
 
+      {canWork && openBlock === "vmpSigned" && (
+        <Modal open onClose={() => setOpenBlock(null)} title={blockTitles.vmpSigned} large>
+          <SignedJsonForm title="VMP · function risk - signed approvals" root="/validation/v1" me={me} ops={VMP_SIGNED_OPS} />
+        </Modal>
+      )}
+
+      {canWork && openBlock === "test" && (
+        <Modal open onClose={() => setOpenBlock(null)} title={blockTitles.test} large>
           <FormConsole
             title="Test library · IQ · OQ (Docs 82–84)"
             root="/validation/v1"
@@ -307,8 +451,17 @@ export default function ValidationPage() {
               },
             ]}
           />
-          <SignedJsonForm title="Test · IQ · OQ - signed completions & approvals" root="/validation/v1" me={me} ops={TEST_IQ_OQ_SIGNED_OPS} />
+        </Modal>
+      )}
 
+      {canWork && openBlock === "testSigned" && (
+        <Modal open onClose={() => setOpenBlock(null)} title={blockTitles.testSigned} large>
+          <SignedJsonForm title="Test · IQ · OQ - signed completions & approvals" root="/validation/v1" me={me} ops={TEST_IQ_OQ_SIGNED_OPS} />
+        </Modal>
+      )}
+
+      {canWork && openBlock === "infra" && (
+        <Modal open onClose={() => setOpenBlock(null)} title={blockTitles.infra} large>
           <FormConsole
             title="Infrastructure · Part 11 · data integrity · interfaces (Docs 86, 88–90)"
             root="/validation/v1"
@@ -468,8 +621,17 @@ export default function ValidationPage() {
               },
             ]}
           />
-          <SignedJsonForm title="Infrastructure · Part 11 · data integrity · interfaces - signed approvals" root="/validation/v1" me={me} ops={INFRA_SIGNED_OPS} />
+        </Modal>
+      )}
 
+      {canWork && openBlock === "infraSigned" && (
+        <Modal open onClose={() => setOpenBlock(null)} title={blockTitles.infraSigned} large>
+          <SignedJsonForm title="Infrastructure · Part 11 · data integrity · interfaces - signed approvals" root="/validation/v1" me={me} ops={INFRA_SIGNED_OPS} />
+        </Modal>
+      )}
+
+      {canWork && openBlock === "dr" && (
+        <Modal open onClose={() => setOpenBlock(null)} title={blockTitles.dr} large>
           <FormConsole
             title="DR · security · performance qualification (Docs 91–93)"
             root="/validation/v1"
@@ -555,8 +717,17 @@ export default function ValidationPage() {
               },
             ]}
           />
-          <SignedJsonForm title="DR · security · performance - signed operations" root="/validation/v1" me={me} ops={DR_SEC_PERF_SIGNED_OPS} />
+        </Modal>
+      )}
 
+      {canWork && openBlock === "drSigned" && (
+        <Modal open onClose={() => setOpenBlock(null)} title={blockTitles.drSigned} large>
+          <SignedJsonForm title="DR · security · performance - signed operations" root="/validation/v1" me={me} ops={DR_SEC_PERF_SIGNED_OPS} />
+        </Modal>
+      )}
+
+      {canWork && openBlock === "exc" && (
+        <Modal open onClose={() => setOpenBlock(null)} title={blockTitles.exc} large>
           <FormConsole
             title="Exceptions · revalidation (Docs 94, 96)"
             root="/validation/v1"
@@ -611,8 +782,13 @@ export default function ValidationPage() {
               },
             ]}
           />
+        </Modal>
+      )}
+
+      {canWork && openBlock === "excSigned" && (
+        <Modal open onClose={() => setOpenBlock(null)} title={blockTitles.excSigned} large>
           <SignedJsonForm title="Exceptions · periodic review - signed operations" root="/validation/v1" me={me} ops={EXCEPTION_SIGNED_OPS} />
-        </>
+        </Modal>
       )}
     </div>
   );
@@ -953,7 +1129,10 @@ function ReadCard() {
   return (
     <Card pad className="mb-4">
       <CardHeader title="Validation reads" />
-      <div className="flex items-end gap-3 mt-3" style={{ flexWrap: "wrap" }}>
+      {/* `items-start` (not `items-end`) + RowButtonSlot — a Field in this row can carry a hint in
+          other states, and a bare Button bottom-aligned against a taller, hint-bearing sibling drops
+          below the real inputs instead of lining up with them. */}
+      <div className="flex items-start gap-3 mt-3" style={{ flexWrap: "wrap" }}>
         <Field label="Report">
           <Select value={which} onChange={(e) => setWhich(Number(e.target.value))} style={{ minWidth: 320 }}>
             {READS.map((r, i) => (
@@ -968,9 +1147,11 @@ function ReadCard() {
             <Input value={ref} onChange={(e) => setRef(e.target.value)} style={{ minWidth: 260 }} />
           </Field>
         )}
-        <Button variant="secondary" onClick={load} disabled={busy || (needsRef && !ref.trim())}>
-          {busy ? "Loading…" : "Load"}
-        </Button>
+        <RowButtonSlot>
+          <Button variant="secondary" onClick={load} disabled={busy || (needsRef && !ref.trim())}>
+            {busy ? "Loading…" : "Load"}
+          </Button>
+        </RowButtonSlot>
       </div>
       {data !== undefined && (
         <div className="mt-3">

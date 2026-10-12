@@ -12,6 +12,7 @@ import { Select } from "@/components/ui/Select";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { humanizeLabel } from "@/lib/format";
 
 export const STEP_TYPE_OPTIONS = [
   "instruction", "data_entry", "scan", "weigh", "equipment_check", "calculation", "ipc_qc", "signature",
@@ -199,10 +200,12 @@ export interface RecipeVersion {
   site_name: string | null;
   lifecycle_state: string;
   superseded_by_version_id: string | null;
+  superseded_by_version_no: number | null;
   batch_size_value: string | null;
   batch_size_uom: string | null;
   batch_size_uom_id: string | null;
   released_vault_object_id: string | null;
+  released_vault_object_label: string | null;
   version_hash: string | null;
   version: number;
   sections?: RecipeSection[];
@@ -1171,7 +1174,7 @@ export function StepBlock({
         <Select value={step.step_type} onChange={(e) => onChange({ step_type: e.target.value })} required>
           {STEP_TYPE_OPTIONS.map((t) => (
             <option key={t} value={t}>
-              {t}
+              {humanizeLabel(t)}
             </option>
           ))}
         </Select>

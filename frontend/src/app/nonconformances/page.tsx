@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { StatePill, BoolPill, SeverityPill, WorkflowStatePill } from "@/components/ui/StatePill";
+import { humanizeLabel } from "@/lib/format";
 
 // app/modules/qms/ncr_models.py NCR_STATES / NCR_SCOPE_TYPES.
 const NCR_STATES = [
@@ -164,7 +165,7 @@ function RaiseNcrModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
             <Select value={severity} onChange={(e) => setSeverity(e.target.value)}>
               {SEVERITIES.map((s) => (
                 <option key={s} value={s}>
-                  {s}
+                  {humanizeLabel(s)}
                 </option>
               ))}
             </Select>
@@ -175,7 +176,7 @@ function RaiseNcrModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
             <Select value={scopeType} onChange={(e) => changeScopeType(e.target.value)}>
               {SCOPE_TYPES.map((s) => (
                 <option key={s} value={s}>
-                  {s}
+                  {humanizeLabel(s)}
                 </option>
               ))}
             </Select>

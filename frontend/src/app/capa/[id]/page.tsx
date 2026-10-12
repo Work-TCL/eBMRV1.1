@@ -15,7 +15,7 @@ import { useApiResource, useEntityOptions, useMe } from "@/lib/hooks";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { QmsDetailShell, useCommand } from "@/components/qms/QmsDetailShell";
-import { Fact, IdFact } from "@/components/ui/FactGrid";
+import { Fact, IdFact, UserFact } from "@/components/ui/FactGrid";
 import { Tabs } from "@/components/ui/Tabs";
 import { Card } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
@@ -43,6 +43,8 @@ interface EffectivenessCheck {
 }
 
 interface CapaDetail extends Capa {
+  owner_full_name: string | null;
+  owner_username: string | null;
   scope_refs: unknown[] | null;
   root_cause_ref: Record<string, unknown> | null;
   effectiveness_plan: Record<string, unknown> | null;
@@ -157,8 +159,8 @@ export default function CapaDetailPage({ params }: { params: Promise<{ id: strin
             <Fact label="Raised">{formatDateTime(data.created_at)}</Fact>
             <Fact label="Closed">{data.closed_at ? formatDateTime(data.closed_at) : "—"}</Fact>
             <Fact label="Record version">{data.version}</Fact>
-            <IdFact label="Owner" value={data.owner_subject_id} />
-            <IdFact label="Source record" value={data.source_id} />
+            <UserFact label="Owner" fullName={data.owner_full_name} username={data.owner_username} id={data.owner_subject_id} />
+            <IdFact label="Source record" value={data.source_label ?? data.source_id} />
             <IdFact label="Quality event" value={data.quality_event_id} />
           </>
         )

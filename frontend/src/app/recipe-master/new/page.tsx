@@ -24,6 +24,7 @@ import {
   totalStepCount,
   useRoleAndRuleOptions,
 } from "../shared";
+import { humanizeLabel } from "@/lib/format";
 
 /** Full-page "New recipe draft" (moved off the old `DraftModal` popup 2026-09-16, project-owner-directed
  * — the Sections/Steps/Dependencies graph editor plus its 4 per-step sub-editors (§9.3.1-9.3.4) is too
@@ -173,7 +174,7 @@ export default function NewRecipeDraftPage() {
               <Select value={profile} onChange={(e) => setProfile(e.target.value)} required>
                 {MANUFACTURING_PROFILES.map((p) => (
                   <option key={p} value={p}>
-                    {p}
+                    {humanizeLabel(p)}
                   </option>
                 ))}
                 {profile && !MANUFACTURING_PROFILES.includes(profile) && <option value={profile}>{profile}</option>}

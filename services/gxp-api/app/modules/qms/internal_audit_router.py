@@ -23,7 +23,7 @@ from app.modules.qms.internal_audit_commands import (
     verify_finding,
 )
 from app.modules.qms.internal_audit_models import AuditFinding, InternalAudit
-from app.modules.qms.read_support import filtered, iso
+from app.modules.qms.read_support import filtered, iso, resolve_user_names, sid
 from app.modules.qms.signature_support import SignatureChallengeRequest, create_qms_signature_challenge
 from app.mutation.errors import NotFoundError, ValidationFailedError
 from app.mutation.schemas import MutationReceipt
@@ -201,6 +201,8 @@ def _finding_dict(record: AuditFinding) -> dict:
         "capa_required": record.capa_required,
         "capa_rationale": record.capa_rationale,
         "is_repeat_finding": record.is_repeat_finding,
+        "source_type": record.source_type,
+        "source_id": sid(record.source_id),
         "verification": record.verification,
         "state": record.state,
         "version": record.version,
@@ -240,8 +242,13 @@ async def get_internal_audit(
     findings = (
         await session.execute(select(AuditFinding).where(AuditFinding.audit_id == audit_id))
     ).scalars().all()
+    # 2026-10 UUID-display audit: lead_auditor_id was shown as a raw id with no resolved name.
+    user_by_id = await resolve_user_names(session, {record.lead_auditor_id})
+    lead_auditor = user_by_id.get(str(record.lead_auditor_id))
     return {
         **_audit_dict(record),
+        "lead_auditor_full_name": lead_auditor[0] if lead_auditor else None,
+        "lead_auditor_username": lead_auditor[1] if lead_auditor else None,
         "site_scope": record.site_scope,
         "process_scope": record.process_scope,
         "criteria_refs": record.criteria_refs,

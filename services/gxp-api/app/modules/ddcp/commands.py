@@ -47,6 +47,7 @@ from app.modules.ddcp.models import (
 )
 from app.modules.equipment import cleaning_commands, em_commands, sterilization_commands
 from app.modules.equipment import commands as equipment_commands
+from app.modules.genealogy import service as genealogy_service
 from app.modules.equipment.models import EquipmentAsset
 from app.modules.iam.models import Role, User
 from app.modules.material.models import MaterialLot
@@ -1063,6 +1064,25 @@ async def record_device_assembly_step(
     )
     session.add(record)
     await session.flush()
+
+    # Client gap-closure item #11 (2026-10-09, project-owner-directed: "DDCP (device assembly edges)").
+    # Only a PASS result implies the component was genuinely incorporated -- a FAIL/REWORK result
+    # shouldn't assert a real ASSEMBLED_INTO relationship. The other two assembly-record producers
+    # (injector_commands.py, coated_device_commands.py) share this table's shape but are not wired this
+    # pass -- same explicit "2-3 straightforward ones" scoping used throughout this gap-closure session.
+    if cmd.result == "PASS":
+        batch_genealogy_node = await genealogy_service.get_or_create_node(
+            session, site_id=batch.site_id, node_type="drug_batch", authoritative_record_type="batch",
+            authoritative_record_id=cmd.batch_id, business_ref=batch.batch_number, actor_user_id=actor_user_id,
+        )
+        device_unit_node = await genealogy_service.get_or_create_node(
+            session, site_id=batch.site_id, node_type="device_unit", authoritative_record_type="device_assembly_record",
+            authoritative_record_id=record.id, business_ref=cmd.unit_identifier, actor_user_id=actor_user_id,
+        )
+        await genealogy_service.create_edge(
+            session, from_node_id=batch_genealogy_node.id, to_node_id=device_unit_node.id,
+            edge_type="ASSEMBLED_INTO", actor_user_id=actor_user_id,
+        )
 
     return await _write_receipt(
         session, cmd=cmd, payload_hash=payload_hash, site_id=batch.site_id, aggregate_type="device_assembly_record",

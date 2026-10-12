@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { api, ApiError, newIdempotencyKey, type Me, type MutationReceipt } from "@/lib/api";
-import { useEntityOptions, useMe, useSiteId } from "@/lib/hooks";
+import { useEntityOptions, useMe, useSiteId, type EntityOptionsStatus } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Modal } from "@/components/ui/Modal";
@@ -26,7 +26,10 @@ import { RepeatableRows, KeyValueRows, buildKvObject, buildRepeatArray, type Rep
 export interface OpsFieldDef {
   name: string;
   label: string;
-  type?: "text" | "number" | "date" | "textarea" | "json" | "select" | "bool" | "batchSelect" | "equipmentSelect" | "areaSelect" | "userSelect" | "materialSelect" | "supplierSelect" | "sterilizationProfileSelect" | "asepticProfileSelect" | "repeat" | "kv";
+  type?: "text" | "number" | "date" | "textarea" | "json" | "select" | "bool" | "batchSelect" | "equipmentSelect" | "areaSelect" | "userSelect" | "materialSelect" | "supplierSelect" | "sterilizationProfileSelect" | "asepticProfileSelect" | "cleaningProcedureVersionSelect" | "cleaningProcedureCodeSelect" | "batchStepSelect" | "repeat" | "kv";
+  /** "batchStepSelect" only — the name of the sibling field on the same form whose current value is the
+   * batch id to fetch steps for (e.g. "batch_id"). Steps reload whenever that field's value changes. */
+  batchIdField?: string;
   hint?: string;
   required?: boolean;
   placeholder?: string;
@@ -109,6 +112,90 @@ function parseValues(
   return out;
 }
 
+/** A "batch step" picker scoped to a sibling field's current batch id — same cascading shape as
+ * FormConsole.tsx's own `BatchStepOwnerPicker`, adapted here since `OpsRecordPage`'s field vocabulary
+ * had no record-scoped (not globally-fetched) picker type before this (e.g. aseptic operation create's
+ * "Batch step ID", previously free text with no way to discover a real one even though "Batch" is right
+ * above it on the same form). Falls back to manual entry the same way every other picker type does. */
+function BatchStepSelectField({
+  label,
+  required,
+  hint,
+  value,
+  onChange,
+  batchId,
+}: {
+  label: string;
+  required?: boolean;
+  hint?: string;
+  value: string;
+  onChange: (value: string) => void;
+  batchId: string;
+}) {
+  const [manual, setManual] = useState(false);
+  const [steps, setSteps] = useState<{ step_id: string; recipe_step_code: string }[]>([]);
+  const [status, setStatus] = useState<EntityOptionsStatus>("empty");
+
+  useEffect(() => {
+    // No reset-to-empty branch needed when `batchId` is falsy: the render below already checks
+    // `!batchId` directly (not derived from `status`), so stale `steps`/`status` from a previously
+    // selected batch are simply never shown while no batch is selected -- avoids a synchronous setState
+    // in the effect body for a case the render path already handles correctly on its own.
+    if (!batchId) return;
+    let cancelled = false;
+    api
+      .get<{ steps: { step_id: string; recipe_step_code: string }[] }>(`/batches/v1/${batchId}/execution-view`)
+      .then((res) => {
+        if (cancelled) return;
+        setSteps(res.steps);
+        setStatus(res.steps.length ? "ready" : "empty");
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [batchId]);
+
+  if (manual || !batchId || status === "error") {
+    return (
+      <Field label={label} required={required} hint={hint ?? (!batchId ? "Select a batch above first." : undefined)}>
+        <Input type="text" value={value} onChange={(e) => onChange(e.target.value)} placeholder="Batch step ID" />
+        {batchId && status !== "error" && (
+          <button
+            type="button"
+            style={{ background: "none", border: "none", padding: 0, color: "var(--brand-600)", fontSize: "var(--fs-2)", cursor: "pointer", textDecoration: "underline", marginTop: 6 }}
+            onClick={() => setManual(false)}
+          >
+            Pick a batch step instead
+          </button>
+        )}
+      </Field>
+    );
+  }
+
+  return (
+    <Field label={label} required={required} hint={hint}>
+      <Select value={value} onChange={(e) => onChange(e.target.value)} disabled={status === "loading"}>
+        <option value="">{status === "loading" ? "Loading steps…" : "Select a step"}</option>
+        {steps.map((s) => (
+          <option key={s.step_id} value={s.step_id}>
+            {s.recipe_step_code}
+          </option>
+        ))}
+      </Select>
+      <button
+        type="button"
+        style={{ background: "none", border: "none", padding: 0, color: "var(--brand-600)", fontSize: "var(--fs-2)", cursor: "pointer", textDecoration: "underline", marginTop: 6 }}
+        onClick={() => setManual(true)}
+      >
+        Enter the step ID manually
+      </button>
+    </Field>
+  );
+}
+
 function FieldInputs({
   fields,
   values,
@@ -137,6 +224,8 @@ function FieldInputs({
                 subFields={f.subFields ?? []}
                 value={(complexValues?.[f.name] as RepeatRow[]) ?? []}
                 onChange={(rows) => setComplexValue?.(f.name, rows)}
+                materialOptions={entities.materials}
+                materialOptionsStatus={entities.materialsStatus}
                 materialLotOptions={entities.materialLotCodes}
                 materialLotOptionsStatus={entities.materialLotCodesStatus}
                 userOptions={entities.users}
@@ -235,6 +324,35 @@ function FieldInputs({
             />
           );
         }
+        if (f.type === "cleaningProcedureVersionSelect") {
+          return (
+            <EntityPickerField
+              key={f.name} label={f.label} required={f.required} hint={f.hint}
+              value={values[f.name] ?? ""} onChange={(v) => setValue(f.name, v)}
+              options={entities.cleaningProcedureVersions} status={entities.cleaningProcedureVersionsStatus}
+              kind="cleaning procedure version"
+            />
+          );
+        }
+        if (f.type === "cleaningProcedureCodeSelect") {
+          return (
+            <EntityPickerField
+              key={f.name} label={f.label} required={f.required} hint={f.hint}
+              value={values[f.name] ?? ""} onChange={(v) => setValue(f.name, v)}
+              options={entities.cleaningProcedureCodes} status={entities.cleaningProcedureCodesStatus}
+              kind="cleaning procedure/checklist version"
+            />
+          );
+        }
+        if (f.type === "batchStepSelect") {
+          return (
+            <BatchStepSelectField
+              key={f.name} label={f.label} required={f.required} hint={f.hint}
+              value={values[f.name] ?? ""} onChange={(v) => setValue(f.name, v)}
+              batchId={values[f.batchIdField ?? "batch_id"] ?? ""}
+            />
+          );
+        }
         return (
           <Field key={f.name} label={f.label} required={f.required} hint={f.hint}>
             {f.type === "select" ? (
@@ -303,9 +421,13 @@ export function OpsRecordPage<T extends { id: string; version: number }>({
    * content (like `afterHeader`) that should be the first thing visible. Defaults to false (every
    * existing caller keeps today's always-expanded inline form, unaffected). */
   collapseCreate?: boolean;
-  /** Fired after a successful create, once the new record is loaded — lets a caller whose `afterHeader`
-   * lists `T` itself (e.g. sterilization's cycle list) refresh that list so the new row shows up
-   * without a manual reload. Additive; omitted by every pre-existing caller. */
+  /** Fired after a successful create AND after any transition completes (signed or not) — lets a
+   * caller whose `afterHeader` lists `T` itself (e.g. sterilization's cycle list, aseptic's operation
+   * list) refresh that list so a new row, or a row whose state/version just changed, shows up without
+   * a manual page reload. Before 2026-10, this only fired on create — a transition only refreshed the
+   * single open `record`, leaving the list behind it stale until the user reloaded the whole page (a
+   * real user report, affecting every caller of this component the same way). Additive; omitted by
+   * every pre-existing caller. */
   onCreated?: () => void;
   /** When true, an opened record (facts + extra + actions) renders in a `Modal` — closed by its own X —
    * instead of inline below the lookup box. Pairs with an `afterHeader` list whose "Open" button drives
@@ -323,9 +445,6 @@ export function OpsRecordPage<T extends { id: string; version: number }>({
   const [record, setRecord] = useState<T | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sigTransition, setSigTransition] = useState<OpsTransitionDef<T> | null>(null);
-  const [sigValues, setSigValues] = useState<Record<string, string>>({});
-  const [sigComplexValues, setSigComplexValues] = useState<Record<string, RepeatRow[] | KvRow[]>>({});
   const [createValues, setCreateValues] = useState<Record<string, string>>({});
   const [createComplexValues, setCreateComplexValues] = useState<Record<string, RepeatRow[] | KvRow[]>>({});
   const [createErr, setCreateErr] = useState<string | null>(null);
@@ -371,23 +490,39 @@ export function OpsRecordPage<T extends { id: string; version: number }>({
     }
   }
 
-  const createForm = config.create && (
-    <form onSubmit={create} className="grid grid-cols-2 gap-4 mt-3">
-      <FieldInputs
-        fields={config.create.fields}
-        values={createValues}
-        setValue={(n, v) => setCreateValues((c) => ({ ...c, [n]: v }))}
-        complexValues={createComplexValues}
-        setComplexValue={(n, v) => setCreateComplexValues((c) => ({ ...c, [n]: v }))}
-      />
-      <div style={{ gridColumn: "1 / -1" }}>
-        {createErr && <p className="error-text mb-2">{createErr}</p>}
-        <Button type="submit" variant="primary" disabled={creating}>
-          {creating ? "Creating…" : config.create.label}
-        </Button>
-      </div>
-    </form>
-  );
+  // `onCancel` is only passed by the Modal render site below — the inline (`!collapseCreate`) form has
+  // nothing to cancel back to, so it renders without a Cancel button. Either way the submit button sits
+  // at the end of its own row (via `justify-between` + a placeholder when there's no Cancel to balance
+  // it), instead of flush left as a bare `<Button>` would otherwise render.
+  function renderCreateForm(onCancel?: () => void) {
+    if (!config.create) return null;
+    return (
+      <form onSubmit={create} className="grid grid-cols-2 gap-4 mt-3">
+        <FieldInputs
+          fields={config.create.fields}
+          values={createValues}
+          setValue={(n, v) => setCreateValues((c) => ({ ...c, [n]: v }))}
+          complexValues={createComplexValues}
+          setComplexValue={(n, v) => setCreateComplexValues((c) => ({ ...c, [n]: v }))}
+        />
+        <div style={{ gridColumn: "1 / -1" }}>
+          {createErr && <p className="error-text mb-2">{createErr}</p>}
+          <div className="flex justify-between gap-3">
+            {onCancel ? (
+              <Button type="button" variant="secondary" onClick={onCancel}>
+                Cancel
+              </Button>
+            ) : (
+              <span />
+            )}
+            <Button type="submit" variant="primary" disabled={creating}>
+              {creating ? "Creating…" : config.create.label}
+            </Button>
+          </div>
+        </div>
+      </form>
+    );
+  }
 
   return (
     <div>
@@ -395,14 +530,18 @@ export function OpsRecordPage<T extends { id: string; version: number }>({
         title={config.title}
         subtitle={config.subtitle}
         action={
-          <>
+          // A bare Fragment here would hoist headerAction and the create button as two separate
+          // flex items of `.page-head` itself (`justify-content: space-between`) instead of a single
+          // grouped item — with 3 items total (title, headerAction, create button) that spaces them
+          // apart across the whole header instead of keeping the two actions together on the right.
+          <div className="flex items-center gap-2">
             {headerAction}
             {collapseCreate && config.create && config.create.can(me) && (
               <Button variant="secondary" onClick={() => setCreateOpen(true)}>
                 <Icon name="plus" /> {config.create.label}
               </Button>
             )}
-          </>
+          </div>
         }
       />
 
@@ -417,13 +556,13 @@ export function OpsRecordPage<T extends { id: string; version: number }>({
       {!collapseCreate && config.create && config.create.can(me) && (
         <Card pad className="mb-4">
           <CardHeader title={config.create.label} />
-          {createForm}
+          {renderCreateForm()}
         </Card>
       )}
 
       {collapseCreate && createOpen && config.create && (
         <Modal open onClose={() => setCreateOpen(false)} title={config.create.label} large>
-          {createForm}
+          {renderCreateForm(() => setCreateOpen(false))}
         </Modal>
       )}
 
@@ -458,23 +597,18 @@ export function OpsRecordPage<T extends { id: string; version: number }>({
         const hiddenByRole = inStateNow.length > 0 && visible.length === 0;
         const actions = visible.length > 0 ? (
           <div className="flex flex-wrap gap-2 mt-3">
-            {visible.map((t) =>
-              t.signed ? (
-                <Button
-                  key={t.key}
-                  variant={t.variant ?? "secondary"}
-                  onClick={() => {
-                    setSigValues({});
-                    setSigComplexValues({});
-                    setSigTransition(t);
-                  }}
-                >
-                  {t.label}
-                </Button>
-              ) : (
-                <UnsignedTransition key={t.key} config={config} transition={t} record={record} onDone={() => load()} />
-              )
-            )}
+            {visible.map((t) => (
+              <TransitionButton
+                key={t.key}
+                config={config}
+                transition={t}
+                record={record}
+                onDone={() => {
+                  load();
+                  onCreated?.();
+                }}
+              />
+            ))}
           </div>
         ) : (
           <p className="hint mt-2">
@@ -524,45 +658,6 @@ export function OpsRecordPage<T extends { id: string; version: number }>({
           </>
         );
       })()}
-
-      {record && sigTransition && (
-        <SignatureCeremony
-          open
-          onClose={() => setSigTransition(null)}
-          onDone={() => {
-            setSigTransition(null);
-            load();
-          }}
-          challengePath={`${config.apiRoot}/${record.id}/signature-challenges`}
-          action={sigTransition.challengeAction ?? sigTransition.key}
-          title={`${sigTransition.label} - ${config.numberOf(record)}`}
-          summary={sigTransition.summary}
-          submitVariant={sigTransition.variant === "danger" ? "danger" : sigTransition.variant === "success" ? "success" : "primary"}
-          extraFields={
-            sigTransition.fields && sigTransition.fields.length > 0 ? (
-              <FieldInputs
-                fields={sigTransition.fields}
-                values={sigValues}
-                setValue={(n, v) => setSigValues((c) => ({ ...c, [n]: v }))}
-                complexValues={sigComplexValues}
-                setComplexValue={(n, v) => setSigComplexValues((c) => ({ ...c, [n]: v }))}
-              />
-            ) : undefined
-          }
-          onSign={(p) => {
-            const values = parseValues(sigTransition.fields ?? [], sigValues, sigComplexValues);
-            return api.post<MutationReceipt>(
-              `${config.apiRoot}/${record.id}/${sigTransition.pathSegment ?? sigTransition.key}`,
-              {
-                idempotency_key: p.idempotency_key,
-                challenge_id: p.challenge_id,
-                reauth_password: p.reauth_password,
-                ...sigTransition.buildBody(record, values),
-              }
-            );
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -572,16 +667,19 @@ function UnsignedTransition<T extends { id: string; version: number }>({
   transition,
   record,
   onDone,
+  size,
 }: {
   config: OpsRecordConfig<T>;
   transition: OpsTransitionDef<T>;
   record: T;
   onDone: () => void;
+  size?: "sm" | "md" | "lg" | "icon";
 }) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [complexValues, setComplexValues] = useState<Record<string, RepeatRow[] | KvRow[]>>({});
   return (
     <WorkflowActionButton
+      size={size}
       label={transition.label}
       title={`${transition.label} - ${config.numberOf(record)}`}
       summary={transition.summary}
@@ -607,6 +705,90 @@ function UnsignedTransition<T extends { id: string; version: number }>({
         });
       }}
     />
+  );
+}
+
+/** One transition (signed or not), fully self-contained — the single button + its own confirmation/
+ * signature modal + field state. Used both for the detail view's "Actions" list (one `record` at a
+ * time) and, exported, for a DataTable row's own quick-action buttons (one `record` per row, no need
+ * to open the detail view first) — e.g. aseptic/page.tsx's "Record intervention"/"Record event"/
+ * "Complete" per row, state-gated by the same `transition.show`/`.can` every other caller already
+ * uses. Unsigned transitions delegate to `UnsignedTransition` unchanged; signed ones own a local
+ * `open` flag and `SignatureCeremony` instead of the page-level `sigTransition` state this used to
+ * require (removed — every transition button is now this same shape, so there's nothing page-level
+ * left to coordinate). */
+export function TransitionButton<T extends { id: string; version: number }>({
+  config,
+  transition,
+  record,
+  onDone,
+  size,
+}: {
+  config: OpsRecordConfig<T>;
+  transition: OpsTransitionDef<T>;
+  record: T;
+  onDone: () => void;
+  /** Button size — e.g. "sm" for a compact DataTable row. Defaults to the normal `Button` size (used
+   * by the detail view's "Actions" list). */
+  size?: "sm" | "md" | "lg" | "icon";
+}) {
+  const [open, setOpen] = useState(false);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [complexValues, setComplexValues] = useState<Record<string, RepeatRow[] | KvRow[]>>({});
+
+  if (!transition.signed) {
+    return <UnsignedTransition config={config} transition={transition} record={record} onDone={onDone} size={size} />;
+  }
+
+  return (
+    <>
+      <Button
+        variant={transition.variant ?? "secondary"}
+        size={size}
+        onClick={() => {
+          setValues({});
+          setComplexValues({});
+          setOpen(true);
+        }}
+      >
+        {transition.label}
+      </Button>
+      {open && (
+        <SignatureCeremony
+          open
+          onClose={() => setOpen(false)}
+          onDone={() => {
+            setOpen(false);
+            onDone();
+          }}
+          challengePath={`${config.apiRoot}/${record.id}/signature-challenges`}
+          action={transition.challengeAction ?? transition.key}
+          title={`${transition.label} - ${config.numberOf(record)}`}
+          summary={transition.summary}
+          submitVariant={transition.variant === "danger" ? "danger" : transition.variant === "success" ? "success" : "primary"}
+          extraFields={
+            transition.fields && transition.fields.length > 0 ? (
+              <FieldInputs
+                fields={transition.fields}
+                values={values}
+                setValue={(n, v) => setValues((c) => ({ ...c, [n]: v }))}
+                complexValues={complexValues}
+                setComplexValue={(n, v) => setComplexValues((c) => ({ ...c, [n]: v }))}
+              />
+            ) : undefined
+          }
+          onSign={(p) => {
+            const parsed = parseValues(transition.fields ?? [], values, complexValues);
+            return api.post<MutationReceipt>(`${config.apiRoot}/${record.id}/${transition.pathSegment ?? transition.key}`, {
+              idempotency_key: p.idempotency_key,
+              challenge_id: p.challenge_id,
+              reauth_password: p.reauth_password,
+              ...transition.buildBody(record, parsed),
+            });
+          }}
+        />
+      )}
+    </>
   );
 }
 

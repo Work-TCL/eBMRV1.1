@@ -171,6 +171,46 @@ async def get_correction(session: AsyncSession, correction_id: uuid.UUID) -> Rec
     return correction
 
 
+async def list_latest_by_business_id(session: AsyncSession, *, object_type: str) -> list[VaultObject]:
+    """Read-only picker data: one row per `business_id` (its latest version) that has ever been
+    released under this `object_type` — same SG-081 read-side precedent as `rules.service.
+    list_released_rules`/`list_released_uoms`: a plain read-only GET listing doesn't conflict with any
+    future write/CRUD contract, it only lets the Vault lookup UI offer a dropdown of real business IDs
+    instead of requiring the caller to already know an exact string to type in."""
+    rows = (
+        (
+            await session.execute(
+                select(VaultObject)
+                .where(VaultObject.object_type == object_type)
+                .order_by(VaultObject.business_id, VaultObject.internal_version)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    latest: dict[str, VaultObject] = {}
+    for row in rows:
+        latest[row.business_id] = row  # last wins => highest internal_version per business_id
+    return sorted(latest.values(), key=lambda o: o.business_id)
+
+
+async def list_corrections(
+    session: AsyncSession, *, include_completed: bool = False
+) -> list[tuple[RecordCorrection, VaultObject]]:
+    """Read-only picker data for the 'Complete a correction' UI (VLT-FR-010/011) — without this there
+    was no way to discover a pending correction's id except being told it out of band. Joined with the
+    vault object it targets so the caller can filter by site scope and display which record/version each
+    correction concerns, matching `get_versions`'s own site-scope filtering pattern."""
+    stmt = (
+        select(RecordCorrection, VaultObject)
+        .join(VaultObject, VaultObject.object_id == RecordCorrection.record_object_id)
+        .order_by(RecordCorrection.created_at.desc())
+    )
+    if not include_completed:
+        stmt = stmt.where(RecordCorrection.status != "completed")
+    return [(c, o) for c, o in (await session.execute(stmt)).all()]
+
+
 async def list_evidence_for_object(session: AsyncSession, object_id: uuid.UUID) -> list[VaultEvidence]:
     return (
         (

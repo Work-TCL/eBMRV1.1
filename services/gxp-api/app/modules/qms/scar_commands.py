@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
 from app.modules.iam.models import User
+from app.modules.qms.capa_commands import auto_create_capa_from_source
 from app.modules.qms.scar_models import (
     SCAR_SOURCE_TYPES,
     SOURCE_STATUS_DECISIONS,
@@ -541,6 +542,11 @@ async def close_scar(session: AsyncSession, cmd: CloseScarCommand, actor_user_id
         event_type="SCARClosed", event_payload={"id": str(case.id), "scar_id": str(scar.id)},
         correlation_id=receipt.correlation_id,
     )
+    if cmd.capa_required:
+        await auto_create_capa_from_source(
+            session, site_id=scar.site_id, source_type="supplier", source_id=case.id, source_version=case.version,
+            capa_rationale=cmd.capa_rationale, actor_user_id=actor_user_id, correlation_id=receipt.correlation_id,
+        )
     if cmd.source_status_decision == "suspend":
         await write_outbox_event(
             session, event_type="SupplierSourceSuspended", aggregate_type="supplier_quality_case", aggregate_id=case.id,

@@ -151,6 +151,44 @@ async def test_bulk_create_units_under_lot_and_read_by_serial(client, seeded, db
     assert detail["state"] == "created"
 
 
+async def test_list_units_resolves_refs_and_filters(client, seeded, db):
+    """2026-10-09 regression (real user report) -- `/devices` had no browsable list at all, only
+    by-serial lookup. `GET /units` must return every unit+lot for the site in the shared paginated
+    envelope, with batch/product/lot labels resolved, and `lots_only`/`device_lot_id` must actually
+    filter."""
+    admin_token, product_version_id = await _admin_and_released_product(db, client, seeded, "20")
+    site_id = seeded["site_id"]
+    resp = await client.post(
+        "/devices/v1/lots",
+        json=_lot_body(site_id, product_version_id),
+        headers=auth_headers(admin_token),
+    )
+    lot_id = resp.json()["aggregate_id"]
+    resp = await client.post(
+        "/devices/v1/units/bulk-create",
+        json={"idempotency_key": idem(), "device_lot_id": lot_id, "units": [{"serial_number": "SN-LIST-0001"}]},
+        headers=auth_headers(admin_token),
+    )
+    assert resp.status_code == 200, resp.text
+
+    # No auth / wrong role.
+    assert (await client.get(f"/devices/v1/units?site_id={site_id}", headers={})).status_code == 401
+    op_token = await login(client, "operator1")  # holds device.view, not device.create
+
+    body = (await client.get(f"/devices/v1/units?site_id={site_id}", headers=auth_headers(op_token))).json()
+    assert "items" in body and "total" in body
+    by_serial = {r["serial_number"]: r for r in body["items"] if r["serial_number"]}
+    assert by_serial["SN-LIST-0001"]["device_lot_label"] == "00012345678905"
+    assert by_serial["SN-LIST-0001"]["product_code"] == f"DEVPRD-20"
+
+    lots_only = (await client.get(f"/devices/v1/units?site_id={site_id}&lots_only=true", headers=auth_headers(op_token))).json()
+    assert all(r["serial_number"] is None for r in lots_only["items"])
+    assert any(r["unit_id"] == lot_id for r in lots_only["items"])
+
+    scoped = (await client.get(f"/devices/v1/units?site_id={site_id}&device_lot_id={lot_id}", headers=auth_headers(op_token))).json()
+    assert [r["serial_number"] for r in scoped["items"]] == ["SN-LIST-0001"]
+
+
 async def test_bulk_create_rejects_duplicate_serial_within_request(client, seeded, db):
     admin_token, product_version_id = await _admin_and_released_product(db, client, seeded, "4")
     resp = await client.post(

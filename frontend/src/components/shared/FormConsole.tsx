@@ -42,6 +42,9 @@ export interface FormField {
     | "equipmentSelect"
     | "areaSelect"
     | "userSelect"
+    // A site picker — for a field that stores a real `site_id` the operator otherwise had to paste in
+    // as a raw UUID with only a hint showing the real value (e.g. sterilization's "Install a filter").
+    | "siteSelect"
     // `owner_type`/`owner_id` pair for a polymorphic-owner command (e.g. evidence staging). `owner_type`
     // has no backend enum (it's a free String(80) column — grep-verified across every module), so
     // "ownerTypeSelect" offers only the values this codebase actually creates evidence against today
@@ -68,6 +71,13 @@ export interface FormField {
     // /dispensing/v1/dispensed-containers?batch_id=...) -- "Record a consumption"/"Record a return" both
     // took `dispensed_container_id` as a raw pasted UUID with nothing to pick it from.
     | "dispensedContainerSelect"
+    // A sterile filter use picker (Document 42) — "Record an integrity test"/"Complete a filter use"
+    // both took a free-text `use_id` with nothing to copy it from, despite the browsable filter-use list
+    // sitting right above those forms on `/sterilization`.
+    | "filterUseSelect"
+    // A sterilization/CIP-SIP *cycle* picker (not profile) — "Install a filter"'s optional
+    // `sterilization_cycle_id` took a free-text id with no way to discover one.
+    | "sterilizationCycleSelect"
     | "repeat"
     | "kv"
     | "stringList";
@@ -294,6 +304,18 @@ export function FormFieldsGrid({
             status={entities.usersStatus}
             kind="user"
           />
+        ) : f.type === "siteSelect" ? (
+          <EntityPickerField
+            key={f.name}
+            label={f.label}
+            required={f.required}
+            hint={f.hint}
+            value={values[f.name] ?? ""}
+            onChange={(v) => setValues((c) => ({ ...c, [f.name]: v }))}
+            options={entities.sites}
+            status={entities.sitesStatus}
+            kind="site"
+          />
         ) : f.type === "ownerTypeSelect" ? (
           <OwnerTypeField
             key={f.name}
@@ -356,6 +378,30 @@ export function FormFieldsGrid({
             hint={f.hint}
             value={values[f.name] ?? ""}
             onChange={(v) => setValues((c) => ({ ...c, [f.name]: v }))}
+          />
+        ) : f.type === "filterUseSelect" ? (
+          <FilterUseSelectField
+            key={f.name}
+            label={f.label}
+            required={f.required}
+            hint={f.hint}
+            value={values[f.name] ?? ""}
+            onChange={(v) => setValues((c) => ({ ...c, [f.name]: v }))}
+            options={entities.filterUses}
+            status={entities.filterUsesStatus}
+            setValues={setValues}
+          />
+        ) : f.type === "sterilizationCycleSelect" ? (
+          <EntityPickerField
+            key={f.name}
+            label={f.label}
+            required={f.required}
+            hint={f.hint}
+            value={values[f.name] ?? ""}
+            onChange={(v) => setValues((c) => ({ ...c, [f.name]: v }))}
+            options={entities.sterilizationCycles}
+            status={entities.sterilizationCyclesStatus}
+            kind="sterilization cycle"
           />
         ) : f.type === "dispensedContainerSelect" ? (
           <DispensedContainerPicker
@@ -634,6 +680,57 @@ interface DispensedContainerRow {
   remaining_quantity: string;
   uom: string;
   status: string;
+}
+
+/** Picks a `SterileFilterUse` like a plain `EntityPickerField`, but also auto-fills the sibling
+ * "expected_version" field with that use's *current* version (a fresh `GET /filtration/v1/filters/
+ * {id}` at selection time, not the possibly-stale version baked into the cached picker list) — the bug
+ * this fixes: "Record an integrity test" shipped with `expected_version` defaulting to a hardcoded "1",
+ * so recording a post-use test after a pre-use test (which bumps the version) always failed with
+ * STALE_VERSION unless the operator already knew and typed the real current number. */
+function FilterUseSelectField({
+  label,
+  required,
+  hint,
+  value,
+  onChange,
+  options,
+  status,
+  setValues,
+}: {
+  label: string;
+  required?: boolean;
+  hint?: string;
+  value: string;
+  onChange: (useId: string) => void;
+  options: EntityOption[];
+  status: EntityOptionsStatus;
+  setValues: (updater: (c: Record<string, string>) => Record<string, string>) => void;
+}) {
+  function handleChange(useId: string) {
+    onChange(useId);
+    if (!useId) return;
+    api
+      .get<{ version: number }>(`/filtration/v1/filters/${encodeURIComponent(useId)}`)
+      .then((use) => setValues((c) => ({ ...c, expected_version: String(use.version) })))
+      .catch(() => {
+        // Leave whatever expected_version already held -- the picker's own manual-id fallback still
+        // lets the operator type both fields by hand if this lookup fails.
+      });
+  }
+
+  return (
+    <EntityPickerField
+      label={label}
+      required={required}
+      hint={hint}
+      value={value}
+      onChange={handleChange}
+      options={options}
+      status={status}
+      kind="sterile filter use"
+    />
+  );
 }
 
 /** Picks a `DispensedContainer` scoped to the sibling "batch_id" field already on the same form --
@@ -949,6 +1046,13 @@ export function FormConsole({
    * are either all permission-free or already gated by the caller some other way. */
   me?: Me | null;
 }) {
+  // `me === undefined` (prop omitted) means "don't filter"; `me === null` means "known to be signed
+  // out" and *should* filter (every permission check below correctly evaluates false). The two must not
+  // be conflated: `useMe()` itself initializes to `null` while `/auth/me` is still in flight, not
+  // `undefined` -- a future caller that passes `me` straight from a bare `useMe()` without first gating
+  // on its own `loading` would otherwise see every permissioned op vanish from the selector for one
+  // render, then pop back in once the fetch resolves. No current caller in this repo hits this (each
+  // already pre-gates the whole page behind `loading`), but the check should hold regardless.
   const ops_ = me === undefined ? ops : ops.filter((o) => !o.requiredPermission || hasPermission(me, o.requiredPermission));
   const [idx, setIdx] = useState(0);
   const op = ops_[Math.min(idx, ops_.length - 1)];

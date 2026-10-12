@@ -4,9 +4,12 @@ document introduces (no area/room/building entity exists anywhere in this codeba
 deliberately a narrow "classified area" master scoped to what Documents 39/40/41 actually consume, not the
 full Document 01/02 C-003 Building/Area/Room/Line hierarchy (SPEC_GAP).
 
-`cleaning_procedure_version` has no CRUD operation anywhere in Document 39's own 7-op API list (§6) --
-seed-only master data, same precedent as `material.WarehouseLocation` ("no CRUD API exists ... seed-only,
-like Organization/Site").
+`cleaning_procedure_version` has no create/release operation anywhere in Document 39's own 7-op API list
+(§6) -- seed-only master data, same precedent as `material.WarehouseLocation` ("no CRUD API exists ...
+seed-only, like Organization/Site"). A read-only `GET /cleaning/v1/procedure-versions` list was added
+later (SG-081 read-side precedent, same as `sterilization_router.list_profiles`) purely so
+`CreateCleaningExecutionCommand.procedure_version_id` has a real picker instead of free-text UUID entry --
+this does not add a create/release endpoint, the table is still seed-only.
 """
 
 import uuid
