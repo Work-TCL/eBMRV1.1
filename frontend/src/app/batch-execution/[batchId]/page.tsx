@@ -30,7 +30,9 @@ interface GxpBatch {
   recipe_code: string | null;
   recipe_version_no: number | null;
   recipe_vault_object_id: string | null;
+  recipe_vault_object_label: string | null;
   execution_snapshot_id: string | null;
+  execution_snapshot_label: string | null;
   target_qty: string;
   target_uom: string;
   state: string;
@@ -189,6 +191,8 @@ interface StepEvidenceLinkRow {
   media_type: string | null;
   requirement_code: string | null;
   linked_by: string;
+  linked_by_full_name: string | null;
+  linked_by_username: string | null;
   created_at: string | null;
 }
 
@@ -238,6 +242,8 @@ interface StepComment {
   comment_id: string;
   comment_text: string;
   created_by: string;
+  created_by_full_name: string | null;
+  created_by_username: string | null;
   created_at: string | null;
 }
 
@@ -245,7 +251,11 @@ interface StepComment {
 interface StepHandover {
   handover_id: string;
   from_subject_id: string | null;
+  from_subject_full_name: string | null;
+  from_subject_username: string | null;
   to_subject_id: string;
+  to_subject_full_name: string | null;
+  to_subject_username: string | null;
   reason: string | null;
   created_at: string | null;
 }
@@ -417,8 +427,8 @@ export default function BatchExecutionDetailPage({ params }: { params: Promise<{
           />
           <Fact label="Product">{b.product_name ? `${b.product_name} (${b.product_code})` : b.product_version_id}</Fact>
           <Fact label="Recipe">{b.recipe_code ? `${b.recipe_code} v${b.recipe_version_no}` : b.recipe_version_id}</Fact>
-          <IdFact label="Recipe vault object" value={b.recipe_vault_object_id} />
-          <IdFact label="Execution snapshot" value={b.execution_snapshot_id} />
+          <IdFact label="Recipe vault object" value={b.recipe_vault_object_label ?? b.recipe_vault_object_id} />
+          <IdFact label="Execution snapshot" value={b.execution_snapshot_label ?? b.execution_snapshot_id} />
         </>
       }
     >
@@ -919,7 +929,7 @@ function EvidenceTab({ execView }: { execView: ExecutionView }) {
             <td className="fs-2">{e.requirement_code ?? "—"}</td>
             <td className="tabular fs-2" style={{ wordBreak: "break-all" }}>{e.evidence_sha256 ?? "—"}</td>
             <td className="fs-2">{e.media_type ?? "—"}</td>
-            <td className="fs-2">{e.linked_by}</td>
+            <td className="fs-2">{e.linked_by_full_name || e.linked_by_username || e.linked_by}</td>
             <td className="fs-2">{e.created_at ? formatDateTime(e.created_at) : "—"}</td>
             <td style={{ textAlign: "right" }}>
               <Button size="sm" variant="secondary" onClick={() => downloadEvidence(e.evidence_id)}>
@@ -1102,7 +1112,7 @@ function HistoryTab({ execView, record }: { execView: ExecutionView; record: Bat
               <tr key={c.comment_id}>
                 <td className="tabular fs-2">{step}</td>
                 <td className="fs-2">{c.comment_text}</td>
-                <td className="fs-2">{c.created_by}</td>
+                <td className="fs-2">{c.created_by_full_name || c.created_by_username || c.created_by}</td>
                 <td className="fs-2">{c.created_at ? formatDateTime(c.created_at) : "—"}</td>
               </tr>
             ))}
@@ -1128,8 +1138,8 @@ function HistoryTab({ execView, record }: { execView: ExecutionView; record: Bat
             {handovers.map(({ step, h }) => (
               <tr key={h.handover_id}>
                 <td className="tabular fs-2">{step}</td>
-                <td className="fs-2">{h.from_subject_id ?? "—"}</td>
-                <td className="fs-2">{h.to_subject_id}</td>
+                <td className="fs-2">{h.from_subject_full_name || h.from_subject_username || h.from_subject_id || "—"}</td>
+                <td className="fs-2">{h.to_subject_full_name || h.to_subject_username || h.to_subject_id}</td>
                 <td className="fs-2">{h.reason ?? "—"}</td>
                 <td className="fs-2">{h.created_at ? formatDateTime(h.created_at) : "—"}</td>
               </tr>

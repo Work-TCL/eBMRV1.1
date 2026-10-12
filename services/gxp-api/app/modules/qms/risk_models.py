@@ -93,10 +93,13 @@ class RiskRecord(Base):
     hazard_problem: Mapped[str] = mapped_column(Text, nullable=False)
     potential_effect: Mapped[str] = mapped_column(Text, nullable=False)
     owner_subject_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False)
-    # RSK-FR-013: periodic review cycle -- next due date, surfaced by the dashboard's overdue flag
-    # (RSK-FR-017). Set at accept()/review() time; no background scheduler exists in this codebase to
-    # auto-detect overdue reviews (RISK_REVIEW_OVERDUE is declared in Document 33 §16 but no code path
-    # raises it this pass, same "don't register a code nothing throws" discipline as SG-074/SG-088).
+    # RSK-FR-013/017: periodic review cycle -- next due date. Set at accept()/review() time. Surfaced
+    # pull-side in app/modules/dashboard/service.py::list_upcoming_reminders() ("risk_review_due"
+    # category, 2026-10-09) the same way material-lot expiry/equipment-calibration due dates already
+    # are -- a signed-in user sees it on next page load. No background scheduler/push notification
+    # exists in this codebase (RISK_REVIEW_OVERDUE is declared in Document 33 §16 but no code path raises
+    # it as an event this pass, same "don't register a code nothing throws" discipline as SG-074/SG-088)
+    # -- that half of the gap is still open, deliberately.
     next_review_due_at: Mapped[datetime | None] = mapped_column()
     state: Mapped[str] = mapped_column(String(50), nullable=False, default="DRAFT")
     version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1)

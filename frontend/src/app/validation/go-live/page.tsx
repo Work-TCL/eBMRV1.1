@@ -1,18 +1,38 @@
 "use client";
 
 import { useState } from "react";
-import { api, hasPermission } from "@/lib/api";
+import { api, hasPermission, pagedFetcher } from "@/lib/api";
 import { useMe, useRequirePermission } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
+import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/Button";
-import { Field } from "@/components/ui/Field";
+import { Field, RowButtonSlot } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { Modal } from "@/components/ui/Modal";
+import { Fact, FactGrid } from "@/components/ui/FactGrid";
+import { WorkflowStatePill } from "@/components/ui/StatePill";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 import { FormConsole, type FormOp } from "@/components/shared/FormConsole";
 import { SignedJsonForm, type SignedJsonOp } from "@/components/shared/SignedJsonForm";
+
+// Matches app/modules/validation/router_wp14.py::_pq_scenario_dict.
+interface PqScenario {
+  id: string;
+  scenario_number: string;
+  product_profile: string | null;
+  process_area: string;
+  is_uat: boolean;
+  is_template: boolean;
+  retention_class: string | null;
+  state: string;
+  approved_at: string | null;
+  acceptance_criteria: string;
+  version: number;
+}
 
 // commands_vsr.py IssueValidatedReleaseAuthorizationCommand.decision / ApproveValidationSummaryCommand.decision
 const RELEASE_DECISIONS = ["APPROVED", "CONDITIONAL", "REJECTED"].map((v) => ({ value: v, label: v }));
@@ -301,35 +321,168 @@ const READS = [
   { label: "Migration legacy trace (plan id)", path: "migrations/{p}/legacy-trace" },
 ];
 
+type GoLiveBlockKey = "pq" | "migration" | "summary" | "signed";
+
+function pqScenarioColumns(onOpen: (s: PqScenario) => void): DataTableColumn<PqScenario>[] {
+  return [
+    {
+      key: "scenario_number",
+      header: "Scenario",
+      sortable: true,
+      render: (s) => <span className="fs-2 font-semibold">{s.scenario_number}</span>,
+    },
+    { key: "process_area", header: "Process area", render: (s) => <span className="fs-2">{s.process_area}</span> },
+    { key: "product_profile", header: "Product profile", render: (s) => <span className="fs-2">{s.product_profile ?? "—"}</span> },
+    { key: "state", header: "State", sortable: true, render: (s) => <WorkflowStatePill state={s.state} /> },
+    {
+      key: "open",
+      header: "",
+      align: "right",
+      render: (s) => (
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpen(s);
+          }}
+        >
+          View
+        </Button>
+      ),
+    },
+  ];
+}
+
+function PqScenariosListCard({ reloadToken, onOpen }: { reloadToken: number; onOpen: (s: PqScenario) => void }) {
+  const fetchScenarios = pagedFetcher<PqScenario>("/validation/v1/pq/scenarios");
+  return (
+    <Card pad className="mb-4">
+      <CardHeader title="PQ scenarios" />
+      <DataTable
+        columns={pqScenarioColumns(onOpen)}
+        fetchPage={fetchScenarios}
+        rowKey={(s) => s.id}
+        searchPlaceholder="Search scenario number…"
+        emptyMessage='No PQ scenarios yet - use "Performance qualification" above to add one.'
+        defaultSort={{ by: "created_at", dir: "desc" }}
+        onRowClick={onOpen}
+        reloadToken={reloadToken}
+      />
+    </Card>
+  );
+}
+
 export default function GoLivePage() {
-  const { me } = useRequirePermission(["validation.gate.view", "validation.package.view", "validation.traceability.view"]);
+  const { me, loading: permLoading } = useRequirePermission(["validation.gate.view", "validation.package.view", "validation.traceability.view"]);
   const canWork = hasPermission(me, "validation.gate.view");
+
+  const [openBlock, setOpenBlock] = useState<GoLiveBlockKey | null>(null);
+  const [scenariosReload, setScenariosReload] = useState(0);
+  const [viewScenario, setViewScenario] = useState<PqScenario | null>(null);
 
   return (
     <div>
       <PageHead
         title="Deployment · PQ · go-live"
         subtitle="Performance qualification, data migration, the validation summary report and the release authorization."
+        action={
+          // See validation/page.tsx's identical comment: `canWork` reads false while the permission
+          // check is still in flight, same as a genuine "no access" outcome -- gate on `permLoading`
+          // too so the console doesn't render empty-then-pop-in for a user who does hold access.
+          permLoading ? (
+            <div className="flex gap-2 flex-wrap">
+              {[160, 120, 220].map((w, i) => (
+                <Skeleton key={i} width={w} height={32} radius="var(--radius-md)" />
+              ))}
+            </div>
+          ) : canWork ? (
+            <>
+              <Button variant="secondary" size="sm" onClick={() => setOpenBlock("pq")}>
+                Performance qualification
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setOpenBlock("migration")}>
+                Data migration
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setOpenBlock("summary")}>
+                Validation summary & release authorization
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setOpenBlock("signed")}>
+                ✎ PQ · migration · release signed operations
+              </Button>
+            </>
+          ) : undefined
+        }
       />
 
       <ReadCard />
 
-      {!canWork && (
+      {permLoading ? (
+        <Card pad className="mb-4">
+          <CardHeader title="PQ scenarios" />
+          <TableSkeleton columns={[{ header: "Scenario" }, { header: "Process area" }, { header: "Product profile" }, { header: "State" }, { header: "" }]} />
+        </Card>
+      ) : (
+        canWork && <PqScenariosListCard reloadToken={scenariosReload} onOpen={setViewScenario} />
+      )}
+
+      {viewScenario && (
+        <Modal open onClose={() => setViewScenario(null)} large title={`${viewScenario.scenario_number} - ${viewScenario.state}`}>
+          <FactGrid>
+            <Fact label="State"><WorkflowStatePill state={viewScenario.state} /></Fact>
+            <Fact label="Process area">{viewScenario.process_area}</Fact>
+            <Fact label="Product profile">{viewScenario.product_profile ?? "—"}</Fact>
+            <Fact label="Is UAT">{viewScenario.is_uat ? "Yes" : "No"}</Fact>
+            <Fact label="Is template">{viewScenario.is_template ? "Yes" : "No"}</Fact>
+            <Fact label="Retention class">{viewScenario.retention_class ?? "—"}</Fact>
+            <Fact label="Approved at">{viewScenario.approved_at ? new Date(viewScenario.approved_at).toLocaleString() : "—"}</Fact>
+            <Fact label="Record version">{viewScenario.version}</Fact>
+          </FactGrid>
+          <JsonPanel title="Acceptance criteria" value={viewScenario.acceptance_criteria} />
+          <p className="hint mt-3">
+            Use &quot;Performance qualification&quot; (header) to add participants or record an
+            execution, or &quot;PQ · migration · release signed operations&quot; to approve, against
+            scenario ID <span className="tabular">{viewScenario.id}</span>.
+          </p>
+        </Modal>
+      )}
+
+      {!permLoading && !canWork && (
         <Banner tone="info" title="Read-only">
           Driving PQ, migration and release authorization needs the QA Releaser or QA Reviewer role.
         </Banner>
       )}
 
-      {canWork && (
-        <>
+      {canWork && openBlock === "pq" && (
+        <Modal
+          open
+          onClose={() => {
+            setOpenBlock(null);
+            setScenariosReload((n) => n + 1);
+          }}
+          title="Performance qualification"
+          large
+        >
           <FormConsole title="Performance qualification" root="/validation/v1" me={me} ops={PQ_OPS} />
+        </Modal>
+      )}
 
+      {canWork && openBlock === "migration" && (
+        <Modal open onClose={() => setOpenBlock(null)} title="Data migration" large>
           <FormConsole title="Data migration" root="/validation/v1" me={me} ops={MIGRATION_OPS} />
+        </Modal>
+      )}
 
+      {canWork && openBlock === "summary" && (
+        <Modal open onClose={() => setOpenBlock(null)} title="Validation summary & release authorization" large>
           <FormConsole title="Validation summary & release authorization" root="/validation/v1" me={me} ops={SUMMARY_OPS} />
+        </Modal>
+      )}
 
+      {canWork && openBlock === "signed" && (
+        <Modal open onClose={() => setOpenBlock(null)} title="PQ · migration · release signed operations" large>
           <SignedJsonForm title="PQ · migration · release signed operations" root="/validation/v1" me={me} ops={GO_LIVE_SIGNED_OPS} />
-        </>
+        </Modal>
       )}
     </div>
   );
@@ -435,7 +588,10 @@ function ReadCard() {
   return (
     <Card pad className="mb-4">
       <CardHeader title="Go-live reads" />
-      <div className="flex flex-wrap items-end gap-3 mt-3">
+      {/* `items-start` (not `items-end`) + RowButtonSlot — a Field in this row can carry a hint in
+          other states, and a bare Button bottom-aligned against a taller, hint-bearing sibling drops
+          below the real inputs instead of lining up with them. */}
+      <div className="flex flex-wrap items-start gap-3 mt-3">
         <Field label="Report">
           <Select value={which} onChange={(e) => setWhich(Number(e.target.value))} style={{ minWidth: 200, maxWidth: 300, width: "100%" }}>
             {READS.map((r, i) => (
@@ -448,9 +604,11 @@ function ReadCard() {
         <Field label="Reference / ID">
           <Input value={ref} onChange={(e) => setRef(e.target.value)} style={{ minWidth: 200, maxWidth: 260, width: "100%" }} />
         </Field>
-        <Button variant="secondary" onClick={load} disabled={busy || !ref.trim()}>
-          {busy ? "Loading…" : "Load"}
-        </Button>
+        <RowButtonSlot>
+          <Button variant="secondary" onClick={load} disabled={busy || !ref.trim()}>
+            {busy ? "Loading…" : "Load"}
+          </Button>
+        </RowButtonSlot>
       </div>
       {data !== undefined && (
         <div className="mt-3">

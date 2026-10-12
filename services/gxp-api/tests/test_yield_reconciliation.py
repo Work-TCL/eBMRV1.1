@@ -249,9 +249,32 @@ async def test_evaluate_material_reconciliation_acceptable(client, seeded, db):
         headers=auth_headers(admin_token),
     )
     assert resp.status_code == 200, resp.text
-    rec = await db.get(ReconciliationRecord, uuid.UUID(resp.json()["aggregate_id"]))
+    rec_id = resp.json()["aggregate_id"]
+    rec = await db.get(ReconciliationRecord, uuid.UUID(rec_id))
     assert rec.state == "ACCEPTABLE"
     assert str(rec.variance) == "0.000000"
+
+    # 2026-10-08 regression: an ACCEPTABLE (within-tolerance) reconciliation must be verifiable -- this
+    # used to raise VALIDATION_FAILED unconditionally, since the verify gate only accepted CALCULATED/
+    # OUT_OF_LIMIT/OUT_OF_TOLERANCE, never the state `_persist_reconciliation` actually sets for the
+    # common in-tolerance case.
+    qa_token = await login(client, "qa.reviewer")
+    challenge = (
+        await client.post(
+            f"/reconciliation/v1/{rec_id}/signature-challenges", json={"record_kind": "RECONCILIATION"}, headers=auth_headers(qa_token)
+        )
+    ).json()
+    verify_resp = await client.post(
+        f"/reconciliation/v1/{rec_id}/verify",
+        json={
+            "idempotency_key": idem(), "record_kind": "RECONCILIATION", "record_id": rec_id, "expected_version": 1,
+            "challenge_id": challenge["challenge_id"], "reauth_password": DEMO_PASSWORD,
+        },
+        headers=auth_headers(qa_token),
+    )
+    assert verify_resp.status_code == 200, verify_resp.text
+    await db.refresh(rec)
+    assert rec.state == "VERIFIED"
 
 
 async def test_evaluate_reconciliation_out_of_tolerance(client, seeded, db):
@@ -886,6 +909,48 @@ async def test_unauthorized_without_token_rejected(client):
         headers={},
     )
     assert resp.status_code == 401
+
+
+async def test_batch_summary_requires_auth_and_reconciliation_view(client, seeded, db):
+    """2026-10-08 regression: `GET .../summary` originally had no `actor` dependency and no policy check
+    at all -- any unauthenticated request got the full batch summary, and any authenticated user of any
+    role (not just one holding `reconciliation.view`) could read it too."""
+    admin_token, batch_id = await _setup_batch(db, client, seeded, "14")
+
+    no_auth = await client.get(f"/reconciliation/v1/batches/{batch_id}/summary")
+    assert no_auth.status_code == 401
+
+    em_token = await login(client, "em.technician")
+    wrong_role = await client.get(f"/reconciliation/v1/batches/{batch_id}/summary", headers=auth_headers(em_token))
+    assert wrong_role.status_code == 403
+
+    ok = await client.get(f"/reconciliation/v1/batches/{batch_id}/summary", headers=auth_headers(admin_token))
+    assert ok.status_code == 200
+
+
+async def test_signature_challenge_requires_reconciliation_verify_role(client, seeded, db):
+    """2026-10-08 regression: `POST .../signature-challenges` had no policy check at all -- any
+    authenticated user of any role could mint a "Verified" challenge for any calculation/reconciliation
+    record, unlike every sibling module's own signature-challenges route."""
+    admin_token, batch_id = await _setup_batch(db, client, seeded, "15")
+    evaluate_resp = await client.post(
+        "/manufacturing-calculations/v1/yield/evaluate",
+        json={"idempotency_key": idem(), "batch_id": batch_id, "theoretical_quantity": "100", "actual_quantity": "95", "uom": "kg"},
+        headers=auth_headers(admin_token),
+    )
+    calc_id = evaluate_resp.json()["aggregate_id"]
+
+    em_token = await login(client, "em.technician")
+    wrong_role = await client.post(
+        f"/reconciliation/v1/{calc_id}/signature-challenges", json={"record_kind": "CALCULATION"}, headers=auth_headers(em_token)
+    )
+    assert wrong_role.status_code == 403
+
+    qa_token = await login(client, "qa.reviewer")
+    ok = await client.post(
+        f"/reconciliation/v1/{calc_id}/signature-challenges", json={"record_kind": "CALCULATION"}, headers=auth_headers(qa_token)
+    )
+    assert ok.status_code == 200
 
 
 async def test_duplicate_idempotency_key_returns_same_receipt(client, seeded, db):

@@ -419,11 +419,14 @@ async def create_qualification(session: AsyncSession, cmd: CreateQualificationCo
     session.add(qualification)
     await session.flush()
 
-    # SG-086 write-through: iam.qualifications is the store batch_execution/material's own
-    # execution-time gates actually read (QUALIFICATION_MISSING/QUALIFICATION_EXPIRED); qms
-    # is this record's declared owner (04_DATA_MODEL_CATALOGUE.md) but had no path to reach
-    # that gate. Mirrors this grant there rather than reconciling the two stores' full shape
-    # (version/state/scope have no iam.qualifications equivalent) -- SG-086 stays open.
+    # SG-086 RESOLVED 2026-10-09 (project-owner-directed): iam.qualifications is declared authoritative
+    # for the execution-time gate (QUALIFICATION_MISSING/QUALIFICATION_EXPIRED) -- it's already the store
+    # every real call site (batch_execution/qc/material dispensing) reads. qms.qualification_record stays
+    # Training's own detail/history view (version/state/scope, renewal chain via
+    # renewed_from_qualification_id) and continues write-through mirroring every grant here. A renewal
+    # inserts a new iam.Qualification row rather than updating the old one; the gate's own query
+    # (`ORDER BY granted_at DESC LIMIT 1`) already picks the newest grant, so this needs no reconciliation
+    # step to behave correctly -- the old row is simply superseded in practice, never read again.
     session.add(
         Qualification(
             user_id=cmd.subject_id, qualification_code=cmd.qualification_code,

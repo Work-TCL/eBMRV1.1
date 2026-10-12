@@ -14,6 +14,7 @@ import { useRequireAdmin } from "@/lib/hooks";
 import { computeActivities } from "@/lib/roleActivities";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
+import { Skeleton, FactGridSkeleton } from "@/components/ui/Skeleton";
 import { Button, LinkButton } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
@@ -234,7 +235,12 @@ export default function RolePermissionsPage({ params }: { params: Promise<{ id: 
         </Banner>
       )}
 
-      {loading && !loadError && <p className="text-muted">Loading…</p>}
+      {loading && !loadError && (
+        <Card pad className="mb-4">
+          <Skeleton width="30%" height={16} style={{ marginBottom: "var(--space-3)" }} />
+          <FactGridSkeleton count={4} />
+        </Card>
+      )}
 
       {role && (
         <form onSubmit={onSave}>

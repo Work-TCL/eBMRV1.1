@@ -20,6 +20,7 @@ from app.modules.qms.change_models import (
     CHANGE_CLASSIFICATIONS,
     CHANGE_TYPES,
     NON_CANCELLABLE_STATES,
+    ROLLBACK_ELIGIBLE_STATES,
     ChangeAffectedObject,
     ChangeControl,
     ChangeTask,
@@ -480,6 +481,9 @@ class CloseChangeCommand(CommandEnvelope):
     expected_version: int
     post_implementation_review: dict | None = None
     cancellation_reason: str | None = None
+    # CHG-FR-019/SG-071 resolved 2026-10-09 (project-owner-directed): same reused-signature-ceremony
+    # pattern as cancellation_reason above, gated to IMPLEMENTATION/VERIFICATION only.
+    rollback_reason: str | None = None
     challenge_id: uuid.UUID | None = None
     reauth_password: str | None = None
 
@@ -511,6 +515,31 @@ async def close_change(session: AsyncSession, cmd: CloseChangeCommand, actor_use
             reason=cmd.cancellation_reason, old_state=old_state, event_type="ChangeClosed",
             event_payload={"id": str(change.id), "state": "CANCELLED"}, signature_id=signature_id,
             expected_version=cmd.expected_version, command_type="CancelChange",
+        )
+
+    if cmd.rollback_reason:
+        # CHG-FR-019/SG-071 resolved: unlike cancellation (any non-terminal state), rollback is only
+        # meaningful once implementation has actually started -- ROLLED_BACK means work was undone, not
+        # abandoned before starting.
+        if change.state not in ROLLBACK_ELIGIBLE_STATES:
+            raise InvalidTransitionError(
+                "Change can only be rolled back from IMPLEMENTATION or VERIFICATION",
+                current_state=change.state, requested="ROLLED_BACK",
+            )
+        signature_id = await _resolve_signature(
+            session, action="close", actor_user_id=actor_user_id, change=change,
+            challenge_id=cmd.challenge_id, reauth_password=cmd.reauth_password,
+        )
+        old_state = change.state
+        change.rollback_reason = cmd.rollback_reason
+        change.rolled_back_at = datetime.now(timezone.utc)
+        change.state = "ROLLED_BACK"
+        change.version += 1
+        return await _write_change_receipt(
+            session, cmd=cmd, payload_hash=payload_hash, change=change, action="Changed", actor_user_id=actor_user_id,
+            reason=cmd.rollback_reason, old_state=old_state, event_type="ChangeClosed",
+            event_payload={"id": str(change.id), "state": "ROLLED_BACK"}, signature_id=signature_id,
+            expected_version=cmd.expected_version, command_type="RollbackChange",
         )
 
     if change.state != "EFFECTIVE":

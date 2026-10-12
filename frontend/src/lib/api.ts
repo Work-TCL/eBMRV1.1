@@ -864,6 +864,7 @@ export interface Capa extends QmsRecordBase {
   capa_number: string;
   source_type: string;
   source_id: string;
+  source_label: string | null;
   problem_statement: string;
   scope_type: string;
   risk_class: string;
@@ -905,6 +906,7 @@ export interface Oos {
 export interface Oot {
   id: string;
   source_result_id: string;
+  source_sample_number: string | null;
   state: string;
   investigation_owner_user_id: string | null;
   opened_at: string;
@@ -915,6 +917,7 @@ export interface Nonconformance extends QmsRecordBase {
   ncr_number: string;
   source_type: string | null;
   source_id: string | null;
+  source_label: string | null;
   scope_type: string;
   defect_code: string;
   severity: string;
@@ -1080,7 +1083,10 @@ export interface PackagingRun {
   id: string;
   site_id: string;
   batch_id: string;
+  batch_number: string | null;
   product_version_id: string;
+  product_code: string | null;
+  product_name: string | null;
   line_ref: string | null;
   state: string;
   version: number;

@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { StatePill, BoolPill, WorkflowStatePill } from "@/components/ui/StatePill";
+import { humanizeLabel } from "@/lib/format";
 
 // app/modules/qms/complaint_models.py COMPLAINT_STATES / SOURCE_CHANNELS.
 const COMPLAINT_STATES = [
@@ -153,7 +154,7 @@ function LogComplaintModal({ onClose, onDone }: { onClose: () => void; onDone: (
             <Select value={sourceChannel} onChange={(e) => setSourceChannel(e.target.value)}>
               {SOURCE_CHANNELS.map((s) => (
                 <option key={s} value={s}>
-                  {s}
+                  {humanizeLabel(s)}
                 </option>
               ))}
             </Select>

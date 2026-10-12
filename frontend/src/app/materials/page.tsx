@@ -15,6 +15,7 @@ import { CodeField } from "@/components/ui/CodeField";
 import { UomSelect } from "@/components/ui/UomSelect";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
+import { humanizeLabel } from "@/lib/format";
 
 const fetchMaterials = pagedFetcher<Material>("/materials");
 
@@ -215,7 +216,7 @@ export default function MaterialsPage() {
                 <option value="">—</option>
                 {STORAGE_CONDITIONS.map((c) => (
                   <option key={c} value={c}>
-                    {c}
+                    {humanizeLabel(c)}
                   </option>
                 ))}
               </Select>
@@ -257,7 +258,7 @@ export default function MaterialsPage() {
                 <option value="">—</option>
                 {STORAGE_CONDITIONS.map((c) => (
                   <option key={c} value={c}>
-                    {c}
+                    {humanizeLabel(c)}
                   </option>
                 ))}
               </Select>

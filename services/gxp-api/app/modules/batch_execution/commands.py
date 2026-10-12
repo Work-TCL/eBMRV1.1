@@ -572,8 +572,8 @@ async def _enforce_step_qualification(session: AsyncSession, *, step: BatchStep,
     complete (BAT-FR-014 also names "verifier", but no second-signer step type exists yet -- SG-048 #017 --
     so this pass applies the same performer check at both actions rather than guessing a verifier shape).
     Reuses `iam.qualifications` + the exact `material/commands.py::_check_dispensing_qualification`
-    pattern (SG-086: two competing qualification stores exist, this picks the one with an already-reviewed
-    production precedent and dedicated named error codes)."""
+    pattern (SG-086 RESOLVED 2026-10-09, project-owner-directed: iam.qualifications declared the
+    authoritative execution-gate store; qms.qualification_record mirrors into it)."""
     required_code = step.required_qualification_code
     if not required_code:
         return

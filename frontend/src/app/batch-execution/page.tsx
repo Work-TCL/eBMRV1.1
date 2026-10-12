@@ -17,6 +17,7 @@ import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { WorkflowStatePill } from "@/components/ui/StatePill";
 import { useCommand } from "@/components/qms/QmsDetailShell";
+import { humanizeLabel } from "@/lib/format";
 
 interface GxpBatch {
   batch_id: string;
@@ -240,7 +241,7 @@ export default function BatchExecutionPage() {
                 <option value="">All</option>
                 {BATCH_STATES.map((s) => (
                   <option key={s} value={s}>
-                    {s}
+                    {humanizeLabel(s)}
                   </option>
                 ))}
               </Select>

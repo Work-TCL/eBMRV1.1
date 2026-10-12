@@ -1,20 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, ApiError, canCorrectVault, clientPagedFetcher, newIdempotencyKey } from "@/lib/api";
-import { useMe, useRequirePermission } from "@/lib/hooks";
+import { useRouter } from "next/navigation";
+import { api, ApiError, canCorrectVault, clientPagedFetcher, newIdempotencyKey, type Me } from "@/lib/api";
+import { useApiResource, useRequirePermission } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
+import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { Modal } from "@/components/ui/Modal";
 import { Field, RowButtonSlot } from "@/components/ui/Field";
-import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 import { Banner } from "@/components/ui/Banner";
-import { SignedJsonForm } from "@/components/shared/SignedJsonForm";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 
 // Matches app/modules/vault/router.py::_object_dict.
@@ -32,13 +32,16 @@ interface VaultObject {
   effective_from: string | null;
   effective_to: string | null;
   supersedes_object_id: string | null;
+  supersedes_internal_version: number | null;
   corrected_from_object_id: string | null;
+  corrected_from_internal_version: number | null;
   retention_class: string | null;
   released_at: string;
   created_by_subject: string | null;
 }
 
-// Matches app/modules/vault/router.py::_correction_dict.
+// Matches app/modules/vault/router.py::_correction_dict + the object_type/business_id/internal_version
+// it now mixes in for the list endpoint below.
 interface Correction {
   correction_id: string;
   record_object_id: string;
@@ -49,19 +52,68 @@ interface Correction {
   resulting_object_id: string | null;
   created_at: string;
   completed_at: string | null;
+  object_type?: string;
+  business_id?: string;
+  internal_version?: number;
 }
 
-const OBJECT_TYPES = ["batch", "material_lot", "rule"];
+// Matches app/modules/vault/router.py::get_business_ids.
+interface BusinessIdOption {
+  business_id: string;
+  latest_internal_version: number;
+  latest_status: string;
+  business_version_label: string | null;
+}
+
+// Every object_type any module actually calls vault_service.release_master/uom_commands with (grep'd
+// across app/modules/*/commands.py + rules/uom_commands.py) — labelled by owning module so the dropdown
+// reads as "which module", not a bare string the user has to already know.
+const OBJECT_TYPES: { value: string; label: string }[] = [
+  { value: "batch", label: "Batch (Batch Execution)" },
+  { value: "batch_execution_snapshot", label: "Batch execution snapshot" },
+  { value: "material_lot", label: "Material Lot (disposition)" },
+  { value: "material_coa", label: "Material CoA" },
+  { value: "product_version", label: "Product Version (Product Master)" },
+  { value: "constituent_compatibility", label: "Constituent Compatibility (Product Master)" },
+  { value: "recipe_version", label: "Recipe Version (Recipe Master)" },
+  { value: "material_specification_version", label: "Material Specification Version" },
+  { value: "qc_test_specification", label: "QC Test Specification" },
+  { value: "qc_method_version", label: "QC Method Version" },
+  { value: "release_package", label: "Release Package" },
+  { value: "controlled_document_version", label: "Controlled Document Version (QMS)" },
+  { value: "rule", label: "Rule (Rules Engine)" },
+  { value: "uom", label: "Unit of Measure (Rules)" },
+  { value: "uom_conversion", label: "UOM Conversion (Rules)" },
+  { value: "validation_master_plan", label: "Validation Master Plan" },
+  { value: "requirement_baseline", label: "Requirement Baseline (Validation)" },
+  { value: "postmarket_surveillance_metric_snapshot", label: "Postmarket Surveillance Metric Snapshot" },
+  { value: "postmarket_periodic_safety_dataset", label: "Postmarket Periodic Safety Dataset" },
+  { value: "postmarket_regulatory_evidence_package", label: "Postmarket Regulatory Evidence Package" },
+];
 
 export default function VaultPage() {
-  const { me } = useRequirePermission("vault.review");
-  const [objectType, setObjectType] = useState(OBJECT_TYPES[0]);
+  const { me, loading: meLoading } = useRequirePermission("vault.review");
+  const router = useRouter();
+  const [objectType, setObjectType] = useState(OBJECT_TYPES[0].value);
   const [businessId, setBusinessId] = useState("");
   const [committed, setCommitted] = useState<{ objectType: string; businessId: string } | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  const [correctionsReloadToken, setCorrectionsReloadToken] = useState(0);
   const [selected, setSelected] = useState<VaultObject | null>(null);
   const [openCorrectionId, setOpenCorrectionId] = useState<string | null>(null);
-  const [correctionLookup, setCorrectionLookup] = useState("");
+
+  // Re-fetched whenever `objectType` changes (useApiResource keys its effect on the path string) — the
+  // Business ID field below only ever offers IDs that really have a released version under this type,
+  // instead of a free-text field the caller could mistype or have to already know by heart.
+  const { data: businessIdOptions, loading: businessIdsLoading } = useApiResource<BusinessIdOption[]>(
+    `/vault/v1/business-ids/${encodeURIComponent(objectType)}`
+  );
+
+  function onObjectTypeChange(next: string) {
+    // Switching record type invalidates whatever business_id was picked for the previous type.
+    setObjectType(next);
+    setBusinessId("");
+  }
 
   function performLookup() {
     if (!businessId.trim()) return;
@@ -108,7 +160,15 @@ export default function VaultPage() {
     {
       key: "supersedes_object_id",
       header: "Supersedes",
-      render: (v) => <span className="tabular fs-1">{v.supersedes_object_id ? v.supersedes_object_id.slice(0, 8) : "—"}</span>,
+      render: (v) => (
+        <span className="tabular fs-1">
+          {v.supersedes_object_id
+            ? v.supersedes_internal_version != null
+              ? `v${v.supersedes_internal_version}`
+              : v.supersedes_object_id.slice(0, 8)
+            : "—"}
+        </span>
+      ),
     },
     {
       key: "actions",
@@ -122,30 +182,98 @@ export default function VaultPage() {
     },
   ];
 
+  const fetchCorrections = clientPagedFetcher<Correction>(
+    async () => api.get<Correction[]>("/vault/v1/corrections"),
+    {
+      searchText: (c) => `${c.business_id ?? ""} ${c.object_type ?? ""} ${c.status} ${c.reason_code ?? ""}`,
+      sortValue: (c, sortBy) => (sortBy === "created_at" ? c.created_at : null),
+    }
+  );
+
+  const correctionColumns: DataTableColumn<Correction>[] = [
+    {
+      key: "business_id",
+      header: "Record",
+      render: (c) => (
+        <span className="tabular fs-2">
+          {c.object_type ?? "—"} / {c.business_id ?? "—"} (v{c.internal_version ?? "?"})
+        </span>
+      ),
+    },
+    { key: "status", header: "Status" },
+    { key: "reason_code", header: "Reason", render: (c) => c.reason_code ?? "—" },
+    {
+      key: "created_at",
+      header: "Requested at",
+      sortable: true,
+      render: (c) => <span className="tabular fs-2">{new Date(c.created_at).toLocaleString()}</span>,
+    },
+    {
+      key: "signatures",
+      header: "Signatures",
+      render: (c) => <span className="tabular">{c.approved_by_signatures?.length ?? 0} / 2</span>,
+    },
+    {
+      key: "actions",
+      header: "",
+      align: "right",
+      render: (c) => (
+        <Button size="sm" variant="secondary" onClick={() => setOpenCorrectionId(c.correction_id)}>
+          Open
+        </Button>
+      ),
+    },
+  ];
+
   return (
     <div>
       <PageHead
         title="Vault"
         subtitle="Immutable release history - every batch release and material-lot disposition gets a hash-verified snapshot here."
+        action={
+          meLoading ? (
+            <Skeleton width={260} height={36} radius="var(--radius-md)" />
+          ) : canCorrectVault(me) ? (
+            <Button variant="primary" onClick={() => router.push("/vault/release")}>
+              <Icon name="lock" /> Release a master record to the vault
+            </Button>
+          ) : undefined
+        }
       />
 
       <form onSubmit={onSubmitLookup} className="flex items-start gap-4 mb-4" style={{ flexWrap: "wrap" }}>
         <Field label="Record type">
-          <Select value={objectType} onChange={(e) => setObjectType(e.target.value)} style={{ maxWidth: 180 }}>
+          <Select value={objectType} onChange={(e) => onObjectTypeChange(e.target.value)} style={{ maxWidth: 260 }}>
             {OBJECT_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
+              <option key={t.value} value={t.value}>
+                {t.label}
               </option>
             ))}
           </Select>
         </Field>
-        <Field label="Business ID" hint="Batch number, internal lot number, or rule ID.">
-          <Input
+        <Field
+          label="Business ID"
+          hint={
+            businessIdsLoading
+              ? "Loading…"
+              : businessIdOptions && businessIdOptions.length === 0
+                ? "No released record of this type yet."
+                : "Only business IDs with a released version under this record type are listed."
+          }
+        >
+          <Select
             value={businessId}
             onChange={(e) => setBusinessId(e.target.value)}
-            placeholder="e.g. B-2026-031"
-            style={{ minWidth: 220 }}
-          />
+            disabled={businessIdsLoading || !businessIdOptions?.length}
+            style={{ minWidth: 280 }}
+          >
+            <option value="">Select…</option>
+            {(businessIdOptions ?? []).map((b) => (
+              <option key={b.business_id} value={b.business_id}>
+                {b.business_id} (v{b.latest_internal_version}, {b.latest_status})
+              </option>
+            ))}
+          </Select>
         </Field>
         <RowButtonSlot>
           <Button type="submit" variant="primary" disabled={!businessId.trim()}>
@@ -154,7 +282,7 @@ export default function VaultPage() {
         </RowButtonSlot>
       </form>
 
-      <Card>
+      <Card className="mb-4">
         <CardHeader title={committed ? `${committed.objectType} / ${committed.businessId}` : "Version history"} />
         <DataTable
           columns={versionColumns}
@@ -162,7 +290,7 @@ export default function VaultPage() {
           rowKey={(v) => v.object_id}
           searchPlaceholder="Search by status or version label…"
           emptyIcon="lock"
-          emptyMessage={committed ? "No released version exists for this record yet." : "Enter a business ID above and look it up."}
+          emptyMessage={committed ? "No released version exists for this record yet." : "Pick a record type and business ID above and look it up."}
           defaultSort={{ by: "internal_version", dir: "desc" }}
           reloadToken={reloadToken}
         />
@@ -171,36 +299,41 @@ export default function VaultPage() {
       {selected && (
         <ObjectDetailModal
           object={selected}
+          me={me}
           onClose={() => setSelected(null)}
           onCorrectionRequested={(correctionId) => {
             setSelected(null);
             setOpenCorrectionId(correctionId);
+            setCorrectionsReloadToken((n) => n + 1);
           }}
         />
       )}
 
-      {canCorrectVault(me) && (
-        <Card pad className="mb-4">
+      {meLoading ? (
+        <Card className="mb-4">
           <CardHeader title="Complete a correction" meta="2-signature: corrector, then an independent approver" />
-          <p className="hint mb-3">
-            Each signer opens the correction by its ID (given by whoever requested it, or shown here right
-            after you sign as the first signer) and confirms the corrected content before signing.
-          </p>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (correctionLookup.trim()) setOpenCorrectionId(correctionLookup.trim());
-            }}
-            className="flex items-end gap-4 flex-wrap"
-          >
-            <Field label="Correction ID">
-              <Input value={correctionLookup} onChange={(e) => setCorrectionLookup(e.target.value)} style={{ minWidth: 320 }} />
-            </Field>
-            <Button type="submit" variant="secondary" disabled={!correctionLookup.trim()}>
-              Open
-            </Button>
-          </form>
+          <TableSkeleton columns={[{ header: "Record" }, { header: "Status" }, { header: "Reason" }, { header: "Requested at" }, { header: "Signatures" }, { header: "" }]} />
         </Card>
+      ) : (
+        canCorrectVault(me) && (
+        <Card className="mb-4">
+          <CardHeader title="Complete a correction" meta="2-signature: corrector, then an independent approver" />
+          <p className="hint mb-3" style={{ padding: "0 var(--space-5)" }}>
+            Open any correction below to confirm the corrected content and sign. A correction needs two
+            signatures from independent people before it produces a new vault version.
+          </p>
+          <DataTable
+            columns={correctionColumns}
+            fetchPage={fetchCorrections}
+            rowKey={(c) => c.correction_id}
+            searchPlaceholder="Search by business ID, type, status or reason…"
+            emptyIcon="lock"
+            emptyMessage="No open corrections."
+            defaultSort={{ by: "created_at", dir: "desc" }}
+            reloadToken={correctionsReloadToken}
+          />
+        </Card>
+        )
       )}
 
       {openCorrectionId && (
@@ -210,55 +343,29 @@ export default function VaultPage() {
           onDone={() => {
             setOpenCorrectionId(null);
             performLookup();
+            setCorrectionsReloadToken((n) => n + 1);
           }}
         />
       )}
-
-      <SignedJsonForm
-        title="Release a master record to the vault - signed"
-        subtitle="The generic release path - domain modules that already run their own release ceremony (batch release, material lot disposition) never reach this; use it only for a record type with no dedicated release flow of its own."
-        root="/vault/v1"
-        me={me}
-        ops={[
-          {
-            postPath: "masters/{object_type}/{business_id}/release",
-            challengePath: "masters/{object_type}/{business_id}/signature-challenges",
-            action: "release",
-            label: "Release a master record",
-            requiredPermission: "vault.correct",
-            mirrorBodyInChallenge: true,
-            fields: [
-              { name: "object_type", label: "Object type", required: true },
-              { name: "business_id", label: "Business ID", required: true },
-              { name: "canonical_payload", label: "Canonical payload", type: "kv", required: true, hint: "The exact record content being released, as key/value pairs." },
-              { name: "business_version_label", label: "Business version label", hint: "Optional." },
-              {
-                name: "evidence", label: "Evidence", type: "repeat", itemLabel: "Evidence item",
-                subFields: [
-                  { name: "evidence_id", label: "Evidence object ID", required: true },
-                  { name: "evidence_sha256", label: "SHA-256", required: true },
-                  { name: "media_type", label: "Media type" },
-                  { name: "sequence", label: "Sequence", type: "number" },
-                ],
-              },
-            ],
-          },
-        ]}
-      />
     </div>
   );
 }
 
 function ObjectDetailModal({
   object,
+  me,
   onClose,
   onCorrectionRequested,
 }: {
   object: VaultObject;
+  // Passed down from VaultPage's own `useRequirePermission` rather than this modal calling `useMe()`
+  // itself: the parent already knows `me` by the time a row can be clicked open, so re-fetching here
+  // would just be a second `/auth/me` round trip that briefly hides "Request correction" behind its own
+  // loading window every time the modal opens.
+  me: Me | null;
   onClose: () => void;
   onCorrectionRequested: (correctionId: string) => void;
 }) {
-  const { me } = useMe();
   const [integrity, setIntegrity] = useState<{ digest_valid: boolean; link_valid: boolean } | null>(null);
   const [checking, setChecking] = useState(false);
   const [correctionOpen, setCorrectionOpen] = useState(false);
@@ -288,7 +395,14 @@ function ObjectDetailModal({
             ["Digest", `${object.digest_algorithm}:${object.digest}`],
             ["Effective from", object.effective_from ? new Date(object.effective_from).toLocaleString() : "—"],
             ["Retention class", object.retention_class ?? "—"],
-            ["Corrected from", object.corrected_from_object_id ?? "—"],
+            [
+              "Corrected from",
+              object.corrected_from_object_id
+                ? object.corrected_from_internal_version != null
+                  ? `v${object.corrected_from_internal_version}`
+                  : object.corrected_from_object_id
+                : "—",
+            ],
           ] as [string, string][]
         ).map(([label, value]) => (
           <div key={label} className="flex gap-3 fs-2" style={{ padding: "4px 0" }}>

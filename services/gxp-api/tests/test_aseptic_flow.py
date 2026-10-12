@@ -185,6 +185,17 @@ async def test_full_operation_lifecycle_ready_area_starts_and_completes(client, 
     )
     assert resp.status_code == 200, resp.text
 
+    # 2026-10-08 (real user report): GET .../operations/{id} now embeds this operation's interventions/
+    # events so the detail view can show them -- previously the response had neither array at all.
+    detail = (await client.get(f"/aseptic/v1/operations/{operation_id}", headers=auth_headers(op_token))).json()
+    assert len(detail["interventions"]) == 1
+    assert detail["interventions"][0]["intervention_type"] == "routine"
+    assert detail["interventions"][0]["location"] == "Fill line A"
+    assert detail["interventions"][0]["operator_username"] == "aseptic.operator"
+    assert len(detail["events"]) == 1
+    assert detail["events"][0]["event_type"] == "gowning_check"
+    assert detail["events"][0]["severity"] == "info"
+
     challenge = (
         await client.post(f"/aseptic/v1/operations/{operation_id}/signature-challenges", json={"action": "complete"}, headers=auth_headers(op_token))
     ).json()
@@ -434,7 +445,9 @@ async def test_create_operation_requires_role(client, seeded):
 
 async def test_start_requires_supervisor_role(client, seeded):
     """Row 113 is granted to Aseptic Supervisor, not Aseptic Operator -- the operator who created the
-    operation cannot also authorize its start."""
+    operation cannot also authorize its start. 2026-10-08: the signature-challenges endpoint itself now
+    enforces this (previously it issued a challenge to anyone; only the real POST .../start caught the
+    role gap) -- the rejection now happens one step earlier, at the challenge request."""
     site_id = seeded["site_id"]
     area_id = seeded["areas"]["AREA-GRADE-C"].id
     profile_id = str(seeded["aseptic_profile"].id)
@@ -447,16 +460,11 @@ async def test_start_requires_supervisor_role(client, seeded):
     )
     operation_id = resp.json()["aggregate_id"]
 
-    challenge = (
-        await client.post(f"/aseptic/v1/operations/{operation_id}/signature-challenges", json={"action": "start"}, headers=auth_headers(op_token))
-    ).json()
-    resp = await client.post(
-        f"/aseptic/v1/operations/{operation_id}/start",
-        json={"idempotency_key": idem(), "operation_id": operation_id, "expected_version": 1, "challenge_id": challenge["challenge_id"], "reauth_password": "ChangeMe123!"},
-        headers=auth_headers(op_token),
+    challenge_resp = await client.post(
+        f"/aseptic/v1/operations/{operation_id}/signature-challenges", json={"action": "start"}, headers=auth_headers(op_token)
     )
-    assert resp.status_code == 403
-    assert resp.json()["code"] == "ROLE_MISSING"
+    assert challenge_resp.status_code == 403
+    assert challenge_resp.json()["code"] == "ROLE_MISSING"
 
 
 async def test_unauthenticated_create_rejected(client, seeded):
@@ -800,9 +808,13 @@ async def test_list_operations_paginated_and_resolves_labels(client, seeded, db)
     assert row["area_code"] == "AREA-GRADE-A"
     assert row["profile_number"] == seeded["aseptic_profile"].profile_number
 
+    # 2026-10-08: GET /operations had no policy check at all until now -- any authenticated actor, any
+    # role, any site, could query another site's operations (the old assertion here was "returns an
+    # empty list", i.e. it silently *allowed* the cross-site query). aseptic.operator holds no role at
+    # this random site, so the real fix is denying the query outright, not filtering it to empty.
     other_site_resp = await client.get(f"/aseptic/v1/operations?site_id={uuid.uuid4()}", headers=auth_headers(op_token))
-    assert other_site_resp.status_code == 200
-    assert other_site_resp.json()["items"] == []
+    assert other_site_resp.status_code == 403
+    assert other_site_resp.json()["code"] == "ROLE_MISSING"
 
 
 async def test_list_operations_filters_by_batch_id(client, seeded, db):

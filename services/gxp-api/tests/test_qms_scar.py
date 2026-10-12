@@ -400,6 +400,17 @@ async def test_closure_captures_requalification_capa_and_alternate_source(client
     assert scar.capa_required is True
     assert scar.source_status_decision == "requalify"
 
+    # Client gap-closure item #1 (2026-10-09, project-owner-directed): capa_required now auto-creates a
+    # real OPEN CapaRecord in the same transaction, source_type="supplier" (pointing at the parent
+    # SupplierQualityCase, the only validated FK CAPA_SOURCE_TYPES offers for this module).
+    from sqlalchemy import select
+    from app.modules.qms.capa_models import CapaRecord
+    capa = (
+        await db.execute(select(CapaRecord).where(CapaRecord.source_type == "supplier", CapaRecord.source_id == uuid.UUID(case_id)))
+    ).scalar_one()
+    assert capa.state == "OPEN"
+    assert capa.root_cause_ref["proactive_rationale"] == "Systemic gauge calibration issue."
+
 
 # --- Signature-challenge ceremony entry point (SG-138 engineering half) -------------------------
 

@@ -2,11 +2,15 @@ import uuid
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.core.security import AuthenticatedActor, get_current_actor
+from app.modules.batch_execution.models import Batch
 from app.modules.policy.service import evaluate_policy
+from app.modules.product_master.models import ProductVersion
+from app.modules.qms.read_support import resolve_vault_object_label
 from app.modules.release import service as release_service
 from app.modules.release.commands import (
     EvaluateReleaseScopeCommand,
@@ -36,19 +40,38 @@ class ReleaseSignatureChallengeRequest(BaseModel):
     action: str
 
 
-def _scope_dict(scope) -> dict:
+def _scope_dict(scope, refs: dict | None = None) -> dict:
+    refs = refs or {}
     return {
         "scope_id": str(scope.id),
         "site_id": str(scope.site_id),
         "scope_type": scope.scope_type,
         "target_id": str(scope.scope_id),
         "product_version_id": str(scope.product_version_id),
+        "product_code": refs.get("product_code"),
+        "product_name": refs.get("product_name"),
         "batch_id": str(scope.batch_id),
+        "batch_number": refs.get("batch_number"),
         "state": scope.state,
         "version": scope.version,
         "current_evaluation_id": str(scope.current_evaluation_id) if scope.current_evaluation_id else None,
         "released_vault_object_id": str(scope.released_vault_object_id) if scope.released_vault_object_id else None,
+        "released_vault_object_label": refs.get("released_vault_object_label"),
         "decision_at": scope.decision_at.isoformat() if scope.decision_at else None,
+    }
+
+
+async def _resolve_scope_refs(session: AsyncSession, scope) -> dict:
+    """Resolves the batch/product foreign keys `_scope_dict` labels for -- same shape as the batch-
+    resolution helpers in packaging/qa_review's own routers, single-scope since this page only ever
+    views one scope at a time (no list endpoint exists for `release_scope`)."""
+    batch = await session.get(Batch, scope.batch_id)
+    product = await session.get(ProductVersion, scope.product_version_id)
+    return {
+        "batch_number": batch.batch_number if batch else None,
+        "product_code": product.product_code if product else None,
+        "product_name": product.name if product else None,
+        "released_vault_object_label": await resolve_vault_object_label(session, scope.released_vault_object_id),
     }
 
 
@@ -102,7 +125,8 @@ async def get_eligibility(
     scope = await release_service.get_scope(session, scope_id)
     await evaluate_policy(session, actor.user_id, action="release.view", site_id=scope.site_id)
     evaluation = await release_service.get_current_evaluation(session, scope)
-    return {"scope": _scope_dict(scope), "evaluation": _evaluation_dict(evaluation) if evaluation else None}
+    refs = await _resolve_scope_refs(session, scope)
+    return {"scope": _scope_dict(scope, refs), "evaluation": _evaluation_dict(evaluation) if evaluation else None}
 
 
 @router.post("/scopes/{scope_id}/signature-challenges")
@@ -188,8 +212,9 @@ async def get_package(
     await evaluate_policy(session, actor.user_id, action="release.view", site_id=scope.site_id)
     evaluation = await release_service.get_current_evaluation(session, scope)
     decisions = await release_service.get_decisions(session, scope_id)
+    refs = await _resolve_scope_refs(session, scope)
     return {
-        "scope": _scope_dict(scope),
+        "scope": _scope_dict(scope, refs),
         "evaluation": _evaluation_dict(evaluation) if evaluation else None,
         "decisions": [_decision_dict(d) for d in decisions],
     }
@@ -225,4 +250,7 @@ async def get_scope_by_target(
     else:
         raise ValidationFailedError("Only scope_type 'batch' is supported this pass", scope_type=scope_type)
     await evaluate_policy(session, actor.user_id, action="release.view", site_id=site_id)
-    return _scope_dict(scope) if scope is not None else None
+    if scope is None:
+        return None
+    refs = await _resolve_scope_refs(session, scope)
+    return _scope_dict(scope, refs)

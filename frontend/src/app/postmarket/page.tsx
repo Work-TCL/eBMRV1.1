@@ -1,19 +1,42 @@
 "use client";
 
 import { useState } from "react";
-import { api, ApiError, hasAnyPermission, hasPermission, newIdempotencyKey, type Me, type MutationReceipt } from "@/lib/api";
+import { api, ApiError, hasAnyPermission, hasPermission, newIdempotencyKey, pagedFetcher, type Me, type MutationReceipt } from "@/lib/api";
 import { useMe, useSiteId } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
+import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
 import { Icon } from "@/components/ui/Icon";
+import { Modal } from "@/components/ui/Modal";
+import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
+import { WorkflowStatePill } from "@/components/ui/StatePill";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 import { FormConsole } from "@/components/shared/FormConsole";
 import { SignedJsonForm } from "@/components/shared/SignedJsonForm";
 import { RepeatableRows, buildRepeatArray, type RepeatRow } from "@/components/shared/RepeatableFields";
+import { humanizeLabel } from "@/lib/format";
+
+// Matches app/modules/postmarket/router.py::_safety_case_dict.
+interface SafetyCase {
+  id: string;
+  safety_case_number: string;
+  source_record_type: string;
+  source_record_id: string;
+  source_record_label: string | null;
+  source_record_version: number;
+  state: string;
+  identity_resolution_state: string;
+  reassessment_required: boolean;
+  reportability_referral_required: boolean;
+  current_classification_version: number | null;
+  system_ingested_at: string;
+  version: number;
+}
 
 const REPORT_TYPE_OPTIONS = [
  { value: "MDR_30", label: "MDR 30 day" },
@@ -50,24 +73,120 @@ const canWork = (me: Me | null) =>
   ]);
 
 export default function PostmarketPage() {
-  const { me } = useMe();
+  const { me, loading: meLoading } = useMe();
   const { siteId } = useSiteId();
   const siteIdHint = `This deployment's site ID: ${siteId ?? "loading…"}`;
+
+  const [safetyCaseOpen, setSafetyCaseOpen] = useState(false);
+  const [reportabilityOpen, setReportabilityOpen] = useState(false);
+  const [safetyCasesReload, setSafetyCasesReload] = useState(0);
+  const [viewCase, setViewCase] = useState<SafetyCase | null>(null);
+
+  const [opsSafetySignalOpen, setOpsSafetySignalOpen] = useState(false);
+  const [opsSafetySignalSignedOpen, setOpsSafetySignalSignedOpen] = useState(false);
+  const [opsRegulatoryOpen, setOpsRegulatoryOpen] = useState(false);
+  const [opsRegulatorySignedOpen, setOpsRegulatorySignedOpen] = useState(false);
+  const [opsPart4Open, setOpsPart4Open] = useState(false);
+  const [opsCorrectionSignedOpen, setOpsCorrectionSignedOpen] = useState(false);
 
   return (
     <div>
       <PageHead
         title="Postmarket"
         subtitle="Safety cases, signal management, the regulatory reporting clock and Part 4 obligations."
+        action={
+          meLoading ? (
+            <div className="flex gap-2 flex-wrap">
+              {[150, 190, 200].map((w, i) => (
+                <Skeleton key={i} width={w} height={36} radius="var(--radius-md)" />
+              ))}
+            </div>
+          ) : (
+          <>
+            {canManageSafetyCases(me) && (
+              <Button variant="primary" onClick={() => setSafetyCaseOpen(true)}>
+                <Icon name="plus" /> Open a safety case
+              </Button>
+            )}
+            {canManageReportability(me) && (
+              <Button variant="secondary" onClick={() => setReportabilityOpen(true)}>
+                <Icon name="plus" /> Reportability workbench
+              </Button>
+            )}
+            {canWork(me) && (
+              <>
+                <Button variant="secondary" onClick={() => setOpsSafetySignalOpen(true)}>
+                  Safety case &amp; signal operations
+                </Button>
+                <Button variant="secondary" onClick={() => setOpsSafetySignalSignedOpen(true)}>
+                  <Icon name="pen-line" /> Safety signal operations
+                </Button>
+                <Button variant="secondary" onClick={() => setOpsRegulatoryOpen(true)}>
+                  Regulatory reporting operations
+                </Button>
+                <Button variant="secondary" onClick={() => setOpsRegulatorySignedOpen(true)}>
+                  <Icon name="pen-line" /> Regulatory reporting (signed)
+                </Button>
+                <Button variant="secondary" onClick={() => setOpsPart4Open(true)}>
+                  Part 4 obligations
+                </Button>
+                <Button variant="secondary" onClick={() => setOpsCorrectionSignedOpen(true)}>
+                  <Icon name="pen-line" /> Correction/removal approval
+                </Button>
+              </>
+            )}
+          </>
+          )
+        }
       />
 
       <DashboardCards />
 
-      {canManageSafetyCases(me) && <CreateSafetyCaseCard />}
-      {canManageReportability(me) && <ReportabilityCard />}
+      {meLoading ? (
+        <Card pad className="mb-4">
+          <CardHeader title="Safety cases" />
+          <TableSkeleton columns={[{ header: "Safety case" }, { header: "Source type" }, { header: "State" }, { header: "Identity resolution" }, { header: "" }]} />
+        </Card>
+      ) : (
+        canManageSafetyCases(me) && <SafetyCasesListCard reloadToken={safetyCasesReload} onOpen={setViewCase} />
+      )}
 
-      {canWork(me) && (
-        <>
+      {viewCase && (
+        <Modal open onClose={() => setViewCase(null)} large title={`${viewCase.safety_case_number} - ${viewCase.state}`}>
+          <FactGrid>
+            <Fact label="State"><WorkflowStatePill state={viewCase.state} /></Fact>
+            <Fact label="Identity resolution">{humanizeLabel(viewCase.identity_resolution_state)}</Fact>
+            <Fact label="Source record type">{viewCase.source_record_type}</Fact>
+            <IdFact label="Source record" value={viewCase.source_record_label ?? viewCase.source_record_id} />
+            <Fact label="Source record version">{viewCase.source_record_version}</Fact>
+            <Fact label="Classification version">{viewCase.current_classification_version ?? "—"}</Fact>
+            <Fact label="Reassessment required">{viewCase.reassessment_required ? "Yes" : "No"}</Fact>
+            <Fact label="Reportability referral required">{viewCase.reportability_referral_required ? "Yes" : "No"}</Fact>
+            <Fact label="Ingested at">{new Date(viewCase.system_ingested_at).toLocaleString()}</Fact>
+            <Fact label="Record version">{viewCase.version}</Fact>
+          </FactGrid>
+          <p className="hint mt-3">
+            Use &quot;Safety case &amp; signal operations&quot; (header) to classify, resolve the product,
+            add a follow-up or link duplicates against safety case ID{" "}
+            <span className="tabular">{viewCase.id}</span>.
+          </p>
+        </Modal>
+      )}
+
+      {safetyCaseOpen && (
+        <Modal open onClose={() => setSafetyCaseOpen(false)} title="Open a safety case" large>
+          <CreateSafetyCaseCard onDone={() => setSafetyCasesReload((n) => n + 1)} />
+        </Modal>
+      )}
+
+      {reportabilityOpen && (
+        <Modal open onClose={() => setReportabilityOpen(false)} title="Reportability workbench" large>
+          <ReportabilityCard />
+        </Modal>
+      )}
+
+      {opsSafetySignalOpen && (
+        <Modal open onClose={() => setOpsSafetySignalOpen(false)} title="Safety case & signal operations" large>
           <FormConsole
           title="Safety case & signal operations"
             root="/postmarket/v1"
@@ -182,7 +301,11 @@ export default function PostmarketPage() {
               },
             ]}
           />
+        </Modal>
+      )}
 
+      {opsSafetySignalSignedOpen && (
+        <Modal open onClose={() => setOpsSafetySignalSignedOpen(false)} title="Safety signal operations - signed" large>
           <SignedJsonForm
           title="Safety signal operations - signed"
             subtitle="Opening, assessing and escalating a safety signal now require a Part 11 signature."
@@ -250,7 +373,11 @@ export default function PostmarketPage() {
               },
             ]}
           />
+        </Modal>
+      )}
 
+      {opsRegulatoryOpen && (
+        <Modal open onClose={() => setOpsRegulatoryOpen(false)} title="Regulatory reporting operations" large>
           <FormConsole
           title="Regulatory reporting operations"
             root="/regulatory/v1"
@@ -360,7 +487,11 @@ export default function PostmarketPage() {
               },
             ]}
           />
+        </Modal>
+      )}
 
+      {opsRegulatorySignedOpen && (
+        <Modal open onClose={() => setOpsRegulatorySignedOpen(false)} title="Regulatory reporting operations - signed" large>
           <SignedJsonForm
           title="Regulatory reporting operations - signed"
             subtitle="Deciding reportability and approving a report now require a Part 11 signature."
@@ -395,7 +526,11 @@ export default function PostmarketPage() {
               },
             ]}
           />
+        </Modal>
+      )}
 
+      {opsPart4Open && (
+        <Modal open onClose={() => setOpsPart4Open(false)} title="Part 4 obligations" large>
           <FormConsole
           title="Part 4 obligations"
             root="/postmarket/v1"
@@ -609,7 +744,11 @@ export default function PostmarketPage() {
               },
             ]}
           />
+        </Modal>
+      )}
 
+      {opsCorrectionSignedOpen && (
+        <Modal open onClose={() => setOpsCorrectionSignedOpen(false)} title="Correction/removal independent approval - signed" large>
           <SignedJsonForm
           title="Correction/removal independent approval - signed"
             subtitle="Both the initial assessment and the reportability decision need a second, independent signature."
@@ -646,7 +785,7 @@ export default function PostmarketPage() {
               },
             ]}
           />
-        </>
+        </Modal>
       )}
     </div>
   );
@@ -657,8 +796,14 @@ function DashboardCards() {
   const [calendar, setCalendar] = useState<unknown>(undefined);
 
   async function load() {
-    setDashboard(await api.get<unknown>(`/postmarket/v1/dashboard`).catch((e) => ({ error: String(e) })));
-    setCalendar(await api.get<unknown>(`/postmarket/v1/regulatory-calendar`).catch((e) => ({ error: String(e) })));
+    // Both panels fetched together (not one `await` after the other) so they land in the same render
+    // instead of the calendar panel visibly appearing a beat after the dashboard panel on every "Load".
+    const [dashboardResult, calendarResult] = await Promise.all([
+      api.get<unknown>(`/postmarket/v1/dashboard`).catch((e) => ({ error: String(e) })),
+      api.get<unknown>(`/postmarket/v1/regulatory-calendar`).catch((e) => ({ error: String(e) })),
+    ]);
+    setDashboard(dashboardResult);
+    setCalendar(calendarResult);
   }
 
   return (
@@ -683,7 +828,61 @@ function DashboardCards() {
   );
 }
 
-function CreateSafetyCaseCard() {
+function safetyCaseColumns(onOpen: (c: SafetyCase) => void): DataTableColumn<SafetyCase>[] {
+  return [
+    {
+      key: "safety_case_number",
+      header: "Safety case",
+      sortable: true,
+      render: (c) => <span className="fs-2 font-semibold">{c.safety_case_number}</span>,
+    },
+    { key: "source_record_type", header: "Source type", render: (c) => <span className="fs-2">{c.source_record_type}</span> },
+    { key: "state", header: "State", sortable: true, render: (c) => <WorkflowStatePill state={c.state} /> },
+    {
+      key: "identity_resolution_state",
+      header: "Identity resolution",
+      render: (c) => <span className="fs-2">{humanizeLabel(c.identity_resolution_state)}</span>,
+    },
+    {
+      key: "open",
+      header: "",
+      align: "right",
+      render: (c) => (
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpen(c);
+          }}
+        >
+          View
+        </Button>
+      ),
+    },
+  ];
+}
+
+function SafetyCasesListCard({ reloadToken, onOpen }: { reloadToken: number; onOpen: (c: SafetyCase) => void }) {
+  const fetchCases = pagedFetcher<SafetyCase>("/postmarket/v1/safety-cases");
+  return (
+    <Card pad className="mb-4">
+      <CardHeader title="Safety cases" />
+      <DataTable
+        columns={safetyCaseColumns(onOpen)}
+        fetchPage={fetchCases}
+        rowKey={(c) => c.id}
+        searchPlaceholder="Search safety case number…"
+        emptyMessage='No safety cases yet - use "Open a safety case" above to add one.'
+        defaultSort={{ by: "created_at", dir: "desc" }}
+        onRowClick={onOpen}
+        reloadToken={reloadToken}
+      />
+    </Card>
+  );
+}
+
+function CreateSafetyCaseCard({ onDone }: { onDone: () => void }) {
   const { siteId } = useSiteId();
   const [f, setF] = useState({
     safety_case_number: "",
@@ -718,6 +917,7 @@ function CreateSafetyCaseCard() {
           : null,
       });
       setNewId(receipt.aggregate_id);
+      onDone();
     } catch (err) {
       setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Create failed");
     } finally {
@@ -726,8 +926,7 @@ function CreateSafetyCaseCard() {
   }
 
   return (
-    <Card pad className="mb-4">
-      <CardHeader title="Open a safety case" />
+    <>
       <form onSubmit={submit} className="grid grid-cols-2 gap-4 mt-3">
         <Field label="Safety case number" required>
           <Input value={f.safety_case_number} onChange={(e) => set("safety_case_number", e.target.value)} required />
@@ -756,7 +955,7 @@ function CreateSafetyCaseCard() {
           </Button>
         </div>
       </form>
-    </Card>
+    </>
   );
 }
 
@@ -785,7 +984,7 @@ function ReportabilityCard() {
         safety_case_id: safetyCaseId.trim(),
         tracks: buildRepeatArray(TRACK_SUBFIELDS, tracks),
       });
-      setMsg("Reportability tracks created. Use the regulatory operations console below to calculate deadlines and record decisions.");
+      setMsg("Reportability tracks created. Use \"Regulatory reporting operations\" (header) to calculate deadlines and record decisions.");
     } catch (err) {
       setMsg(err instanceof ApiError ? `${err.code}: ${err.message}` : "Create failed");
     } finally {
@@ -796,11 +995,11 @@ function ReportabilityCard() {
   const missingTracks = buildRepeatArray(TRACK_SUBFIELDS, tracks).length === 0;
 
   return (
-    <Card pad className="mb-4">
-      <CardHeader title="Reportability workbench" />
+    <>
       <p className="fs-2 text-muted mb-3">
         Open the reportability tracks for a safety case (one per applicable report type). The regulatory
-        clock, decision and report build then run per track in the operations console below.
+        clock, decision and report build then run per track in the &quot;Regulatory reporting
+        operations&quot; console (header button).
       </p>
       <form onSubmit={createTracks}>
         <Field label="Safety case ID" required>
@@ -820,6 +1019,6 @@ function ReportabilityCard() {
           {busy ? "Creating…" : "Create reportability tracks"}
         </Button>
       </form>
-    </Card>
+    </>
   );
 }

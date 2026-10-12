@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
 from app.modules.equipment import commands as equipment_commands
+from app.modules.genealogy import service as genealogy_service
 from app.modules.equipment.sterilization_models import (
     INTEGRITY_TEST_PHASES,
     ProcessCycle,
@@ -475,6 +476,26 @@ async def review_cycle(
             item.sterile_status_expiry = expiry
             item.version += 1
         event_type = "SterilizationCycleAccepted"
+
+        # Client gap-closure item #11 (2026-10-09, project-owner-directed: "Sterilization (evidence
+        # edges)"). The accepted cycle itself IS the sterility evidence (STR-FR-009: only this
+        # independent review, never a self-attested result, can make a cycle ACCEPTED) -- modelled as a
+        # real `evidence_record` genealogy node, STERILIZED_IN-edged from the batch this cycle ran
+        # against, when one is named (`cycle.batch_id` is nullable -- equipment/CIP-SIP cycles with no
+        # specific batch create no edge, same optionality batch_id itself already has).
+        if cycle.batch_id is not None:
+            batch_genealogy_node = await genealogy_service.get_or_create_node(
+                session, site_id=cycle.site_id, node_type="drug_batch", authoritative_record_type="batch",
+                authoritative_record_id=cycle.batch_id, actor_user_id=actor_user_id,
+            )
+            evidence_node = await genealogy_service.get_or_create_node(
+                session, site_id=cycle.site_id, node_type="evidence_record", authoritative_record_type="process_cycle",
+                authoritative_record_id=cycle.id, actor_user_id=actor_user_id,
+            )
+            await genealogy_service.create_edge(
+                session, from_node_id=batch_genealogy_node.id, to_node_id=evidence_node.id,
+                edge_type="STERILIZED_IN", actor_user_id=actor_user_id,
+            )
     else:
         cycle.state = "FAILED"
         cycle.requires_deviation = True

@@ -7,11 +7,13 @@ from app.core.db import get_session
 from app.core.security import AuthenticatedActor, get_current_actor
 from app.modules.genealogy import service as genealogy_service
 from app.modules.policy.service import evaluate_policy
+from app.modules.qms.read_support import resolve_source_label
 
 router = APIRouter(prefix="/genealogy/v1", tags=["genealogy"])
 
 
-def _node_dict(node) -> dict:
+async def _node_dict(session: AsyncSession, node) -> dict:
+    label = await resolve_source_label(session, node.authoritative_record_type, node.authoritative_record_id)
     return {
         "node_id": str(node.id),
         "site_id": str(node.site_id),
@@ -19,6 +21,7 @@ def _node_dict(node) -> dict:
         "business_ref": node.business_ref,
         "authoritative_record_type": node.authoritative_record_type,
         "authoritative_record_id": str(node.authoritative_record_id) if node.authoritative_record_id else None,
+        "authoritative_record_label": label,
         "authoritative_version": node.authoritative_version,
         "record_hash": node.record_hash,
     }
@@ -40,10 +43,10 @@ def _edge_dict(edge) -> dict:
     }
 
 
-def _trace_dict(trace: dict) -> dict:
+async def _trace_dict(session: AsyncSession, trace: dict) -> dict:
     return {
         "root_node_id": str(trace["root_node_id"]),
-        "nodes": [_node_dict(n) for n in trace["nodes"]],
+        "nodes": [await _node_dict(session, n) for n in trace["nodes"]],
         "edge_ids": [str(e) for e in trace["edge_ids"]],
         "edges": [_edge_dict(e) for e in trace["edges"]],
         "truncated": trace["truncated"],
@@ -60,7 +63,7 @@ async def get_nodes_lookup(
 ) -> list[dict]:
     await evaluate_policy(session, actor.user_id, action="genealogy.view", site_id=site_id)
     nodes = await genealogy_service.lookup(session, site_id, node_type=node_type, business_ref=business_ref)
-    return [_node_dict(n) for n in nodes]
+    return [await _node_dict(session, n) for n in nodes]
 
 
 @router.get("/nodes/{node_id}/ancestors")
@@ -71,7 +74,7 @@ async def get_node_ancestors(
 ) -> dict:
     node = await genealogy_service.get_node(session, node_id)
     await evaluate_policy(session, actor.user_id, action="genealogy.view", site_id=node.site_id)
-    return _trace_dict(await genealogy_service.get_ancestors(session, node_id))
+    return await _trace_dict(session, await genealogy_service.get_ancestors(session, node_id))
 
 
 @router.get("/nodes/{node_id}/descendants")
@@ -82,7 +85,7 @@ async def get_node_descendants(
 ) -> dict:
     node = await genealogy_service.get_node(session, node_id)
     await evaluate_policy(session, actor.user_id, action="genealogy.view", site_id=node.site_id)
-    return _trace_dict(await genealogy_service.get_descendants(session, node_id))
+    return await _trace_dict(session, await genealogy_service.get_descendants(session, node_id))
 
 
 @router.get("/serial/{serial}/full-trace")
@@ -95,9 +98,9 @@ async def get_serial_full_trace(
     await evaluate_policy(session, actor.user_id, action="genealogy.view", site_id=site_id)
     trace = await genealogy_service.full_trace(session, site_id, serial)
     return {
-        "root": _node_dict(trace["root"]),
-        "ancestors": _trace_dict(trace["ancestors"]),
-        "descendants": _trace_dict(trace["descendants"]),
+        "root": await _node_dict(session, trace["root"]),
+        "ancestors": await _trace_dict(session, trace["ancestors"]),
+        "descendants": await _trace_dict(session, trace["descendants"]),
     }
 
 
@@ -111,7 +114,7 @@ async def get_material_lot_affected_products(
     await evaluate_policy(session, actor.user_id, action="genealogy.view", site_id=site_id)
     result = await genealogy_service.affected_products(session, site_id, lot)
     return {
-        "root": _node_dict(result["root"]),
-        "affected_products": [_node_dict(n) for n in result["affected_products"]],
+        "root": await _node_dict(session, result["root"]),
+        "affected_products": [await _node_dict(session, n) for n in result["affected_products"]],
         "truncated": result["truncated"],
     }

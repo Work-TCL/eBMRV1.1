@@ -11,7 +11,7 @@ row" precedent.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -132,7 +132,9 @@ class EmExcursion(Base):
     affected_time_end: Mapped[datetime | None] = mapped_column()
     affected_batch_ids: Mapped[dict | None] = mapped_column(JSONB)
     organism_details: Mapped[dict | None] = mapped_column(JSONB)
-    disposition: Mapped[str | None] = mapped_column(String(40))
+    # Migration 0140: widened from String(40) -- too narrow for any real disposition narrative, truncated
+    # at the DB layer with an uncaught error before anyone could write a realistic sentence here.
+    disposition: Mapped[str | None] = mapped_column(Text())
     impact_assessed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"))
     impact_assessed_at: Mapped[datetime | None] = mapped_column()
     requires_deviation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

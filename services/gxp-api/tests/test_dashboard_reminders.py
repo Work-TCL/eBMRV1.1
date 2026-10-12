@@ -9,11 +9,14 @@ from datetime import date, timedelta
 
 from sqlalchemy import select
 
+from datetime import datetime, timezone
+
 from app.modules.equipment.models import EquipmentAsset
 from app.modules.material.models import MaterialLot
 from tests.conftest import auth_headers, idem, login
 from tests.test_equipment_flow import _calibrate, _create_asset, _qualify
 from tests.test_material_flow import _create_material
+from tests.test_qms_risk import _accept, _add_controls, _add_initial_assessment, _add_residual_assessment, _create_risk, _setup
 from tests.test_supplier_quality import _site_id_for, _approve_flow, _create_supplier
 
 
@@ -146,3 +149,39 @@ async def test_reminders_lists_approved_supplier_qualification_expiry(client, se
     assert len(rows) == 1
     assert rows[0]["category"] == "supplier_qualification"
     assert "Reminder Test Supplier Co." in rows[0]["label"]
+
+
+async def test_reminders_lists_accepted_risk_with_review_due_within_horizon(client, seeded, db):
+    """RSK-FR-013/017: an ACCEPTED risk's next_review_due_at surfaces here as a 'coming due' reminder --
+    the one cheap, non-regulated half of the documented no-scheduler gap (no code path alerts anyone
+    proactively otherwise; see risk_models.py's module-level comment)."""
+    owner, methodology_id = await _setup(db, seeded, "remind1")
+    token = await login(client, "admin.riskremind1")
+
+    risk_id = await _create_risk(client, token, seeded["site_id"], owner.id, risk_number="RSK-REMIND-1")
+    assert (await _add_initial_assessment(client, token, risk_id, 1, methodology_id=methodology_id)).status_code == 200
+    assert (await _add_controls(client, token, risk_id, 2)).status_code == 200
+    assert (await _add_residual_assessment(client, token, risk_id, 3)).status_code == 200
+
+    due_soon = datetime.now(timezone.utc) + timedelta(days=10)
+    resp = await _accept(client, token, risk_id, 4, next_review_due_at=due_soon.isoformat())
+    assert resp.status_code == 200, resp.text
+
+    resp = await client.get("/dashboard/v1/reminders?within_days=365", headers=auth_headers(token))
+    assert resp.status_code == 200, resp.text
+    rows = [r for r in resp.json() if r["entity_id"] == risk_id]
+    assert len(rows) == 1
+    assert rows[0]["category"] == "risk_review_due"
+    assert "RSK-REMIND-1" in rows[0]["label"]
+
+
+async def test_reminders_excludes_risk_not_yet_accepted(client, seeded, db):
+    """A risk still mid-assessment has no next_review_due_at yet -- nothing to remind anyone of."""
+    owner, _methodology_id = await _setup(db, seeded, "remind2")
+    token = await login(client, "admin.riskremind2")
+
+    risk_id = await _create_risk(client, token, seeded["site_id"], owner.id, risk_number="RSK-REMIND-2")
+
+    resp = await client.get("/dashboard/v1/reminders?within_days=365", headers=auth_headers(token))
+    assert resp.status_code == 200, resp.text
+    assert not any(r["entity_id"] == risk_id for r in resp.json())

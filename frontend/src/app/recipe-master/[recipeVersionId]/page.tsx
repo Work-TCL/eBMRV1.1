@@ -166,8 +166,13 @@ export default function RecipeVersionDetailPage({ params }: { params: Promise<{ 
             <Fact label="Sections / Steps">
               {(v.sections?.length ?? 0)} / {(v.steps?.length ?? 0)}
             </Fact>
-            {v.superseded_by_version_id && <IdFact label="Superseded by" value={v.superseded_by_version_id} />}
-            <IdFact label="Released vault object" value={v.released_vault_object_id} />
+            {v.superseded_by_version_id && (
+              <IdFact
+                label="Superseded by"
+                value={v.superseded_by_version_no != null ? `v${v.superseded_by_version_no}` : v.superseded_by_version_id}
+              />
+            )}
+            <IdFact label="Released vault object" value={v.released_vault_object_label ?? v.released_vault_object_id} />
             <Fact label="Version hash">
               <span className="tabular fs-2" style={{ wordBreak: "break-all" }}>
                 {v.version_hash ?? "—"}

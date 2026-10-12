@@ -29,6 +29,7 @@ import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
 import { Table, EmptyState } from "@/components/ui/Table";
+import { humanizeLabel } from "@/lib/format";
 
 interface EquipmentDashboard {
   site_id: string;
@@ -213,7 +214,7 @@ export default function EquipmentPage() {
                 <option value="">All</option>
                 {ASSET_STATES.map((s) => (
                   <option key={s} value={s}>
-                    {s}
+                    {humanizeLabel(s)}
                   </option>
                 ))}
               </Select>
@@ -542,7 +543,7 @@ function CreateAreaModal({
                 <option value="">—</option>
               {AREA_CLASSIFICATIONS.map((c) => (
                 <option key={c} value={c}>
-                  {c}
+                  {humanizeLabel(c)}
                 </option>
               ))}
             </Select>

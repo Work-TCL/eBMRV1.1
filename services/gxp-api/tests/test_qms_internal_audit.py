@@ -183,6 +183,18 @@ async def test_full_lifecycle_success(client, seeded, db):
     assert finding.capa_required is True
     assert finding.capa_rationale == "Systemic monitoring gap."
 
+    # Client gap-closure item #1 (2026-10-09, project-owner-directed): capa_required now auto-creates a
+    # real OPEN CapaRecord in the same transaction, source_type="audit" (pointing at the parent
+    # InternalAudit -- the only validated FK CAPA_SOURCE_TYPES offers; no separate "audit_finding" source
+    # type exists).
+    from sqlalchemy import select
+    from app.modules.qms.capa_models import CapaRecord
+    capa = (
+        await db.execute(select(CapaRecord).where(CapaRecord.source_type == "audit", CapaRecord.source_id == uuid.UUID(audit_id)))
+    ).scalar_one()
+    assert capa.state == "OPEN"
+    assert capa.root_cause_ref["proactive_rationale"] == "Systemic monitoring gap."
+
     resp = await _close(client, token, audit_id, 3)
     assert resp.status_code == 200, resp.text  # audit 3 -> 4
     assert resp.json()["resulting_version"] == 4

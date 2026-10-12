@@ -22,6 +22,7 @@ import { Fact, FactGrid, IdFact } from "@/components/ui/FactGrid";
 import { summarizeJson } from "@/components/ui/JsonPanel";
 import { StatePill, WorkflowStatePill } from "@/components/ui/StatePill";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
+import { humanizeLabel } from "@/lib/format";
 
 interface Scope {
   scope_id: string;
@@ -29,11 +30,15 @@ interface Scope {
   scope_type: string;
   target_id: string;
   product_version_id: string;
+  product_code: string | null;
+  product_name: string | null;
   batch_id: string;
+  batch_number: string | null;
   state: string;
   version: number;
   current_evaluation_id: string | null;
   released_vault_object_id: string | null;
+  released_vault_object_label: string | null;
   decision_at: string | null;
 }
 
@@ -171,7 +176,7 @@ export default function ReleasePage() {
           <Select value={scopeType} onChange={(e) => setScopeType(e.target.value)}>
             {SCOPE_TYPES.map((s) => (
               <option key={s} value={s}>
-                {s}
+                {humanizeLabel(s)}
               </option>
             ))}
           </Select>
@@ -272,9 +277,16 @@ export default function ReleasePage() {
               <Fact label="Decision at">{scope.decision_at ? formatDateTime(scope.decision_at) : "—"}</Fact>
               <Fact label="Record version">{scope.version}</Fact>
               <IdFact label="Scope ID" value={scope.scope_id} />
-              <IdFact label="Batch" value={scope.batch_id} />
-              <IdFact label="Product version" value={scope.product_version_id} />
-              <IdFact label="Released vault object" value={scope.released_vault_object_id} />
+              {scope.batch_number ? <Fact label="Batch">{scope.batch_number}</Fact> : <IdFact label="Batch" value={scope.batch_id} />}
+              {scope.product_code ? (
+                <Fact label="Product">{`${scope.product_name} (${scope.product_code})`}</Fact>
+              ) : (
+                <IdFact label="Product version" value={scope.product_version_id} />
+              )}
+              <IdFact
+                label="Released vault object"
+                value={scope.released_vault_object_label ?? scope.released_vault_object_id}
+              />
             </FactGrid>
 
             {/* release/models.py::ALLOWED_TRANSITIONS is lowercase ("released"/"rejected"/…) and per-action

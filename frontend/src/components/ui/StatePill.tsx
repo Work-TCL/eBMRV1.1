@@ -91,6 +91,9 @@ const TERMINAL_INERT = new Set([
   "CANCELLED", "OBSOLETE", "SUPERSEDED", "FROZEN", "NO_INVESTIGATION_JUSTIFIED", "SUSPENDED",
   // Evidence module: archived/purged objects are retained history, not actionable.
   "ARCHIVED", "PURGED",
+  // Change Control rollback (SG-071) -- a terminal disposition distinct from CANCELLED (abandoned
+  // before implementing): implementation/verification started, then had to be undone.
+  "ROLLED_BACK",
 ]);
 const FAILED = new Set([
   "EFFECTIVENESS_FAILED", "REJECTED", "OUT_OF_SERVICE",

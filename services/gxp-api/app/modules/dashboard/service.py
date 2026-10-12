@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.equipment.models import EquipmentAsset
 from app.modules.material.models import Material, MaterialLot
 from app.modules.notifications import service as notifications_service
+from app.modules.qms.risk_models import RiskRecord
 from app.modules.supplier_quality.models import Supplier, SupplierQualification, SupplierSite
 
 # MaterialLot states that mean the lot is no longer in active use -- a reminder about an already-consumed,
@@ -104,6 +105,34 @@ async def list_upcoming_reminders(session: AsyncSession, *, within_days: int = 3
                     "entity_id": str(qual.id),
                     "site_id": None,
                     "label": supplier_name,
+                    "due_date": due.isoformat(),
+                    "days_remaining": (due - today).days,
+                }
+            )
+
+    risk_rows = (
+        (
+            await session.execute(
+                select(RiskRecord).where(
+                    RiskRecord.state == "ACCEPTED",
+                    RiskRecord.next_review_due_at.isnot(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for risk in risk_rows:
+        due_at = risk.next_review_due_at
+        due = due_at.date() if isinstance(due_at, datetime) else due_at
+        if due <= horizon:
+            reminders.append(
+                {
+                    "category": "risk_review_due",
+                    "entity_type": "risk_record",
+                    "entity_id": str(risk.id),
+                    "site_id": str(risk.site_id),
+                    "label": f"{risk.risk_number} — {risk.hazard_problem[:80]}",
                     "due_date": due.isoformat(),
                     "days_remaining": (due - today).days,
                 }

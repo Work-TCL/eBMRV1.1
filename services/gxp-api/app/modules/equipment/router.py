@@ -436,7 +436,17 @@ async def get_asset_eligibility(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
+    """2026-10-08: this endpoint (and /history, /dashboard below) held an `actor` dependency but never
+    called evaluate_policy()/resolve_site_scope() -- any authenticated actor, any role, any site, could
+    read any other site's equipment eligibility/history/dashboard. The Client Topic 15 fix (2026-10-02,
+    see the comment on list_assets above) closed exactly this gap on /assets and /areas but missed these
+    three sibling read endpoints in the same router. Found live while testing doc 22's Equipment
+    walkthrough."""
     async with session.begin():
+        asset = await session.get(EquipmentAsset, asset_id)
+        if asset is None:
+            raise NotFoundError("Equipment asset not found")
+        await evaluate_policy(session, actor.user_id, action="equipment_asset.view", site_id=asset.site_id)
         return await get_eligibility(session, asset_id)
 
 
@@ -447,6 +457,10 @@ async def get_asset_history(
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
     async with session.begin():
+        asset = await session.get(EquipmentAsset, asset_id)
+        if asset is None:
+            raise NotFoundError("Equipment asset not found")
+        await evaluate_policy(session, actor.user_id, action="equipment_asset.view", site_id=asset.site_id)
         return await get_equipment_history(session, asset_id)
 
 
@@ -456,5 +470,5 @@ async def get_equipment_dashboard(
     session: AsyncSession = Depends(get_session),
     actor: AuthenticatedActor = Depends(get_current_actor),
 ) -> dict:
-    async with session.begin():
-        return await get_dashboard(session, site_id)
+    await resolve_site_scope(session, actor.user_id, site_id, action="equipment_asset.view")
+    return await get_dashboard(session, site_id)
