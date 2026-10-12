@@ -1,8 +1,8 @@
 """Document 28 (SPEC-QMS-003) — the buildable slice of Nonconformance Management: the linear
 OPEN -> SEGREGATED -> EVALUATION -> {REWORK,REPAIR,RETURN,SCRAP,USE_AS_IS} -> VERIFICATION -> CLOSED
-pipeline Document 28 §4 describes, matching the module's own 6-op API list exactly. No reopen operation is
-built -- NCR-FR-016 names the capability but Document 28's own API list has no endpoint for it, unlike
-Documents 26/27 (see ncr_models.py's module docstring and docs/generated/18_SPEC_GAPS.md SG-069).
+pipeline Document 28 §4 describes, matching the module's own 6-op API list exactly, plus `reopen`
+(SG-069 resolved 2026-10-09 -- see ncr_models.py's module docstring for the Document 26/27-mirrored
+design this follows).
 """
 
 import uuid
@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import verify_password
 from app.modules.iam.models import User
+from app.modules.qms.capa_commands import auto_create_capa_from_source
 from app.modules.qms.ncr_models import (
     NCR_ALLOWED_TRANSITIONS,
     NCR_DISPOSITION_TYPES,
@@ -242,7 +243,7 @@ async def evaluate_ncr(session: AsyncSession, cmd: EvaluateNcrCommand, actor_use
         return _receipt_from_existing(existing)
 
     ncr = await _load_ncr_for_update(session, cmd.ncr_id, cmd.expected_version)
-    entering = ncr.state == "SEGREGATED"
+    entering = ncr.state in ("SEGREGATED", "REOPENED")
     if not entering and ncr.state != "EVALUATION":
         raise InvalidTransitionError("Illegal nonconformance transition", current_state=ncr.state, requested="EVALUATION")
     if ncr.segregation is None:
@@ -284,6 +285,10 @@ class DispositionNcrCommand(CommandEnvelope):
     use_as_is_authorized_by: uuid.UUID | None = None
     capa_required: bool = False
     capa_rationale: str | None = None
+    # NCR-FR-011/SG-067 resolved 2026-10-09 (project-owner-directed): release_blocker_active (existing
+    # column) is now settable at disposition time -- the natural point QA judges scope/severity enough
+    # to decide this NCR should block release of the batch it's attributed to (source_type="batch").
+    release_blocker_active: bool = False
     challenge_id: uuid.UUID | None = None
     reauth_password: str | None = None
 
@@ -328,6 +333,7 @@ async def disposition_ncr(session: AsyncSession, cmd: DispositionNcrCommand, act
     ncr.state = cmd.disposition_type
     ncr.capa_required = cmd.capa_required
     ncr.capa_rationale = cmd.capa_rationale
+    ncr.release_blocker_active = cmd.release_blocker_active
     ncr.version += 1
     await session.flush()
 
@@ -342,6 +348,11 @@ async def disposition_ncr(session: AsyncSession, cmd: DispositionNcrCommand, act
             session, event_type="NCRReworkStarted", aggregate_type="nonconformance_record", aggregate_id=ncr.id,
             aggregate_version=ncr.version, payload={"id": str(ncr.id), "disposition_id": str(disposition.id)},
             correlation_id=receipt.correlation_id,
+        )
+    if cmd.capa_required:
+        await auto_create_capa_from_source(
+            session, site_id=ncr.site_id, source_type="ncr", source_id=ncr.id, source_version=ncr.version,
+            capa_rationale=cmd.capa_rationale, actor_user_id=actor_user_id, correlation_id=receipt.correlation_id,
         )
     return receipt
 
@@ -372,8 +383,13 @@ async def verify_ncr(session: AsyncSession, cmd: VerifyNcrCommand, actor_user_id
         raise InvalidTransitionError("Illegal nonconformance transition", current_state=ncr.state, requested="VERIFICATION")
 
     # NCR-FR-009: reinspection/retest is required after rework/repair specifically; other disposition
-    # outcomes (return/scrap/use-as-is) only need a confirmation that the disposition was executed.
-    if ncr.state in REWORK_LIKE_DISPOSITIONS:
+    # outcomes (return/scrap/use-as-is) only need a confirmation that the disposition was executed. A
+    # re-verification round (ncr.state already "VERIFICATION") carries no disposition type of its own --
+    # fall back to the one recorded on the prior verification so the same evidence type is required.
+    effective_disposition_state = ncr.state
+    if ncr.state == "VERIFICATION" and ncr.verification:
+        effective_disposition_state = ncr.verification.get("prior_disposition_state", ncr.state)
+    if effective_disposition_state in REWORK_LIKE_DISPOSITIONS:
         if not cmd.reinspection_evidence or not str(cmd.reinspection_evidence.get("result", "")).strip():
             raise ReinspectionRequiredError("reinspection_evidence.result is required after rework/repair")
     elif not cmd.confirmation:
@@ -385,11 +401,14 @@ async def verify_ncr(session: AsyncSession, cmd: VerifyNcrCommand, actor_user_id
     )
 
     old_state = ncr.state
-    ncr.verification = {
+    verification_record = {
         "reinspection_evidence": cmd.reinspection_evidence, "confirmation": cmd.confirmation,
         "verified_by": str(actor_user_id), "verified_at": datetime.now(timezone.utc).isoformat(),
-        "prior_disposition_state": old_state,
+        "prior_disposition_state": effective_disposition_state,
+        "signature_id": str(signature_id) if signature_id else None,
     }
+    ncr.verification = verification_record
+    ncr.verification_history = [*ncr.verification_history, verification_record]
     ncr.state = "VERIFICATION"
     ncr.version += 1
 
@@ -421,7 +440,7 @@ async def close_ncr(session: AsyncSession, cmd: CloseNcrCommand, actor_user_id: 
         return _receipt_from_existing(existing)
 
     ncr = await _load_ncr_for_update(session, cmd.ncr_id, cmd.expected_version)
-    if ncr.state != "VERIFICATION":
+    if ncr.state not in ("VERIFICATION", "REOPENED"):
         raise InvalidTransitionError("Illegal nonconformance transition", current_state=ncr.state, requested="CLOSED")
 
     dispositions = (await session.execute(select(NcrDisposition).where(NcrDisposition.ncr_id == ncr.id))).scalars().all()
@@ -452,4 +471,50 @@ async def close_ncr(session: AsyncSession, cmd: CloseNcrCommand, actor_user_id: 
         reason=cmd.conclusion, old_state=old_state, event_type="NCRClosed",
         event_payload={"id": str(ncr.id)}, signature_id=signature_id, expected_version=cmd.expected_version,
         command_type="CloseNcr",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Reopen — NCR-FR-016 (SG-069 resolved 2026-10-09, mirrors reopen_deviation/reopen_capa exactly)
+# ---------------------------------------------------------------------------
+
+
+class ReopenNcrCommand(CommandEnvelope):
+    ncr_id: uuid.UUID
+    expected_version: int
+    reason: str
+    new_evidence: str
+
+
+async def reopen_ncr(session: AsyncSession, cmd: ReopenNcrCommand, actor_user_id: uuid.UUID) -> MutationReceipt:
+    payload_hash = sha256_hex(cmd.model_dump(mode="json"))
+    existing = await check_idempotency(session, cmd.idempotency_key, payload_hash)
+    if existing is not None:
+        return _receipt_from_existing(existing)
+
+    ncr = await _load_ncr_for_update(session, cmd.ncr_id, cmd.expected_version)
+    if "REOPENED" not in NCR_ALLOWED_TRANSITIONS.get(ncr.state, set()):
+        raise InvalidTransitionError("Illegal nonconformance transition", current_state=ncr.state, requested="REOPENED")
+    if not cmd.reason.strip() or not cmd.new_evidence.strip():
+        raise ValidationFailedError("reason and new_evidence are required to reopen a closed nonconformance")
+
+    old_state = ncr.state
+    # NCR-FR-016/SG-069: reopen preserves prior closure -- closed_at and closure_history are never
+    # cleared or rewritten, only appended to on the *next* closure (same discipline as deviation/CAPA).
+    ncr.reopen_history = [
+        *ncr.reopen_history,
+        {
+            "previous_closed_at": ncr.closed_at.isoformat() if ncr.closed_at else None,
+            "reason": cmd.reason, "new_evidence": cmd.new_evidence, "reopened_by": str(actor_user_id),
+            "reopened_at": datetime.now(timezone.utc).isoformat(),
+        },
+    ]
+    ncr.state = "REOPENED"
+    ncr.version += 1
+
+    return await _write_ncr_receipt(
+        session, cmd=cmd, payload_hash=payload_hash, ncr=ncr, action="Changed", actor_user_id=actor_user_id,
+        reason=cmd.reason, old_state=old_state, event_type="NCRReopened",
+        event_payload={"id": str(ncr.id)}, signature_id=None, expected_version=cmd.expected_version,
+        command_type="ReopenNcr",
     )

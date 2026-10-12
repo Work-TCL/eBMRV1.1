@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   api,
   canAssessTraining,
@@ -10,9 +10,10 @@ import {
   canQualifyTraining,
   formatDate,
   isOverdue,
+  listAll,
   newIdempotencyKey,
 } from "@/lib/api";
-import { useApiResource, useEntityOptions, useMe, useRequirePermission, useSiteId } from "@/lib/hooks";
+import { useApiResource, useEntityOptions, useMe, useRequirePermission, useSiteId, type EntityOptionsStatus } from "@/lib/hooks";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { KeyValueRows, buildKvObject, type KvRow } from "@/components/shared/RepeatableFields";
@@ -30,6 +31,7 @@ import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { WorkflowStatePill } from "@/components/ui/StatePill";
 import { useCommand } from "@/components/qms/QmsDetailShell";
+import { humanizeLabel } from "@/lib/format";
 
 interface MatrixRow {
   requirement_id: string;
@@ -552,6 +554,117 @@ function AssignmentActionModal({
   );
 }
 
+interface DocumentSummaryOption {
+  document_code: string;
+}
+
+interface DocumentVersionOption {
+  id: string;
+  version_label: string;
+  state: string;
+}
+
+// DOC-FR-013/SG-079 UI fix (2026-10-09): backend command accepts content_document_version_id, but the
+// modal never had a field for it -- live verification always had to set it via a direct API call. No
+// flat "all versions across all documents" endpoint exists (Document 30's own 7-op list), only
+// per-code (`GET /documents/v1/{code}/versions`), so this is a 2-step picker: document code first,
+// then that document's own versions.
+function DocumentVersionPickerField({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const [documentCode, setDocumentCode] = useState("");
+  const [documents, setDocuments] = useState<DocumentSummaryOption[]>([]);
+  const [documentsStatus, setDocumentsStatus] = useState<EntityOptionsStatus>("loading");
+  const [versions, setVersions] = useState<DocumentVersionOption[]>([]);
+  const [versionsStatus, setVersionsStatus] = useState<EntityOptionsStatus>("empty");
+
+  useEffect(() => {
+    let cancelled = false;
+    listAll<DocumentSummaryOption>("/documents/v1")
+      .then((rows) => {
+        if (cancelled) return;
+        setDocuments(rows);
+        setDocumentsStatus(rows.length ? "ready" : "empty");
+      })
+      .catch(() => {
+        if (!cancelled) setDocumentsStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!documentCode) {
+      setVersions([]);
+      setVersionsStatus("empty");
+      return;
+    }
+    let cancelled = false;
+    setVersionsStatus("loading");
+    api
+      .get<DocumentVersionOption[]>(`/documents/v1/${encodeURIComponent(documentCode)}/versions`)
+      .then((rows) => {
+        if (cancelled) return;
+        setVersions(rows);
+        setVersionsStatus(rows.length ? "ready" : "empty");
+      })
+      .catch(() => {
+        if (!cancelled) setVersionsStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [documentCode]);
+
+  return (
+    <div className="grid grid-cols-2 gap-4">
+      <Field label="Document code" hint={documentsStatus === "error" ? "Couldn't load the document list." : undefined}>
+        <Select
+          value={documentCode}
+          onChange={(e) => {
+            setDocumentCode(e.target.value);
+            onChange("");
+          }}
+          disabled={documentsStatus === "loading"}
+        >
+          <option value="">— None (no linked document) —</option>
+          {documents.map((d) => (
+            <option key={d.document_code} value={d.document_code}>
+              {d.document_code}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      <Field
+        label="Document version"
+        hint={
+          !documentCode
+            ? "Select a document code first."
+            : versionsStatus === "empty"
+              ? "No versions exist for this document code."
+              : versionsStatus === "error"
+                ? "Couldn't load versions for this document code."
+                : undefined
+        }
+      >
+        <Select value={value} onChange={(e) => onChange(e.target.value)} disabled={!documentCode || versionsStatus !== "ready"}>
+          <option value="">— Select a version —</option>
+          {versions.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.version_label} ({v.state})
+            </option>
+          ))}
+        </Select>
+      </Field>
+    </div>
+  );
+}
+
 function RequirementModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const { siteId } = useSiteId();
   const { busy, error, run } = useCommand(onDone);
@@ -561,6 +674,7 @@ function RequirementModal({ onClose, onDone }: { onClose: () => void; onDone: ()
   const [recurrenceDays, setRecurrenceDays] = useState("");
   const [requiresAssessment, setRequiresAssessment] = useState(false);
   const [passScore, setPassScore] = useState("");
+  const [contentDocumentVersionId, setContentDocumentVersionId] = useState("");
 
   return (
     <Modal open onClose={onClose} title="New training requirement" large>
@@ -578,6 +692,7 @@ function RequirementModal({ onClose, onDone }: { onClose: () => void; onDone: ()
               recurrence_interval_days: recurrenceDays ? Number(recurrenceDays) : null,
               requires_assessment: requiresAssessment,
               pass_score: passScore ? Number(passScore) : null,
+              content_document_version_id: contentDocumentVersionId || null,
             })
           );
         }}
@@ -590,7 +705,7 @@ function RequirementModal({ onClose, onDone }: { onClose: () => void; onDone: ()
             <Select value={trainingType} onChange={(e) => setTrainingType(e.target.value)}>
               {TRAINING_TYPES.map((t) => (
                 <option key={t} value={t}>
-                  {t}
+                  {humanizeLabel(t)}
                 </option>
               ))}
             </Select>
@@ -599,7 +714,7 @@ function RequirementModal({ onClose, onDone }: { onClose: () => void; onDone: ()
             <Select value={sourceType} onChange={(e) => setSourceType(e.target.value)}>
               {SOURCE_TYPES.map((s) => (
                 <option key={s} value={s}>
-                  {s}
+                  {humanizeLabel(s)}
                 </option>
               ))}
             </Select>
@@ -608,6 +723,9 @@ function RequirementModal({ onClose, onDone }: { onClose: () => void; onDone: ()
             <Input type="number" min={1} value={recurrenceDays} onChange={(e) => setRecurrenceDays(e.target.value)} />
           </Field>
         </div>
+        {sourceType === "document" && (
+          <DocumentVersionPickerField value={contentDocumentVersionId} onChange={setContentDocumentVersionId} />
+        )}
         <label className="flex items-center gap-2 fs-2 mb-3">
           <input
             type="checkbox"

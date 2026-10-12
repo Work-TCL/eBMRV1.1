@@ -5,12 +5,19 @@
 field-name lists in the catalogue, but -- like Document 15's release_evaluation/release_decision -- all
 three are genuinely unambiguous (mostly bigint counters, a state/version pair, self-referential hierarchy
 fields); typed here directly as an ordinary engineering decision, the same latitude SG-045/SG-055 already
-used. No `label_version`/artwork-master or `print_job` entity exists anywhere in this codebase's data
-model catalogue (not even in Document 16's own 4-entity list, despite `print_job_id` being referenced on
-`label_issue` and a `POST /packaging/v1/print-jobs` endpoint being listed) -- `label_version_id` and
-`print_job_id` are therefore unenforced logical-reference columns, and `POST /packaging/v1/print-jobs`,
-`POST /packaging/v1/labels/{id}/reprint`, `POST .../label-application` and `POST .../inspection` are not
-built this pass (no entity to persist their results against) -- see SG-056.
+used.
+
+`label_master` (PKG-FR-003) and `print_job` (PKG-FR-006) RESOLVED 2026-10-09, project-owner-directed
+(client gap-closure item #10, "Build a minimal version"): neither existed anywhere in this codebase's
+data model catalogue before this pass (not even Document 16's own 4-entity list, despite `print_job_id`
+being referenced on `label_issue` and a `POST /packaging/v1/print-jobs` endpoint being listed) --
+`label_version_id`/`print_job_id` are now real enforced FKs. `POST /packaging/v1/print-jobs` (named in
+Document 16's own API list) is now built; `POST /packaging/v1/label-versions` (a minimal create op for
+the new master, NOT named in Document 16's own list, same "necessary supporting master-data op" latitude
+SG-176/SG-177 already used for aseptic_profile_version/equipment_area) is also added, since a print job
+needs a real label version to reference. `POST /packaging/v1/labels/{id}/reprint`, `POST
+.../label-application` and `POST .../inspection` remain unbuilt -- they need an application-verification/
+inspection result entity this pass still does not add -- see SG-056's remaining scope.
 
 None of Document 16's 10 API operations require a Document 106 signature (every row in its own API table
 lists "—" for Signature). None of the 10 are a GET, either -- Document 16's own API section (§6) defines
@@ -30,7 +37,7 @@ ABORTED have no driving endpoint in Document 16's own 10-API list and are not re
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, ForeignKey, Index, String
+from sqlalchemy import BigInteger, ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -54,6 +61,62 @@ ALLOWED_TRANSITIONS: dict[str, set[str]] = {
 
 RECONCILIATION_RESULTS = ("balanced", "discrepancy")
 PACKAGE_LEVELS = ("unit", "carton", "shipper", "pallet")
+
+
+class LabelMaster(Base):
+    """PKG-FR-003/SG-056 resolved 2026-10-09 (project-owner-directed, client gap-closure item #10:
+    "Build a minimal version"). The "label template/artwork version" Document 16 section 5's own Label
+    Job Contract names (`label_version_id` on `label_issue`) but never defines as a data-model entity --
+    not even Document 16's own 4-entity list includes it. Minimal single-state master (no DRAFT/RELEASED
+    lifecycle, unlike Product/Recipe/Document masters -- Document 16 never describes one for this entity
+    either, and the section 5 contract only ever names it by "exact ... version ID/hash", not a workflow).
+    `content_hash` is the "artwork version ID/hash" the contract names; `product_version_id` is the
+    contract's "product version" field, same generic reuse latitude `packaging_run.product_version_id`
+    already uses for "product/package configuration version".
+    """
+
+    __tablename__ = "label_master"
+    __table_args__ = (UniqueConstraint("label_code", "version_label"), {"schema": "ebmr"})
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
+    label_code: Mapped[str] = mapped_column(String(120), nullable=False)
+    version_label: Mapped[str] = mapped_column(String(60), nullable=False)
+    product_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.gxp_product_version.id"))
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    state: Mapped[str] = mapped_column(String(20), nullable=False, default="active")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+
+class PrintJob(Base):
+    """PKG-FR-006/SG-056 resolved 2026-10-09 (project-owner-directed, client gap-closure item #10). The
+    entity `POST /packaging/v1/print-jobs` (named in Document 16's own 10-op API list, section 6) creates
+    -- never defined in the data model catalogue despite the endpoint and `label_issue.print_job_id`'s FK
+    both naming it. Fields map directly to section 5's Label Job Contract: `label_version_id` (template/
+    artwork version), `packaging_run_id` carries batch/lot context (via its own `batch_id`), `quantity`
+    (quantity/range), `variable_data` (serial/UDI variable data), `printer_ref` (printer identity -- free
+    text; printer/scanner device registration itself remains unbuilt infrastructure, SG-056's own
+    unresolved scope), `requested_by` (requested by), `output_hash` (generated output/evidence hash "where
+    supported" -- nullable, since not every printer integration can supply one).
+    """
+
+    __tablename__ = "print_job"
+    __table_args__ = (
+        Index("ix_print_job_run", "packaging_run_id"),
+        {"schema": "ebmr"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    site_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.sites.id"), nullable=False)
+    packaging_run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.packaging_run.id"), nullable=False)
+    label_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.label_master.id"), nullable=False)
+    quantity: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    variable_data: Mapped[dict | None] = mapped_column(JSONB)
+    printer_ref: Mapped[str | None] = mapped_column(String(120))
+    requested_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False)
+    output_hash: Mapped[str | None] = mapped_column(String(64))
+    state: Mapped[str] = mapped_column(String(20), nullable=False, default="printed")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class PackagingRun(Base):
@@ -86,10 +149,12 @@ class LabelIssue(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     packaging_run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.packaging_run.id"), nullable=False)
-    label_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))  # no label-master entity exists yet (SG-056)
+    # SG-056 resolved 2026-10-09 (project-owner-directed, client gap-closure item #10): both now real
+    # enforced FKs, since label_master/print_job exist.
+    label_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.label_master.id"))
     quantity_issued: Mapped[int] = mapped_column(BigInteger, nullable=False)
     serial_range: Mapped[dict | None] = mapped_column(JSONB)
-    print_job_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))  # no print_job entity exists yet (SG-056)
+    print_job_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("ebmr.print_job.id"))
     issued_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("iam.users.id"), nullable=False)
     issued_at: Mapped[datetime] = mapped_column(server_default=func.now())
     state: Mapped[str] = mapped_column(String(40), nullable=False, default="issued")

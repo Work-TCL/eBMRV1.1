@@ -112,7 +112,9 @@ async def test_create_traverse_and_lookup(client, seeded, db):
     )
     assert resp.status_code == 200, resp.text
     affected_refs = {n["business_ref"] for n in resp.json()["affected_products"]}
-    assert affected_refs == {"SN-2", "COMBO-2"}  # both are FINAL_PRODUCT_NODE_TYPES
+    # Project-owner-directed 2026-10-09: drug_batch added to FINAL_PRODUCT_NODE_TYPES -- a recall query
+    # on a non-device/non-packaged product must surface the batch itself, not just downstream packaging.
+    assert affected_refs == {"BATCH-2", "SN-2", "COMBO-2"}
 
 
 async def test_self_loop_edge_rejected(db, seeded):

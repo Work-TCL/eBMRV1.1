@@ -6,6 +6,7 @@ import { useApiResource, useMe, useRequirePermission } from "@/lib/hooks";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
+import { TableSkeleton } from "@/components/ui/Skeleton";
 import { Modal } from "@/components/ui/Modal";
 import { Field } from "@/components/ui/Field";
 import { Input } from "@/components/ui/Input";
@@ -82,9 +83,9 @@ export default function RulesPage() {
           </p>
         )}
         {!error && loading && (
-          <p className="hint" style={{ padding: "var(--space-4, 16px)" }}>
-            Loading…
-          </p>
+          <TableSkeleton
+            columns={[{ header: "Rule ID" }, { header: "Version" }, { header: "Status" }, { header: "Type" }, { header: "Effective" }, { header: "" }]}
+          />
         )}
         {!error && !loading && (
           rules.length === 0 ? (
@@ -194,7 +195,9 @@ function UomSection() {
             {error === "404: Not Found" ? "The unit-of-measure registry endpoints are not enabled in this deployment build." : error}
           </p>
         )}
-        {!error && loading && <p className="hint">Loading…</p>}
+        {!error && loading && (
+          <TableSkeleton columns={[{ header: "Code" }, { header: "Version" }, { header: "Status" }, { header: "Dimension" }]} rows={3} />
+        )}
         {!error && !loading && (
           uoms.length === 0 ? (
             <EmptyState icon="scale">No units of measure exist yet.</EmptyState>

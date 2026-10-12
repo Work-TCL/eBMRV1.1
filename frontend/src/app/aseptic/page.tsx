@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { api, hasPermission, newIdempotencyKey, pagedFetcher, type Me, type MutationReceipt } from "@/lib/api";
 import { useApiResource, useMe, useSiteId, type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
 import { useCommand } from "@/components/shared/RecordDetailShell";
-import { Fact, IdFact, OpsRecordPage, type OpsRecordConfig } from "@/components/shared/OpsRecordPage";
+import { Fact, IdFact, OpsRecordPage, TransitionButton, type OpsRecordConfig } from "@/components/shared/OpsRecordPage";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
@@ -15,6 +15,8 @@ import { Modal } from "@/components/ui/Modal";
 import { Select } from "@/components/ui/Select";
 import { StatePill, WorkflowStatePill, type DesignState } from "@/components/ui/StatePill";
 import { Table, EmptyState } from "@/components/ui/Table";
+import { JsonPanel, summarizeJson } from "@/components/ui/JsonPanel";
+import { humanizeLabel } from "@/lib/format";
 
 const PROFILE_STATE: Record<string, { state: DesignState; label: string }> = {
   RELEASED: { state: "accepted", label: "Released" },
@@ -36,11 +38,45 @@ interface AsepticOperation {
   profile_number: string | null;
   profile_version_no: number | null;
   state: string;
+  equipment_ids: { ids?: string[] } | null;
+  sterile_input_refs: { items?: { item_id: string }[] } | null;
   media_fill_reference: Record<string, unknown> | null;
   qc_test_order_id: string | null;
+  qc_test_order_sample_number: string | null;
   qc_result_id: string | null;
+  qc_result_sample_number: string | null;
   requires_deviation: boolean;
   version: number;
+  // Only present on the single-record GET (list rows omit them) — same convention as sterilization's
+  // own `load_items`.
+  interventions?: AsepticInterventionRow[];
+  events?: AsepticEventRow[];
+}
+
+interface AsepticInterventionRow {
+  id: string;
+  intervention_type: string;
+  planned: boolean;
+  operator_user_id: string | null;
+  operator_full_name: string | null;
+  operator_username: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  location: string | null;
+  reason: string | null;
+  impacted_unit_scope: Record<string, unknown> | null;
+  requires_deviation: boolean;
+  deviation_reference_id: string | null;
+  created_at: string | null;
+}
+
+interface AsepticEventRow {
+  id: string;
+  event_type: string;
+  source: string | null;
+  severity: string;
+  payload: Record<string, unknown> | null;
+  occurred_at: string | null;
 }
 
 // aseptic_operation.create / .intervention / .event / .complete (Document 40) — Admin + Aseptic Operator
@@ -120,7 +156,7 @@ function NewProfileModal({ siteId, onClose, onDone }: { siteId: string | null; o
             <Select value={areaClassification} onChange={(e) => setAreaClassification(e.target.value)}>
               {AREA_CLASSIFICATIONS.map((c) => (
                 <option key={c} value={c}>
-                  {c}
+                  {humanizeLabel(c)}
                 </option>
               ))}
             </Select>
@@ -180,12 +216,12 @@ function SupersedeProfileModal({ profile, onClose, onDone }: { profile: AsepticP
             <Select value={areaClassification} onChange={(e) => setAreaClassification(e.target.value)}>
               {AREA_CLASSIFICATIONS.map((c) => (
                 <option key={c} value={c}>
-                  {c}
+                  {humanizeLabel(c)}
                 </option>
               ))}
             </Select>
           </Field>
-            <Field label="Validation reference" hint="Optional - e.g. a media-fill/qualification protocol ID.">
+          <Field label="Validation reference" hint="Optional - e.g. a media-fill/qualification protocol ID.">
             <Input value={validationReference} onChange={(e) => setValidationReference(e.target.value)} />
           </Field>
         </div>
@@ -304,163 +340,295 @@ function buildConfig(
   sterileItemOptionsStatus: EntityOptionsStatus,
 ): OpsRecordConfig<AsepticOperation> {
   return {
-  title: "Aseptic operations",
-  subtitle: "Aseptic processing operations: setup, live execution, interventions and completion.",
-  idLabel: "Aseptic operation ID",
-  apiRoot: "/aseptic/v1/operations",
-  create: {
-    label: "Create aseptic operation",
-    can: canOperate,
-    path: "/aseptic/v1/operations",
-    fields: [
-      { name: "area_id", label: "Area", type: "areaSelect", required: true },
-      { name: "profile_version_id", label: "Aseptic profile version", type: "asepticProfileSelect", required: true },
-      { name: "batch_id", label: "Batch", type: "batchSelect", hint: "Optional." },
-      { name: "batch_step_id", label: "Batch step ID", hint: "Optional." },
-      {
-        name: "sterile_input_refs",
-        label: "Sterile input references",
-        type: "repeat",
-        itemLabel: "Sterile input",
-        hint: "The sterile components (filters, containers, …) this operation depends on - each must already be eligible.",
-        subFields: [
-          {
-            name: "item_id", label: "Sterile item ID", required: true,
-            type: "customSelect", options: sterileItemOptions, optionsStatus: sterileItemOptionsStatus,
-            optionsNoun: "sterile input",
-          },
-        ],
-      },
-      { name: "media_fill_reference", label: "Media fill reference", type: "kv", hint: "Set these when this operation is a media fill run." },
-    ],
-    buildBody: (v, siteId) => ({
-      site_id: siteId,
-      area_id: v.area_id,
-      profile_version_id: v.profile_version_id,
-      batch_id: v.batch_id,
-      batch_step_id: v.batch_step_id,
-      sterile_input_refs: v.sterile_input_refs ?? [],
-      media_fill_reference: Object.keys((v.media_fill_reference as object) ?? {}).length ? v.media_fill_reference : null,
-    }),
-  },
-  stateOf: (r) => r.state,
-  numberOf: (r) => `Aseptic op ${r.id.slice(0, 8)}…`,
-  facts: (r) => (
-    <>
-      <Fact label="Media fill">{r.media_fill_reference ? "Yes" : "No"}</Fact>
-      <Fact label="Requires deviation">
-        {r.requires_deviation ? <StatePill state="failed" icon="alert-triangle">Yes</StatePill> : "No"}
-      </Fact>
-      <Fact label="Record version">{r.version}</Fact>
-      <Fact label="Area">{r.area_code ?? r.area_id}</Fact>
-      <Fact label="Aseptic profile">
-        {r.profile_number ? `${r.profile_number} v${r.profile_version_no}` : r.profile_version_id}
-      </Fact>
-      {r.batch_id && (
-        <Fact label="Batch">
-          {r.batch_number ? `${r.batch_number} - ${r.batch_product_name} (${r.batch_product_code})` : r.batch_id}
+    title: "Aseptic operations",
+    subtitle: "Aseptic processing operations: setup, live execution, interventions and completion.",
+    idLabel: "Aseptic operation ID",
+    apiRoot: "/aseptic/v1/operations",
+    create: {
+      label: "Create aseptic operation",
+      can: canOperate,
+      path: "/aseptic/v1/operations",
+      fields: [
+        { name: "area_id", label: "Area", type: "areaSelect", required: true },
+        { name: "profile_version_id", label: "Aseptic profile version", type: "asepticProfileSelect", required: true },
+        { name: "batch_id", label: "Batch", type: "batchSelect", hint: "Optional." },
+        { name: "batch_step_id", label: "Batch step", type: "batchStepSelect", hint: "Optional." },
+        {
+          // 2026-10-08 fix: `CreateOperationCommand.equipment_ids` (aseptic_commands.py) is a real,
+          // accepted create field the readiness composition's own equipment-eligibility check reads
+          // (`_compute_readiness`'s `for eq_id in (operation.equipment_ids or {}).get("ids", [])`) --
+          // but this form never had a field for it at all, so every operation ever created through this
+          // UI silently sent an empty list, making that check permanently a no-op in practice (not a
+          // backend bug -- the backend has always read whatever was sent; nothing was ever sent).
+          name: "equipment_refs",
+          label: "Equipment",
+          type: "repeat",
+          itemLabel: "Equipment",
+          hint: "The equipment assets this operation depends on - each is checked for qualification/calibration/cleanliness before start.",
+          subFields: [{ name: "equipment_id", label: "Equipment asset", required: true, type: "equipmentSelect" }],
+        },
+        {
+          name: "sterile_input_refs",
+          label: "Sterile input references",
+          type: "repeat",
+          itemLabel: "Sterile input",
+          hint: "The sterile components (filters, containers, …) this operation depends on - each must already be eligible.",
+          subFields: [
+            {
+              name: "item_id", label: "Sterile item ID", required: true,
+              type: "customSelect", options: sterileItemOptions, optionsStatus: sterileItemOptionsStatus,
+              optionsNoun: "sterile input",
+            },
+          ],
+        },
+        { name: "media_fill_reference", label: "Media fill reference", type: "kv", hint: "Set these when this operation is a media fill run." },
+      ],
+      buildBody: (v, siteId) => ({
+        site_id: siteId,
+        area_id: v.area_id,
+        profile_version_id: v.profile_version_id,
+        batch_id: v.batch_id,
+        batch_step_id: v.batch_step_id,
+        equipment_ids: ((v.equipment_refs as { equipment_id?: string }[]) ?? []).map((r) => r.equipment_id).filter(Boolean),
+        sterile_input_refs: v.sterile_input_refs ?? [],
+        media_fill_reference: Object.keys((v.media_fill_reference as object) ?? {}).length ? v.media_fill_reference : null,
+      }),
+    },
+    stateOf: (r) => r.state,
+    numberOf: (r) => `Aseptic op ${r.id.slice(0, 8)}…`,
+    facts: (r) => (
+      <>
+        <Fact label="Media fill">{r.media_fill_reference ? "Yes" : "No"}</Fact>
+        <Fact label="Requires deviation">
+          {r.requires_deviation ? <StatePill state="failed" icon="alert-triangle">Yes</StatePill> : "No"}
         </Fact>
-      )}
-      <IdFact label="QC test order" value={r.qc_test_order_id} />
-      <IdFact label="QC result" value={r.qc_result_id} />
-    </>
-  ),
-  transitions: [
-    {
-      key: "start",
-      label: "Start operation (sign)",
-      signed: true,
-      challengeAction: "start",
-      variant: "primary",
-      can: canStart,
-      summary: "Starts the aseptic operation. Area, personnel and sterile-input checks must already pass.",
-      buildBody: (r) => ({ operation_id: r.id, expected_version: r.version }),
-    },
-    {
-      key: "interventions",
-      label: "Record intervention",
-      can: canOperate,
-      summary: "Records a planned or unplanned aseptic intervention, with the impacted unit scope.",
-      fields: [
-        {
-          name: "intervention_type", label: "Intervention type", required: true, type: "select",
-          options: [
-            { value: "inherent", label: "Inherent" },
-            { value: "routine", label: "Routine" },
-            { value: "corrective", label: "Corrective" },
-            { value: "non_routine", label: "Non-routine" },
-          ],
-        },
-        { name: "planned", label: "Planned", type: "bool", hint: "Unplanned interventions always require a reason." },
-        { name: "location", label: "Location" },
-        { name: "reason", label: "Reason", type: "textarea" },
-        { name: "impacted_unit_scope", label: "Impacted unit scope", type: "kv" },
-      ],
-      buildBody: (r, v) => ({
-        operation_id: r.id,
-        expected_version: r.version,
-        intervention_type: v.intervention_type,
-        planned: v.planned === null ? true : v.planned === "true",
-        location: v.location,
-        reason: v.reason,
-        impacted_unit_scope: Object.keys((v.impacted_unit_scope as object) ?? {}).length ? v.impacted_unit_scope : null,
-      }),
-    },
-    {
-      key: "events",
-      label: "Record event",
-      can: canOperate,
-      summary: "Records an environmental / process event against the running operation. A critical event automatically holds the operation.",
-      fields: [
-        { name: "event_type", label: "Event type", required: true, placeholder: "e.g. particle_excursion, gown_breach" },
-        { name: "source", label: "Source" },
-        {
-          name: "severity", label: "Severity", required: true, type: "select", hint: "Defaults to Info if left unset.",
-          options: [
-            { value: "info", label: "Info" },
-            { value: "warning", label: "Warning" },
-            { value: "critical", label: "Critical - holds the operation" },
-          ],
-        },
-        { name: "payload", label: "Additional details", type: "kv" },
-      ],
-      buildBody: (r, v) => ({
-        operation_id: r.id,
-        expected_version: r.version,
-        event_type: v.event_type,
-        source: v.source || null,
-        severity: v.severity || "info",
-        payload: Object.keys((v.payload as object) ?? {}).length ? v.payload : null,
-      }),
-    },
-    {
-      key: "complete",
-      label: "Complete (sign)",
-      signed: true,
-      challengeAction: "complete",
-      variant: "success",
-      can: canOperate,
-      summary: "Completes the operation and links the environmental / media-fill QC result.",
-      fields: [
-        { name: "critical", label: "Critical", placeholder: "true / false" },
-        { name: "qc_test_order_id", label: "QC test order ID" },
-        { name: "qc_result_id", label: "QC result ID" },
-      ],
-      buildBody: (r, v) => ({
-        operation_id: r.id,
-        expected_version: r.version,
-        critical: v.critical === "true",
-        qc_test_order_id: v.qc_test_order_id,
-        qc_result_id: v.qc_result_id,
-      }),
-    },
-  ],
+        <Fact label="Record version">{r.version}</Fact>
+        <Fact label="Area">{r.area_code ?? r.area_id}</Fact>
+        <Fact label="Aseptic profile">
+          {r.profile_number ? `${r.profile_number} v${r.profile_version_no}` : r.profile_version_id}
+        </Fact>
+        {r.batch_id && (
+          <Fact label="Batch">
+            {r.batch_number ? `${r.batch_number} - ${r.batch_product_name} (${r.batch_product_code})` : r.batch_id}
+          </Fact>
+        )}
+        {r.equipment_ids?.ids && r.equipment_ids.ids.length > 0 && (
+          <Fact label="Equipment">{r.equipment_ids.ids.map((id) => id.slice(0, 8) + "…").join(", ")}</Fact>
+        )}
+        {r.sterile_input_refs?.items && r.sterile_input_refs.items.length > 0 && (
+          <Fact label="Sterile inputs">{r.sterile_input_refs.items.map((it) => it.item_id.slice(0, 8) + "…").join(", ")}</Fact>
+        )}
+        <IdFact label="QC test order" value={r.qc_test_order_sample_number ?? r.qc_test_order_id} />
+        <IdFact label="QC result" value={r.qc_result_sample_number ?? r.qc_result_id} />
+      </>
+    ),
+    // 2026-10-08 (real user report): the detail view had no way to see interventions/events already
+    // recorded against this operation at all — `GET /operations/{id}` now embeds both (same
+    // `load_items`-on-the-parent-record shape as sterilization's own cycle detail), rendered the same
+    // "Card + Table, empty state when none yet" pattern as that page's own "Load items" section.
+    extra: (r) => (
+      <>
+        <Card pad className="mb-4">
+          <CardHeader title="Interventions" />
+          {!r.interventions || r.interventions.length === 0 ? (
+            <p className="hint mt-2">No interventions recorded.</p>
+          ) : (
+            <Table>
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Planned?</th>
+                  <th>Operator</th>
+                  <th>Location</th>
+                  <th>Reason</th>
+                  <th>Requires deviation</th>
+                </tr>
+              </thead>
+              <tbody>
+                {r.interventions.map((i) => (
+                  <tr key={i.id}>
+                    <td className="fs-2">{humanizeLabel(i.intervention_type)}</td>
+                    <td className="fs-2">{i.planned ? "Yes" : "No"}</td>
+                    <td className="fs-2">{i.operator_full_name ? `${i.operator_full_name} (${i.operator_username})` : "—"}</td>
+                    <td className="fs-2">{i.location ?? "—"}</td>
+                    <td className="fs-2">{i.reason ?? "—"}</td>
+                    <td className="fs-2">
+                      {i.requires_deviation ? <StatePill state="failed" icon="alert-triangle">Yes</StatePill> : "No"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </Card>
+
+        <Card pad className="mb-4">
+          <CardHeader title="Events" />
+          {!r.events || r.events.length === 0 ? (
+            <p className="hint mt-2">No events recorded.</p>
+          ) : (
+            <Table>
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Source</th>
+                  <th>Severity</th>
+                  <th>Occurred</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                {r.events.map((e) => (
+                  <tr key={e.id}>
+                    <td className="fs-2">{e.event_type}</td>
+                    <td className="fs-2">{e.source ?? "—"}</td>
+                    <td className="fs-2">
+                      {e.severity === "critical" ? (
+                        <StatePill state="failed" icon="alert-triangle">Critical</StatePill>
+                      ) : e.severity === "warning" ? (
+                        <StatePill state="conflict" icon="alert-triangle">Warning</StatePill>
+                      ) : (
+                        <StatePill state="accepted" icon="check-circle">Info</StatePill>
+                      )}
+                    </td>
+                    <td className="fs-2">{e.occurred_at?.slice(0, 19).replace("T", " ") ?? "—"}</td>
+                    <td className="fs-2" style={{ wordBreak: "break-word" }}>{summarizeJson(e.payload)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </Card>
+
+        {r.interventions?.some((i) => i.impacted_unit_scope) && (
+          <JsonPanel
+            title="Impacted unit scope (per intervention)"
+            value={r.interventions.filter((i) => i.impacted_unit_scope).map((i) => ({ intervention_id: i.id, ...i.impacted_unit_scope }))}
+          />
+        )}
+      </>
+    ),
+    transitions: [
+      {
+        key: "start",
+        label: "Start operation (sign)",
+        signed: true,
+        challengeAction: "start",
+        variant: "primary",
+        can: canStart,
+        // Backend guard (aseptic_commands.py start_operation): only a PREPARATION-stage operation can
+        // be started. Without this the button stayed visible (and clickable, failing with
+        // INVALID_TRANSITION) after the operation had already moved to EXECUTION.
+        show: (r) => r.state === "PREPARATION",
+        summary: "Starts the aseptic operation. Area, personnel and sterile-input checks must already pass.",
+        buildBody: (r) => ({ operation_id: r.id, expected_version: r.version }),
+      },
+      {
+        key: "interventions",
+        label: "Record intervention",
+        can: canOperate,
+        // Backend guard (record_intervention): only EXECUTION/HOLD accept this.
+        show: (r) => r.state === "EXECUTION" || r.state === "HOLD",
+        summary: "Records a planned or unplanned aseptic intervention, with the impacted unit scope.",
+        fields: [
+          {
+            name: "intervention_type", label: "Intervention type", required: true, type: "select",
+            options: [
+              { value: "inherent", label: "Inherent" },
+              { value: "routine", label: "Routine" },
+              { value: "corrective", label: "Corrective" },
+              { value: "non_routine", label: "Non-routine" },
+            ],
+          },
+          { name: "planned", label: "Planned", type: "bool", hint: "Unplanned interventions always require a reason." },
+          { name: "location", label: "Location" },
+          { name: "reason", label: "Reason", type: "textarea" },
+          { name: "impacted_unit_scope", label: "Impacted unit scope", type: "kv" },
+        ],
+        buildBody: (r, v) => ({
+          operation_id: r.id,
+          expected_version: r.version,
+          intervention_type: v.intervention_type,
+          planned: v.planned === null ? true : v.planned === "true",
+          location: v.location,
+          reason: v.reason,
+          impacted_unit_scope: Object.keys((v.impacted_unit_scope as object) ?? {}).length ? v.impacted_unit_scope : null,
+        }),
+      },
+      {
+        key: "events",
+        label: "Record event",
+        can: canOperate,
+        // Backend guard (record_event): only EXECUTION/HOLD accept this.
+        show: (r) => r.state === "EXECUTION" || r.state === "HOLD",
+        summary: "Records an environmental / process event against the running operation. A critical event automatically holds the operation.",
+        fields: [
+          { name: "event_type", label: "Event type", required: true, placeholder: "e.g. particle_excursion, gown_breach" },
+          { name: "source", label: "Source" },
+          {
+            name: "severity", label: "Severity", required: true, type: "select", hint: "Defaults to Info if left unset.",
+            options: [
+              { value: "info", label: "Info" },
+              { value: "warning", label: "Warning" },
+              { value: "critical", label: "Critical - holds the operation" },
+            ],
+          },
+          { name: "payload", label: "Additional details", type: "kv" },
+        ],
+        buildBody: (r, v) => ({
+          operation_id: r.id,
+          expected_version: r.version,
+          event_type: v.event_type,
+          source: v.source || null,
+          severity: v.severity || "info",
+          payload: Object.keys((v.payload as object) ?? {}).length ? v.payload : null,
+        }),
+      },
+      {
+        key: "complete",
+        label: "Complete (sign)",
+        signed: true,
+        challengeAction: "complete",
+        variant: "success",
+        can: canOperate,
+        // Backend guard (complete_operation): only EXECUTION (not HOLD — a held operation has no path
+        // back to EXECUTION in this module; it stays blocked until whatever raised requires_deviation
+        // is resolved).
+        show: (r) => r.state === "EXECUTION",
+        summary: "Completes the operation and links the environmental / media-fill QC result.",
+        fields: [
+          { name: "critical", label: "Critical", placeholder: "true / false" },
+          { name: "qc_test_order_id", label: "QC test order ID" },
+          { name: "qc_result_id", label: "QC result ID" },
+        ],
+        buildBody: (r, v) => ({
+          operation_id: r.id,
+          expected_version: r.version,
+          critical: v.critical === "true",
+          qc_test_order_id: v.qc_test_order_id,
+          qc_result_id: v.qc_result_id,
+        }),
+      },
+    ],
   };
 }
 
 // Same shape as sterilization_router/page.tsx's own `cycleColumns`/`CycleListCard` — a dedicated "Open"
 // button alongside the row's own `onRowClick` since a row that merely looks clickable is easy to miss.
-function operationColumns(onOpen: (id: string) => void): DataTableColumn<AsepticOperation>[] {
+//
+// 2026-10-08 (real user report, project-owner-directed): added per-row quick-action buttons ("Start",
+// "Record intervention", "Record event", "Complete") next to "Open" — state-gated by the exact same
+// `transition.show`/`.can` predicates the detail view's own "Actions" list uses, via the shared
+// `TransitionButton` (now exported from OpsRecordPage.tsx for this reason). Most rows show only 1-3 of
+// these at once since PREPARATION/EXECUTION/HOLD/ASEPTIC_COMPLETE each permit a different subset — the
+// row never needs all 4 buttons, which is what made per-row buttons (over a cramped per-row dropdown)
+// the better fit here.
+function operationColumns(
+  config: OpsRecordConfig<AsepticOperation>,
+  me: Me | null,
+  onOpen: (id: string) => void,
+  onActionDone: () => void,
+): DataTableColumn<AsepticOperation>[] {
   return [
     {
       key: "id",
@@ -481,33 +649,48 @@ function operationColumns(onOpen: (id: string) => void): DataTableColumn<Aseptic
       render: (r) => (r.requires_deviation ? <StatePill state="failed" icon="alert-triangle">Yes</StatePill> : "No"),
     },
     {
-      key: "open",
+      key: "actions",
       header: "",
       align: "right",
       render: (r) => (
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpen(r.id);
-          }}
-        >
-          Open
-        </Button>
+        <div className="flex gap-2 justify-end" onClick={(e) => e.stopPropagation()}>
+          {config.transitions
+            .filter((t) => (t.show ? t.show(r) : true))
+            .filter((t) => (t.can ? t.can(me) : true))
+            .map((t) => (
+              <TransitionButton key={t.key} config={config} transition={t} record={r} onDone={onActionDone} size="sm" />
+            ))}
+          <Button size="sm" variant="secondary" onClick={() => onOpen(r.id)}>
+            Open
+          </Button>
+        </div>
       ),
     },
   ];
 }
 
-function OperationListCard({ siteId, reloadToken, onOpen }: { siteId: string | null; reloadToken: number; onOpen: (id: string) => void }) {
+function OperationListCard({
+  config,
+  me,
+  siteId,
+  reloadToken,
+  onOpen,
+  onActionDone,
+}: {
+  config: OpsRecordConfig<AsepticOperation>;
+  me: Me | null;
+  siteId: string | null;
+  reloadToken: number;
+  onOpen: (id: string) => void;
+  onActionDone: () => void;
+}) {
   const fetchOperations = pagedFetcher<AsepticOperation>("/aseptic/v1/operations", () => ({ site_id: siteId ?? "" }));
   return (
     <Card pad className="mb-4">
       <CardHeader title="Aseptic operations" meta="" />
       {siteId ? (
         <DataTable
-          columns={operationColumns(onOpen)}
+          columns={operationColumns(config, me, onOpen, onActionDone)}
           fetchPage={fetchOperations}
           rowKey={(r) => r.id}
           searchPlaceholder="Search state…"
@@ -559,7 +742,14 @@ export default function AsepticPage() {
               canManage={canCreateProfile(me)}
               onSupersede={setSupersedeTarget}
             />
-            <OperationListCard siteId={siteId} reloadToken={reloadToken} onOpen={openRecord} />
+            <OperationListCard
+              config={config}
+              me={me}
+              siteId={siteId}
+              reloadToken={reloadToken}
+              onOpen={openRecord}
+              onActionDone={() => setReloadToken((n) => n + 1)}
+            />
           </>
         )}
         onCreated={() => setReloadToken((n) => n + 1)}

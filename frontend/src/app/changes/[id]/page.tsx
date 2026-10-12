@@ -14,7 +14,7 @@ import { useApiResource, useEntityOptions, useMe } from "@/lib/hooks";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { QmsDetailShell, useCommand } from "@/components/qms/QmsDetailShell";
-import { Fact, IdFact } from "@/components/ui/FactGrid";
+import { Fact, IdFact, UserFact } from "@/components/ui/FactGrid";
 import { Tabs } from "@/components/ui/Tabs";
 import { Card } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
@@ -50,9 +50,12 @@ interface ChangeTask {
 }
 
 interface ChangeDetail extends ChangeControl {
+  owner_full_name: string | null;
+  owner_username: string | null;
   current_state: Record<string, unknown> | null;
   proposed_state: Record<string, unknown> | null;
   risk_ref: string | null;
+  risk_number: string | null;
   regulatory_impact: Record<string, unknown> | null;
   validation_impact: Record<string, unknown> | null;
   training_impact: Record<string, unknown> | null;
@@ -60,28 +63,35 @@ interface ChangeDetail extends ChangeControl {
   emergency_reason: string | null;
   retrospective_review: Record<string, unknown> | null;
   cancel_reason: string | null;
+  rollback_reason: string | null;
+  rolled_back_at: string | null;
   closure_history: unknown[];
   affected_objects: AffectedObject[];
   tasks: ChangeTask[];
 }
 
-type Transition = "impact" | "approve" | "add_task" | "implement" | "verify" | "make_effective" | "close";
+type Transition = "impact" | "approve" | "add_task" | "implement" | "verify" | "make_effective" | "close" | "rollback";
 
 const ALLOWED_FROM: Record<string, Transition[]> = {
   DRAFT: ["impact"],
   IMPACT_ASSESSMENT: ["impact", "approve"],
   APPROVAL: ["add_task", "implement"],
-  IMPLEMENTATION: ["add_task", "implement", "verify"],
-  VERIFICATION: ["verify", "make_effective"],
+  // SG-071 resolved 2026-10-09 (project-owner-directed): rollback is reachable only from
+  // IMPLEMENTATION/VERIFICATION (ROLLBACK_ELIGIBLE_STATES in change_models.py) -- not before
+  // implementation starts (that's CANCELLED territory) and not after EFFECTIVE/CLOSED.
+  IMPLEMENTATION: ["add_task", "implement", "verify", "rollback"],
+  VERIFICATION: ["verify", "make_effective", "rollback"],
   EFFECTIVE: ["close"],
   CLOSED: [],
   CANCELLED: [],
+  ROLLED_BACK: [],
 };
 
 // SG-138 resolved 2026-09-10 (seed.py SIGNATURE_POLICY_FLOOR rows 86-87): change_control approve/close
 // are QA Releaser-signed, independent of the record owner; verify is a qualified independent verifier.
 // Go through the shared Part 11 ceremony (challenge -> password re-entry -> signed mutation) below.
-const SIGNATURE_GATED: Transition[] = ["approve", "verify", "close"];
+// "rollback" reuses the same signed "close" ceremony/action on the backend (SG-071), not a separate one.
+const SIGNATURE_GATED: Transition[] = ["approve", "verify", "close", "rollback"];
 
 const LABEL: Record<Transition, string> = {
   impact: "Assess impact",
@@ -91,6 +101,7 @@ const LABEL: Record<Transition, string> = {
   verify: "Verify",
   make_effective: "Make effective",
   close: "Close",
+  rollback: "Rollback",
 };
 
 // The exact permission code app/modules/qms/change_router.py checks for each transition. Note
@@ -105,6 +116,9 @@ const PERMISSION_FOR_TRANSITION: Record<Transition, string> = {
   verify: "change.verify",
   make_effective: "change.make_effective",
   close: "change.close",
+  // rollback posts to the same /close endpoint (change.close permission), distinguished only by
+  // rollback_reason vs. post_implementation_review in the body (SG-071).
+  rollback: "change.close",
 };
 
 export default function ChangeDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -126,7 +140,7 @@ export default function ChangeDetailPage({ params }: { params: Promise<{ id: str
       loading={loading}
       error={error}
       actions={(Object.keys(LABEL) as Transition[]).filter(canDo).map((t) => (
-        <Button key={t} variant={t === "approve" ? "primary" : "secondary"} onClick={() => setPending(t)}>
+        <Button key={t} variant={t === "approve" ? "primary" : t === "rollback" ? "danger" : "secondary"} onClick={() => setPending(t)}>
           {SIGNATURE_GATED.includes(t) && <Icon name="pen" />} {LABEL[t]}
         </Button>
       ))}
@@ -155,8 +169,8 @@ export default function ChangeDetailPage({ params }: { params: Promise<{ id: str
             <Fact label="Raised">{formatDateTime(data.created_at)}</Fact>
             <Fact label="Closed">{data.closed_at ? formatDateTime(data.closed_at) : "—"}</Fact>
             <Fact label="Record version">{data.version}</Fact>
-            <IdFact label="Owner" value={data.owner_subject_id} />
-            <IdFact label="Risk record" value={data.risk_ref} />
+            <UserFact label="Owner" fullName={data.owner_full_name} username={data.owner_username} id={data.owner_subject_id} />
+            <IdFact label="Risk record" value={data.risk_number ?? data.risk_ref} />
             <IdFact label="Quality event" value={data.quality_event_id} />
           </>
         )
@@ -271,8 +285,15 @@ export default function ChangeDetailPage({ params }: { params: Promise<{ id: str
                   <Card pad>
                     <JsonPanel title="Retrospective review" value={data.retrospective_review} />
                     <JsonPanel title="Cancellation reason" value={data.cancel_reason} />
+                    {data.rollback_reason && (
+                      <>
+                        <p className="fact-k mb-2">Rollback reason</p>
+                        <p className="fs-3 mb-4">{data.rollback_reason}</p>
+                        <Fact label="Rolled back at">{formatDateTime(data.rolled_back_at)}</Fact>
+                      </>
+                    )}
                     <HistoryPanel title="Closures" entries={data.closure_history} />
-                    {!data.retrospective_review && data.closure_history.length === 0 && (
+                    {!data.retrospective_review && !data.rollback_reason && data.closure_history.length === 0 && (
                       <EmptyState icon="history">Nothing closed yet.</EmptyState>
                     )}
                   </Card>
@@ -327,6 +348,8 @@ function TransitionModal({
   const [effectiveAt, setEffectiveAt] = useState("");
   const [trainingConfirmed, setTrainingConfirmed] = useState(false);
   const [reviewConclusion, setReviewConclusion] = useState("");
+  const [rollbackReason, setRollbackReason] = useState("");
+  const [riskRef, setRiskRef] = useState(change.risk_ref ?? "");
   const [reason, setReason] = useState("");
 
   const base = { idempotency_key: newIdempotencyKey(), change_id: change.id, expected_version: change.version };
@@ -348,6 +371,7 @@ function TransitionModal({
             },
             validation_impact: { description: validation, required: validationRequired },
             training_impact: { description: training, required: trainingRequired },
+            risk_ref: riskRef || null,
             reason: reason || null,
           });
         case "add_task":
@@ -488,6 +512,47 @@ function TransitionModal({
     );
   }
 
+  // SG-071 resolved 2026-10-09 (project-owner-directed, client gap-closure item #9): rollback reuses
+  // close()'s own signed "close" ceremony on the backend -- rollback_reason, not
+  // post_implementation_review, is what distinguishes it, and it produces ROLLED_BACK not CLOSED.
+  if (transition === "rollback") {
+    return (
+      <SignatureCeremony
+        open
+        onClose={onClose}
+        onDone={onDone}
+        challengePath={`${path}/signature-challenges`}
+        action="close"
+        title={`Rollback - ${change.change_number}`}
+        summary="Reverts this change control -- implementation or verification already started but must be undone. Distinct from Close: this is a released quality decision, signer must be independent of the record's owner."
+        submitLabel="Sign & rollback"
+        submitVariant="danger"
+        disabled={!rollbackReason.trim()}
+        extraFields={
+          <Field label="Rollback reason" required hint="Why this change is being reverted instead of completed.">
+            <textarea
+              className="input"
+              rows={3}
+              value={rollbackReason}
+              onChange={(e) => setRollbackReason(e.target.value)}
+              required
+            />
+          </Field>
+        }
+        onSign={(p) =>
+          api.post(`${path}/close`, {
+            idempotency_key: p.idempotency_key,
+            change_id: change.id,
+            expected_version: change.version,
+            challenge_id: p.challenge_id,
+            reauth_password: p.reauth_password,
+            rollback_reason: rollbackReason,
+          })
+        }
+      />
+    );
+  }
+
   return (
     <Modal open onClose={onClose} title={`${LABEL[transition]} - ${change.change_number}`} large={transition === "impact"}>
       <form onSubmit={submit}>
@@ -514,6 +579,15 @@ function TransitionModal({
               <input type="checkbox" checked={trainingRequired} onChange={(e) => setTrainingRequired(e.target.checked)} />
               Training required - must be confirmed before the change can be made effective
             </label>
+            <EntityPickerField
+              label="Risk record"
+              hint="Links this change's impact assessment to a Risk Register record (optional)."
+              value={riskRef}
+              onChange={setRiskRef}
+              options={entities.risks}
+              status={entities.risksStatus}
+              kind="risk"
+            />
           </>
         )}
 

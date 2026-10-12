@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { SeverityPill, WorkflowStatePill } from "@/components/ui/StatePill";
+import { humanizeLabel } from "@/lib/format";
 
 // app/modules/qms/scar_models.py CASE_STATES (the SCAR itself has its own SCAR_STATES).
 const CASE_STATES = ["OPEN", "CONTAINMENT", "SCAR_ISSUED", "CLOSED"];
@@ -133,7 +134,7 @@ function OpenCaseModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
             <Select value={severity} onChange={(e) => setSeverity(e.target.value)}>
               {SEVERITIES.map((s) => (
                 <option key={s} value={s}>
-                  {s}
+                  {humanizeLabel(s)}
                 </option>
               ))}
             </Select>

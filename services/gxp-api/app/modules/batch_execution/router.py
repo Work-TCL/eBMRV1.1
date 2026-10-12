@@ -52,6 +52,7 @@ from app.modules.iam.models import User
 from app.modules.material_specification.models import MaterialSpecificationVersion
 from app.modules.policy.service import evaluate_policy
 from app.modules.product_master.models import ProductVersion
+from app.modules.qms.read_support import resolve_vault_object_labels
 from app.modules.recipe_master.models import RecipeFamily, RecipeParameter, RecipeVersion
 from app.modules.signature.service import create_challenge
 from app.mutation.errors import NotFoundError, ValidationFailedError
@@ -64,8 +65,10 @@ def _batch_dict(
     batch,
     product_version: ProductVersion | None = None,
     recipe_context: tuple[str, int] | None = None,
+    vault_labels: dict[str, str] | None = None,
 ) -> dict:
     recipe_code, recipe_version_no = recipe_context if recipe_context else (None, None)
+    vault_labels = vault_labels or {}
     return {
         "batch_id": str(batch.id),
         "site_id": str(batch.site_id),
@@ -79,7 +82,9 @@ def _batch_dict(
         "recipe_code": recipe_code,
         "recipe_version_no": recipe_version_no,
         "recipe_vault_object_id": str(batch.recipe_vault_object_id) if batch.recipe_vault_object_id else None,
+        "recipe_vault_object_label": vault_labels.get(str(batch.recipe_vault_object_id)) if batch.recipe_vault_object_id else None,
         "execution_snapshot_id": str(batch.execution_snapshot_id) if batch.execution_snapshot_id else None,
+        "execution_snapshot_label": vault_labels.get(str(batch.execution_snapshot_id)) if batch.execution_snapshot_id else None,
         "target_qty": str(batch.target_qty),
         "target_uom": batch.target_uom,
         "state": batch.state,
@@ -684,9 +689,14 @@ async def get_batch_list(
     batches = await batch_execution_service.list_batches(session, site_id, state)
     product_versions = await _product_versions_by_id(session, batches)
     recipe_contexts = await _recipe_context_by_id(session, batches)
+    vault_labels = await resolve_vault_object_labels(
+        session, {b.recipe_vault_object_id for b in batches} | {b.execution_snapshot_id for b in batches}
+    )
     return {
         "batches": [
-            _batch_dict(b, product_versions.get(b.product_version_id), recipe_contexts.get(b.recipe_version_id))
+            _batch_dict(
+                b, product_versions.get(b.product_version_id), recipe_contexts.get(b.recipe_version_id), vault_labels
+            )
             for b in batches
         ],
         "on_hold_count": sum(1 for b in batches if b.state == "on_hold"),
@@ -703,7 +713,8 @@ async def get_batch_detail(
     await evaluate_policy(session, actor.user_id, action="batch_execution.view", site_id=batch.site_id)
     product_version = await session.get(ProductVersion, batch.product_version_id)
     recipe_contexts = await _recipe_context_by_id(session, [batch])
-    return _batch_dict(batch, product_version, recipe_contexts.get(batch.recipe_version_id))
+    vault_labels = await resolve_vault_object_labels(session, {batch.recipe_vault_object_id, batch.execution_snapshot_id})
+    return _batch_dict(batch, product_version, recipe_contexts.get(batch.recipe_version_id), vault_labels)
 
 
 @router.get("/{batch_id}/execution-view")
@@ -734,8 +745,21 @@ async def get_execution_view(
         h.released_by for hs in view["holds_by_step_id"].values() for h in hs if h.released_by
     }
     hold_users = await _users_by_id(session, hold_user_ids)
+    # 2026-10 UUID-display audit: comments/handovers/evidence-links each showed a raw actor id with no
+    # resolved name (comments.created_by, handovers.from_subject_id/to_subject_id, evidence_links.linked_by).
+    comment_user_ids = {c.created_by for cs in view["comments_by_step_id"].values() for c in cs}
+    handover_user_ids = {h.from_subject_id for hs in view["handovers_by_step_id"].values() for h in hs if h.from_subject_id} | {
+        h.to_subject_id for hs in view["handovers_by_step_id"].values() for h in hs
+    }
+    evidence_link_user_ids = {e.linked_by for es in view["evidence_links_by_step_id"].values() for e in es}
+    actor_users = await _users_by_id(session, comment_user_ids | handover_user_ids | evidence_link_user_ids)
+    vault_labels = await resolve_vault_object_labels(
+        session, {view["batch"].recipe_vault_object_id, view["batch"].execution_snapshot_id}
+    )
     return {
-        "batch": _batch_dict(view["batch"], product_version, recipe_contexts.get(view["batch"].recipe_version_id)),
+        "batch": _batch_dict(
+            view["batch"], product_version, recipe_contexts.get(view["batch"].recipe_version_id), vault_labels
+        ),
         "steps": [
             _step_dict(
                 s,
@@ -788,7 +812,12 @@ async def get_execution_view(
         # BAT-FR-034, SG-048 #034 partial resolution.
         "comments_by_step_id": {
             str(step_id): [
-                {"comment_id": str(c.id), "comment_text": c.comment_text, "created_by": str(c.created_by), "created_at": c.created_at.isoformat() if c.created_at else None}
+                {
+                    "comment_id": str(c.id), "comment_text": c.comment_text, "created_by": str(c.created_by),
+                    "created_by_full_name": actor_users[c.created_by].full_name if c.created_by in actor_users else None,
+                    "created_by_username": actor_users[c.created_by].username if c.created_by in actor_users else None,
+                    "created_at": c.created_at.isoformat() if c.created_at else None,
+                }
                 for c in comments
             ]
             for step_id, comments in view["comments_by_step_id"].items()
@@ -799,7 +828,11 @@ async def get_execution_view(
                 {
                     "handover_id": str(h.id),
                     "from_subject_id": str(h.from_subject_id) if h.from_subject_id else None,
+                    "from_subject_full_name": actor_users[h.from_subject_id].full_name if h.from_subject_id in actor_users else None,
+                    "from_subject_username": actor_users[h.from_subject_id].username if h.from_subject_id in actor_users else None,
                     "to_subject_id": str(h.to_subject_id),
+                    "to_subject_full_name": actor_users[h.to_subject_id].full_name if h.to_subject_id in actor_users else None,
+                    "to_subject_username": actor_users[h.to_subject_id].username if h.to_subject_id in actor_users else None,
                     "reason": h.reason,
                     "created_at": h.created_at.isoformat() if h.created_at else None,
                 }
@@ -815,6 +848,8 @@ async def get_execution_view(
                     "id": str(e.id), "evidence_id": str(e.evidence_id), "evidence_version": e.evidence_version,
                     "evidence_sha256": e.evidence_sha256, "media_type": e.media_type,
                     "requirement_code": e.requirement_code, "linked_by": str(e.linked_by),
+                    "linked_by_full_name": actor_users[e.linked_by].full_name if e.linked_by in actor_users else None,
+                    "linked_by_username": actor_users[e.linked_by].username if e.linked_by in actor_users else None,
                     "created_at": e.created_at.isoformat() if e.created_at else None,
                 }
                 for e in links

@@ -35,6 +35,7 @@ import { StatePill } from "@/components/ui/StatePill";
 import { useCommand } from "@/components/qms/QmsDetailShell";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { StringListRows, buildStringList } from "@/components/shared/RepeatableFields";
+import { humanizeLabel } from "@/lib/format";
 
 interface AvailabilityRow {
   material_lot_id: string;
@@ -1402,7 +1403,7 @@ function NewLocationModal({
           <Select value={zoneType} onChange={(e) => setZoneType(e.target.value)} required>
             {ZONE_TYPES.map((z) => (
               <option key={z} value={z}>
-                {z}
+                {humanizeLabel(z)}
               </option>
             ))}
           </Select>

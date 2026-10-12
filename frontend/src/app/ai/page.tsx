@@ -1,111 +1,57 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { api, ApiError, listAll } from "@/lib/api";
-import { type EntityOption, type EntityOptionsStatus } from "@/lib/hooks";
+import { useState } from "react";
+import { pagedFetcher } from "@/lib/api";
 import { PageHead } from "@/components/ui/PageHead";
 import { Card, CardHeader } from "@/components/ui/Card";
+import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { Banner } from "@/components/ui/Banner";
 import { Button } from "@/components/ui/Button";
-import { Field } from "@/components/ui/Field";
-import { Input } from "@/components/ui/Input";
 import { Icon } from "@/components/ui/Icon";
+import { Modal } from "@/components/ui/Modal";
+import { Fact, FactGrid } from "@/components/ui/FactGrid";
+import { WorkflowStatePill } from "@/components/ui/StatePill";
 import { JsonPanel } from "@/components/ui/JsonPanel";
-import { EntityPickerField } from "@/components/shared/EntityPicker";
 import { FormConsole } from "@/components/shared/FormConsole";
 import { SignedJsonForm, type SignedJsonOp } from "@/components/shared/SignedJsonForm";
 
-// Local list hooks for this page's own FK pickers (use-case / model-deployment / advisory ids) — kept
-// here rather than in the shared `useEntityOptions()` since this module is the only consumer. Follows
-// the same "fetch once on mount, map to {value,label}" shape as `useEntityOptions`'s own per-entity
-// effects (`frontend/src/lib/hooks.ts`), against the real paginated `/ai-governance/v1` list endpoints
-// (`{items: [...], ...}` envelope, same shape `listAll` consumes).
-
-interface AiUseCaseRow {
+// Matches app/modules/ai_governance/router.py::_use_case_dict.
+interface AiUseCase {
   use_case_id: string;
   name: string;
+  use_case_class: string;
+  purpose: string;
+  decision_impact: string;
+  users: string[];
+  data_classes: string[];
   state: string;
+  retirement_reason: string | null;
+  version: number;
 }
 
-function useAiUseCases(): { options: EntityOption[]; status: EntityOptionsStatus } {
-  const [options, setOptions] = useState<EntityOption[]>([]);
-  const [status, setStatus] = useState<EntityOptionsStatus>("loading");
-
-  useEffect(() => {
-    let cancelled = false;
-    listAll<AiUseCaseRow>("/ai-governance/v1/use-cases")
-      .then((rows) => {
-        if (cancelled) return;
-        setOptions(rows.map((r) => ({ value: r.use_case_id, label: `${r.name} (${r.state})` })));
-        setStatus(rows.length ? "ready" : "empty");
-      })
-      .catch(() => {
-        if (!cancelled) setStatus("error");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return { options, status };
-}
-
-interface AiModelDeploymentRow {
+// Matches app/modules/ai_governance/router.py::_model_deployment_dict.
+interface AiModelDeployment {
   model_deployment_id: string;
+  use_case_id: string | null;
   provider: string;
   model: string;
+  model_version: string;
+  deployment_type: string;
+  endpoint: string | null;
+  context_window: number | null;
   state: string;
+  version: number;
 }
 
-function useAiModelDeployments(): { options: EntityOption[]; status: EntityOptionsStatus } {
-  const [options, setOptions] = useState<EntityOption[]>([]);
-  const [status, setStatus] = useState<EntityOptionsStatus>("loading");
-
-  useEffect(() => {
-    let cancelled = false;
-    listAll<AiModelDeploymentRow>("/ai-governance/v1/model-deployments")
-      .then((rows) => {
-        if (cancelled) return;
-        setOptions(rows.map((r) => ({ value: r.model_deployment_id, label: `${r.provider} / ${r.model} (${r.state})` })));
-        setStatus(rows.length ? "ready" : "empty");
-      })
-      .catch(() => {
-        if (!cancelled) setStatus("error");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return { options, status };
-}
-
-interface AiAdvisoryRow {
+// Matches app/modules/ai_governance/router.py::_advisory_dict.
+interface AiAdvisory {
   advisory_id: string;
+  use_case_id: string;
+  model_deployment_id: string | null;
   status: string;
-}
-
-function useAiAdvisories(): { options: EntityOption[]; status: EntityOptionsStatus } {
-  const [options, setOptions] = useState<EntityOption[]>([]);
-  const [status, setStatus] = useState<EntityOptionsStatus>("loading");
-
-  useEffect(() => {
-    let cancelled = false;
-    listAll<AiAdvisoryRow>("/ai-governance/v1/advisories")
-      .then((rows) => {
-        if (cancelled) return;
-        setOptions(rows.map((r) => ({ value: r.advisory_id, label: `${r.advisory_id.slice(0, 8)}… (${r.status})` })));
-        setStatus(rows.length ? "ready" : "empty");
-      })
-      .catch(() => {
-        if (!cancelled) setStatus("error");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return { options, status };
+  output_hash: string | null;
+  output_json: Record<string, unknown> | null;
+  created_at: string | null;
 }
 
 // Mirrors app/modules/ai_governance/commands.py (13 functions) + router.py (24 routes, added 2026-09-01
@@ -201,12 +147,45 @@ const AI_SIGNED_OPS: SignedJsonOp[] = [
   },
 ];
 
+type AiBlockKey = "lifecycle" | "operations" | "signed";
+
 export default function AiGovernancePage() {
+  const [openBlock, setOpenBlock] = useState<AiBlockKey | null>(null);
+  const [useCasesReload, setUseCasesReload] = useState(0);
+  const [deploymentsReload, setDeploymentsReload] = useState(0);
+  const [advisoriesReload, setAdvisoriesReload] = useState(0);
+  const [viewUseCase, setViewUseCase] = useState<AiUseCase | null>(null);
+  const [viewDeployment, setViewDeployment] = useState<AiModelDeployment | null>(null);
+  const [viewAdvisory, setViewAdvisory] = useState<AiAdvisory | null>(null);
+
+  // Any of the 3 form blocks can create/change a use case, deployment or advisory - bump every list's
+  // reload token on close rather than tracking which op ran, same "refresh on close" compromise used
+  // elsewhere this pass for FormConsole/SignedJsonForm (neither exposes a per-op success callback).
+  function closeBlock() {
+    setOpenBlock(null);
+    setUseCasesReload((n) => n + 1);
+    setDeploymentsReload((n) => n + 1);
+    setAdvisoriesReload((n) => n + 1);
+  }
+
   return (
     <div>
       <PageHead
         title="AI governance"
         subtitle="The advisory-only AI boundary and its operations console."
+        action={
+          <>
+            <Button variant="secondary" size="sm" onClick={() => setOpenBlock("lifecycle")}>
+              Use case lifecycle
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setOpenBlock("operations")}>
+              Context, advisory &amp; evaluation operations
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setOpenBlock("signed")}>
+              <Icon name="pen-line" /> Signed AI governance operations
+            </Button>
+          </>
+        }
       />
 
         <Banner tone="info" title="AI is advisory only">
@@ -225,11 +204,69 @@ export default function AiGovernancePage() {
         live AI model provider or evaluation harness is connected in this environment.
       </Banner>
 
-      <UseCasesCard />
-      <ModelDeploymentsCard />
-      <AdvisoriesCard />
+      <UseCasesListCard reloadToken={useCasesReload} onOpen={setViewUseCase} />
+      <ModelDeploymentsListCard reloadToken={deploymentsReload} onOpen={setViewDeployment} />
+      <AdvisoriesListCard reloadToken={advisoriesReload} onOpen={setViewAdvisory} />
 
-      <FormConsole
+      {viewUseCase && (
+        <Modal open onClose={() => setViewUseCase(null)} large title={`${viewUseCase.name} - ${viewUseCase.state}`}>
+          <FactGrid>
+            <Fact label="State"><WorkflowStatePill state={viewUseCase.state} /></Fact>
+            <Fact label="Use case class">{viewUseCase.use_case_class}</Fact>
+            <Fact label="Users">{viewUseCase.users.join(", ") || "—"}</Fact>
+            <Fact label="Data classes">{viewUseCase.data_classes.join(", ") || "—"}</Fact>
+            <Fact label="Retirement reason">{viewUseCase.retirement_reason ?? "—"}</Fact>
+            <Fact label="Record version">{viewUseCase.version}</Fact>
+          </FactGrid>
+          <JsonPanel title="Purpose" value={viewUseCase.purpose} />
+          <JsonPanel title="Decision impact" value={viewUseCase.decision_impact} />
+          <p className="hint mt-3">
+            Use &quot;Use case lifecycle&quot; (header) to assess risk, retire or generate a governance
+            package against use case ID <span className="tabular">{viewUseCase.use_case_id}</span>.
+          </p>
+        </Modal>
+      )}
+
+      {viewDeployment && (
+        <Modal
+          open
+          onClose={() => setViewDeployment(null)}
+          large
+          title={`${viewDeployment.provider} / ${viewDeployment.model} - ${viewDeployment.state}`}
+        >
+          <FactGrid>
+            <Fact label="State"><WorkflowStatePill state={viewDeployment.state} /></Fact>
+            <Fact label="Model version">{viewDeployment.model_version}</Fact>
+            <Fact label="Deployment type">{viewDeployment.deployment_type}</Fact>
+            <Fact label="Endpoint">{viewDeployment.endpoint ?? "—"}</Fact>
+            <Fact label="Context window">{viewDeployment.context_window ?? "—"}</Fact>
+            <Fact label="Record version">{viewDeployment.version}</Fact>
+          </FactGrid>
+          <p className="hint mt-3">
+            Use &quot;Signed AI governance operations&quot; (header) to switch the provider profile
+            against model deployment ID <span className="tabular">{viewDeployment.model_deployment_id}</span>.
+          </p>
+        </Modal>
+      )}
+
+      {viewAdvisory && (
+        <Modal open onClose={() => setViewAdvisory(null)} large title={`AI advisory - ${viewAdvisory.status}`}>
+          <FactGrid>
+            <Fact label="Status"><WorkflowStatePill state={viewAdvisory.status} /></Fact>
+            <Fact label="Output hash">{viewAdvisory.output_hash ?? "—"}</Fact>
+            <Fact label="Created at">{viewAdvisory.created_at ? new Date(viewAdvisory.created_at).toLocaleString() : "—"}</Fact>
+          </FactGrid>
+          <JsonPanel title="Output" value={viewAdvisory.output_json} />
+          <p className="hint mt-3">
+            Use &quot;Signed AI governance operations&quot; (header) to record a human disposition
+            against advisory ID <span className="tabular">{viewAdvisory.advisory_id}</span>.
+          </p>
+        </Modal>
+      )}
+
+      {openBlock === "lifecycle" && (
+        <Modal open onClose={closeBlock} title="Use case lifecycle" large>
+          <FormConsole
         title="Use case lifecycle"
         root="/ai-governance/v1"
         ops={[
@@ -287,9 +324,13 @@ export default function AiGovernancePage() {
             ],
           },
         ]}
-      />
+          />
+        </Modal>
+      )}
 
-      <FormConsole
+      {openBlock === "operations" && (
+        <Modal open onClose={closeBlock} title="Context, advisory & evaluation operations" large>
+          <FormConsole
         title="Context, advisory & evaluation operations"
         root="/ai-governance/v1"
         ops={[
@@ -341,191 +382,143 @@ export default function AiGovernancePage() {
             ],
           },
         ]}
-      />
+          />
+        </Modal>
+      )}
 
-      <SignedJsonForm
+      {openBlock === "signed" && (
+        <Modal open onClose={closeBlock} title="Signed AI governance operations" large>
+          <SignedJsonForm
         title="Signed AI governance operations"
- subtitle="Requires a signature not yet configured in this deployment, so each will correctly fail closed until it is."
+        subtitle="Requires a signature not yet configured in this deployment, so each will correctly fail closed until it is."
         root="/ai-governance/v1"
         ops={AI_SIGNED_OPS}
-      />
-
+          />
+        </Modal>
+      )}
     </div>
   );
 }
 
-// ---- Read cards --------------------------------------------------------------------------------
+// ---- List cards ----------------------------------------------------------------------------------
 
-function UseCasesCard() {
-  const [id, setId] = useState("");
-  const [state, setState] = useState("");
-  const [result, setResult] = useState<unknown>(undefined);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const useCases = useAiUseCases();
+function useCaseColumns(onOpen: (uc: AiUseCase) => void): DataTableColumn<AiUseCase>[] {
+  return [
+    { key: "name", header: "Name", sortable: true, render: (uc) => <span className="fs-2 font-semibold">{uc.name}</span> },
+    { key: "use_case_class", header: "Class", render: (uc) => <span className="fs-2">{uc.use_case_class}</span> },
+    { key: "state", header: "State", sortable: true, render: (uc) => <WorkflowStatePill state={uc.state} /> },
+    {
+      key: "open",
+      header: "",
+      align: "right",
+      render: (uc) => (
+        <Button size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); onOpen(uc); }}>
+          View
+        </Button>
+      ),
+    },
+  ];
+}
 
-  async function run(path: string) {
-    setBusy(true);
-    setError(null);
-    try {
-      setResult(await api.get<unknown>(path));
-    } catch (err) {
-      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Request failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
+function UseCasesListCard({ reloadToken, onOpen }: { reloadToken: number; onOpen: (uc: AiUseCase) => void }) {
+  const fetchUseCases = pagedFetcher<AiUseCase>("/ai-governance/v1/use-cases");
   return (
     <Card pad className="mb-4">
       <CardHeader title="Use cases" />
-      <div className="grid grid-cols-3 gap-4 mb-3">
-        <EntityPickerField
-          label="Use case ID (for lookup)"
-          value={id}
-          onChange={setId}
-          options={useCases.options}
-          status={useCases.status}
-          kind="use case"
-        />
-        <Field label="State filter (for list)" hint="DRAFT / RISK_ASSESSED / ACTIVE / RETIRED">
-          <Input value={state} onChange={(e) => setState(e.target.value)} />
-        </Field>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <Button variant="secondary" disabled={busy} onClick={() => run(`/ai-governance/v1/use-cases${state ? `?state=${encodeURIComponent(state)}` : ""}`)}>
-          <Icon name="list-checks" /> List use cases
-        </Button>
-        <Button variant="secondary" disabled={busy || !id.trim()} onClick={() => run(`/ai-governance/v1/use-cases/${encodeURIComponent(id.trim())}`)}>
-          <Icon name="search" /> Look up by ID
-        </Button>
-      </div>
-      {error && <p className="error-text mt-2">{error}</p>}
-      {result !== undefined && (
-        <div className="mt-3">
-          <JsonPanel title="Result" value={result} />
-        </div>
-      )}
+      <DataTable
+        columns={useCaseColumns(onOpen)}
+        fetchPage={fetchUseCases}
+        rowKey={(uc) => uc.use_case_id}
+        searchPlaceholder="Search name…"
+        emptyMessage='No AI use cases yet - use "Use case lifecycle" above to register one.'
+        defaultSort={{ by: "created_at", dir: "desc" }}
+        onRowClick={onOpen}
+        reloadToken={reloadToken}
+      />
     </Card>
   );
 }
 
-function ModelDeploymentsCard() {
-  const [id, setId] = useState("");
-  const [useCaseId, setUseCaseId] = useState("");
-  const [result, setResult] = useState<unknown>(undefined);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const modelDeployments = useAiModelDeployments();
-  const useCases = useAiUseCases();
+function modelDeploymentColumns(onOpen: (d: AiModelDeployment) => void): DataTableColumn<AiModelDeployment>[] {
+  return [
+    {
+      key: "provider",
+      header: "Provider / model",
+      sortable: true,
+      render: (d) => <span className="fs-2 font-semibold">{d.provider} / {d.model} ({d.model_version})</span>,
+    },
+    { key: "deployment_type", header: "Deployment type", render: (d) => <span className="fs-2">{d.deployment_type}</span> },
+    { key: "state", header: "State", sortable: true, render: (d) => <WorkflowStatePill state={d.state} /> },
+    {
+      key: "open",
+      header: "",
+      align: "right",
+      render: (d) => (
+        <Button size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); onOpen(d); }}>
+          View
+        </Button>
+      ),
+    },
+  ];
+}
 
-  async function run(path: string) {
-    setBusy(true);
-    setError(null);
-    try {
-      setResult(await api.get<unknown>(path));
-    } catch (err) {
-      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Request failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
+function ModelDeploymentsListCard({ reloadToken, onOpen }: { reloadToken: number; onOpen: (d: AiModelDeployment) => void }) {
+  const fetchDeployments = pagedFetcher<AiModelDeployment>("/ai-governance/v1/model-deployments");
   return (
     <Card pad className="mb-4">
       <CardHeader title="Model deployments" />
-      <div className="grid grid-cols-3 gap-4 mb-3">
-        <EntityPickerField
-          label="Model deployment ID (for lookup)"
-          value={id}
-          onChange={setId}
-          options={modelDeployments.options}
-          status={modelDeployments.status}
-          kind="model deployment"
-        />
-        <EntityPickerField
-          label="Use case ID filter (for list)"
-          value={useCaseId}
-          onChange={setUseCaseId}
-          options={useCases.options}
-          status={useCases.status}
-          kind="use case"
-        />
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <Button variant="secondary" disabled={busy} onClick={() => run(`/ai-governance/v1/model-deployments${useCaseId ? `?use_case_id=${encodeURIComponent(useCaseId.trim())}` : ""}`)}>
-          <Icon name="list-checks" /> List model deployments
-        </Button>
-        <Button variant="secondary" disabled={busy || !id.trim()} onClick={() => run(`/ai-governance/v1/model-deployments/${encodeURIComponent(id.trim())}`)}>
-          <Icon name="search" /> Look up by ID
-        </Button>
-      </div>
-      {error && <p className="error-text mt-2">{error}</p>}
-      {result !== undefined && (
-        <div className="mt-3">
-          <JsonPanel title="Result" value={result} />
-        </div>
-      )}
+      <DataTable
+        columns={modelDeploymentColumns(onOpen)}
+        fetchPage={fetchDeployments}
+        rowKey={(d) => d.model_deployment_id}
+        searchPlaceholder="Search provider…"
+        emptyMessage='No AI model deployments yet - use "Signed AI governance operations" above to approve one.'
+        defaultSort={{ by: "created_at", dir: "desc" }}
+        onRowClick={onOpen}
+        reloadToken={reloadToken}
+      />
     </Card>
   );
 }
 
-function AdvisoriesCard() {
-  const [id, setId] = useState("");
-  const [useCaseId, setUseCaseId] = useState("");
-  const [result, setResult] = useState<unknown>(undefined);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const advisories = useAiAdvisories();
-  const useCases = useAiUseCases();
+function advisoryColumns(onOpen: (a: AiAdvisory) => void): DataTableColumn<AiAdvisory>[] {
+  return [
+    { key: "advisory_id", header: "Advisory", render: (a) => <span className="fs-2 font-semibold">AI advisory {a.advisory_id.slice(0, 8)}…</span> },
+    { key: "status", header: "Status", sortable: true, render: (a) => <WorkflowStatePill state={a.status} /> },
+    {
+      key: "created_at",
+      header: "Created at",
+      sortable: true,
+      render: (a) => <span className="tabular fs-2">{a.created_at ? new Date(a.created_at).toLocaleString() : "—"}</span>,
+    },
+    {
+      key: "open",
+      header: "",
+      align: "right",
+      render: (a) => (
+        <Button size="sm" variant="secondary" onClick={(e) => { e.stopPropagation(); onOpen(a); }}>
+          View
+        </Button>
+      ),
+    },
+  ];
+}
 
-  async function run(path: string) {
-    setBusy(true);
-    setError(null);
-    try {
-      setResult(await api.get<unknown>(path));
-    } catch (err) {
-      setError(err instanceof ApiError ? `${err.code}: ${err.message}` : "Request failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
+function AdvisoriesListCard({ reloadToken, onOpen }: { reloadToken: number; onOpen: (a: AiAdvisory) => void }) {
+  const fetchAdvisories = pagedFetcher<AiAdvisory>("/ai-governance/v1/advisories");
   return (
     <Card pad className="mb-4">
       <CardHeader title="Advisories" />
-      <div className="grid grid-cols-3 gap-4 mb-3">
-        <EntityPickerField
-          label="Advisory ID (for lookup)"
-          value={id}
-          onChange={setId}
-          options={advisories.options}
-          status={advisories.status}
-          kind="advisory"
-        />
-        <EntityPickerField
-          label="Use case ID filter (for list)"
-          value={useCaseId}
-          onChange={setUseCaseId}
-          options={useCases.options}
-          status={useCases.status}
-          kind="use case"
-        />
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <Button variant="secondary" disabled={busy} onClick={() => run(`/ai-governance/v1/advisories${useCaseId ? `?use_case_id=${encodeURIComponent(useCaseId.trim())}` : ""}`)}>
-          <Icon name="list-checks" /> List advisories
-        </Button>
-        <Button variant="secondary" disabled={busy || !id.trim()} onClick={() => run(`/ai-governance/v1/advisories/${encodeURIComponent(id.trim())}`)}>
-          <Icon name="search" /> Look up by ID
-        </Button>
-      </div>
-      {error && <p className="error-text mt-2">{error}</p>}
-      {result !== undefined && (
-        <div className="mt-3">
-          <JsonPanel title="Result" value={result} />
-        </div>
-      )}
+      <DataTable
+        columns={advisoryColumns(onOpen)}
+        fetchPage={fetchAdvisories}
+        rowKey={(a) => a.advisory_id}
+        searchPlaceholder="Search status…"
+        emptyMessage='No AI advisories recorded yet - use "Context, advisory & evaluation operations" above to execute one.'
+        defaultSort={{ by: "created_at", dir: "desc" }}
+        onRowClick={onOpen}
+        reloadToken={reloadToken}
+      />
     </Card>
   );
 }

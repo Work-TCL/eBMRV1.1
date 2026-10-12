@@ -27,6 +27,7 @@ import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { HistoryPanel, JsonPanel } from "@/components/ui/JsonPanel";
 import { BoolPill, SeverityPill } from "@/components/ui/StatePill";
+import { humanizeLabel } from "@/lib/format";
 
 interface ImpactLink {
   id: string;
@@ -525,7 +526,7 @@ function TransitionModal({
               <Select value={dispositionCode} onChange={(e) => setDispositionCode(e.target.value)}>
                 {DISPOSITION_CODES.map((c) => (
                   <option key={c} value={c}>
-                    {c}
+                    {humanizeLabel(c)}
                   </option>
                 ))}
               </Select>

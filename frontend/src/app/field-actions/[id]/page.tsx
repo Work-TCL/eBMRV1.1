@@ -60,6 +60,7 @@ interface Reconciliation {
 }
 
 interface FieldActionDetail extends FieldAction {
+  risk_number: string | null;
   trigger_ref: Record<string, unknown> | null;
   reportability_assessment: Record<string, unknown> | null;
   effectiveness_check: Record<string, unknown> | null;
@@ -155,7 +156,7 @@ export default function FieldActionDetailPage({ params }: { params: Promise<{ id
             <Fact label="Raised">{formatDateTime(data.created_at)}</Fact>
             <Fact label="Closed">{data.closed_at ? formatDateTime(data.closed_at) : "—"}</Fact>
             <Fact label="Record version">{data.version}</Fact>
-            <IdFact label="Risk assessment" value={data.risk_assessment_ref} />
+            <IdFact label="Risk assessment" value={data.risk_number ?? data.risk_assessment_ref} />
             <IdFact label="Quality event" value={data.quality_event_id} />
           </>
         )
@@ -559,10 +560,10 @@ function TransitionModal({
             </Field>
             <Field label="Action required" required>
               <Select value={actionRequired} onChange={(e) => setActionRequired(e.target.value)}>
-                <option value="return">return</option>
-                <option value="destroy">destroy</option>
-                <option value="correct_in_place">correct in place</option>
-                <option value="quarantine">quarantine</option>
+                <option value="return">Return</option>
+                <option value="destroy">Destroy</option>
+                <option value="correct_in_place">Correct in place</option>
+                <option value="quarantine">Quarantine</option>
               </Select>
             </Field>
             <label className="flex items-center gap-2 fs-2 mb-3">
@@ -584,10 +585,10 @@ function TransitionModal({
               </Field>
               <Field label="Channel">
                 <Select value={channel} onChange={(e) => setChannel(e.target.value)}>
-                  <option value="email">email</option>
-                  <option value="letter">letter</option>
-                  <option value="phone">phone</option>
-                  <option value="portal">portal</option>
+                  <option value="email">Email</option>
+                  <option value="letter">Letter</option>
+                  <option value="phone">Phone</option>
+                  <option value="portal">Portal</option>
                 </Select>
               </Field>
             </div>

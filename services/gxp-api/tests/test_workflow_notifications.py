@@ -88,6 +88,18 @@ from tests.test_equipment_flow import _create_asset as _equipment_create_asset
 from tests.test_equipment_flow import _latest_calibration_id
 from tests.test_equipment_flow import _qualify as _equipment_qualify
 
+# Pass 5 (cleaning execution verification / requires-deviation) helper imports.
+from tests.test_cleaning_flow import _challenge as _cleaning_challenge
+from tests.test_cleaning_flow import _complete as _cleaning_complete
+from tests.test_cleaning_flow import _create_execution as _cleaning_create_execution
+from tests.test_cleaning_flow import _verify as _cleaning_verify
+from tests.test_sterilization_flow import _create_equipment as _sterilization_create_equipment
+from tests.test_sterilization_flow import _create_cycle as _sterilization_create_cycle
+from tests.test_sterilization_flow import _cycle_challenge as _sterilization_cycle_challenge
+from tests.test_sterilization_flow import _record_data as _sterilization_record_data
+from tests.test_sterilization_flow import _review as _sterilization_review
+from tests.test_sterilization_flow import _start as _sterilization_start
+
 
 async def _extra_role_user(db, seeded, username, role_name):
     async with db.begin():
@@ -1197,6 +1209,126 @@ async def test_equipment_calibration_approval_pending_notifies_on_calibrate_and_
 
     view_after = await _workflow_actions(client, qa_token)
     assert not any(i["aggregate_id"] == asset_id for i in view_after["items"])
+
+
+async def test_cleaning_verification_pending_notifies_reviewer_and_resolves_on_verify(client, seeded, db):
+    """Pass 5 (2026-10-08, project-owner-directed) -- cleaning_execution had zero notification wiring;
+    a reviewer had no way to know a cleaning was sitting in CLEANING_VERIFICATION. Reuses
+    test_cleaning_flow.py's own create/complete/verify helpers verbatim."""
+    op_token = await login(client, "sanitation.operator")
+    qa_token = await login(client, "qa.reviewer")
+    site_id = seeded["site_id"]
+    procedure_id = str(seeded["cleaning_procedures"]["CLN-PROC-001"].id)
+    area_id = str(seeded["areas"]["AREA-WAREHOUSE"].id)
+
+    execution_id = await _cleaning_create_execution(client, op_token, site_id, procedure_id, area_id=area_id)
+    resp = await _cleaning_complete(client, op_token, execution_id, expected_version=1)
+    assert resp.status_code == 200, resp.text
+
+    await _sync(db, aggregate_type="cleaning_execution", aggregate_id=execution_id)
+    view = await _workflow_actions(client, qa_token)
+    assert any(
+        i["aggregate_id"] == execution_id and i["category"] == "cleaning_verification_pending" for i in view["items"]
+    )
+
+    # Sanitation Operator holds cleaning_execution.create/complete but not .verify -- not part of this
+    # notification's audience, same RBAC-audience proof every other Pass's test makes.
+    op_view = await _workflow_actions(client, op_token)
+    assert not any(i["aggregate_id"] == execution_id for i in op_view["items"])
+
+    challenge_id = await _cleaning_challenge(client, qa_token, execution_id, "verify")
+    resp = await _cleaning_verify(client, qa_token, execution_id, expected_version=2, result="pass", challenge_id=challenge_id)
+    assert resp.status_code == 200, resp.text
+    await _sync(db, aggregate_type="cleaning_execution", aggregate_id=execution_id)
+
+    view_after = await _workflow_actions(client, qa_token)
+    assert not any(i["aggregate_id"] == execution_id for i in view_after["items"])
+
+
+async def test_cleaning_requires_deviation_notifies_on_failed_verification(client, seeded, db):
+    """A "fail" verification result sets HOLD + requires_deviation=True with nothing else in the module
+    able to resolve it -- the actionable next step is someone opening a deviation, so the audience is
+    qms_deviation.create holders (Admin, among others), not cleaning_execution.verify holders again."""
+    op_token = await login(client, "sanitation.operator")
+    qa_token = await login(client, "qa.reviewer")
+    await _extra_role_user(db, seeded, "admin.cleanwn40", "Admin")
+    admin_token = await login(client, "admin.cleanwn40")
+    site_id = seeded["site_id"]
+    procedure_id = str(seeded["cleaning_procedures"]["CLN-PROC-001"].id)
+    area_id = str(seeded["areas"]["AREA-WAREHOUSE"].id)
+
+    execution_id = await _cleaning_create_execution(client, op_token, site_id, procedure_id, area_id=area_id)
+    await _cleaning_complete(client, op_token, execution_id, expected_version=1)
+
+    challenge_id = await _cleaning_challenge(client, qa_token, execution_id, "verify")
+    resp = await _cleaning_verify(client, qa_token, execution_id, expected_version=2, result="fail", challenge_id=challenge_id)
+    assert resp.status_code == 200, resp.text
+
+    await _sync(db, aggregate_type="cleaning_execution", aggregate_id=execution_id)
+    view = await _workflow_actions(client, admin_token)
+    assert any(
+        i["aggregate_id"] == execution_id and i["category"] == "cleaning_requires_deviation" for i in view["items"]
+    )
+    # The verification_pending category must have resolved -- the execution left CLEANING_VERIFICATION.
+    assert not any(i["aggregate_id"] == execution_id and i["category"] == "cleaning_verification_pending" for i in view["items"])
+
+
+async def test_sterilization_review_pending_notifies_reviewer_and_resolves_on_accept(client, seeded, db):
+    """2026-10-08 (real user report, project-owner-directed) -- process_cycle had zero notification
+    wiring: a reviewer had no way to know a cycle was sitting in REVIEW_PENDING after "Record cycle
+    data". Reuses test_sterilization_flow.py's own create/start/record-data/review helpers verbatim."""
+    op_token = await login(client, "sterilization.operator")
+    qa_token = await login(client, "qa.reviewer")
+    site_id = seeded["site_id"]
+    profile_id = str(seeded["sterilization_profile"].id)
+
+    equipment_id = await _sterilization_create_equipment(client, op_token, site_id, code="EQP-WN41")
+    cycle_id = await _sterilization_create_cycle(client, op_token, site_id, equipment_id, profile_id)
+    await _sterilization_start(client, op_token, cycle_id, expected_version=1)
+    resp = await _sterilization_record_data(client, op_token, cycle_id, expected_version=2, final=True)
+    assert resp.status_code == 200, resp.text
+
+    await _sync(db, aggregate_type="process_cycle", aggregate_id=cycle_id)
+    view = await _workflow_actions(client, qa_token)
+    assert any(i["aggregate_id"] == cycle_id and i["category"] == "sterilization_review_pending" for i in view["items"])
+
+    # Sterilization Operator holds process_cycle.create/start but not .review -- not part of this
+    # notification's audience, same RBAC-audience proof every other Pass's test makes.
+    op_view = await _workflow_actions(client, op_token)
+    assert not any(i["aggregate_id"] == cycle_id for i in op_view["items"])
+
+    resp = await _sterilization_review(client, qa_token, cycle_id, expected_version=3, decision="accept")
+    assert resp.status_code == 200, resp.text
+    await _sync(db, aggregate_type="process_cycle", aggregate_id=cycle_id)
+
+    view_after = await _workflow_actions(client, qa_token)
+    assert not any(i["aggregate_id"] == cycle_id for i in view_after["items"])
+
+
+async def test_sterilization_requires_deviation_notifies_on_rejected_review(client, seeded, db):
+    """A "reject" review decision sets FAILED + requires_deviation=True with nothing else in the module
+    able to resolve it -- the actionable next step is someone opening a deviation, same
+    cleaning_execution HOLD -> qms_deviation.create shape above."""
+    op_token = await login(client, "sterilization.operator")
+    qa_token = await login(client, "qa.reviewer")
+    await _extra_role_user(db, seeded, "admin.sterilwn42", "Admin")
+    admin_token = await login(client, "admin.sterilwn42")
+    site_id = seeded["site_id"]
+    profile_id = str(seeded["sterilization_profile"].id)
+
+    equipment_id = await _sterilization_create_equipment(client, op_token, site_id, code="EQP-WN42")
+    cycle_id = await _sterilization_create_cycle(client, op_token, site_id, equipment_id, profile_id)
+    await _sterilization_start(client, op_token, cycle_id, expected_version=1)
+    await _sterilization_record_data(client, op_token, cycle_id, expected_version=2, final=True)
+
+    resp = await _sterilization_review(client, qa_token, cycle_id, expected_version=3, decision="reject", reason="Temperature excursion")
+    assert resp.status_code == 200, resp.text
+
+    await _sync(db, aggregate_type="process_cycle", aggregate_id=cycle_id)
+    view = await _workflow_actions(client, admin_token)
+    assert any(i["aggregate_id"] == cycle_id and i["category"] == "sterilization_requires_deviation" for i in view["items"])
+    # The review_pending category must have resolved -- the cycle left REVIEW_PENDING.
+    assert not any(i["aggregate_id"] == cycle_id and i["category"] == "sterilization_review_pending" for i in view["items"])
 
 
 async def test_rebuild_covers_every_registered_aggregate_type(db):

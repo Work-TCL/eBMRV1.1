@@ -37,6 +37,7 @@ import { Banner } from "@/components/ui/Banner";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
+import { humanizeLabel } from "@/lib/format";
 
 const STATUS_OPTIONS = ["", "quarantine", "released", "rejected", "consumed", "expired"];
 
@@ -402,7 +403,7 @@ function ReceiveLotModal({ onClose, onDone }: { onClose: () => void; onDone: () 
               <option value="">—</option>
               {STORAGE_CONDITIONS.map((c) => (
                 <option key={c} value={c}>
-                  {c}
+                  {humanizeLabel(c)}
                 </option>
               ))}
             </Select>

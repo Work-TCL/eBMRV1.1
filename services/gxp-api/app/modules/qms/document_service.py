@@ -5,7 +5,12 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.qms.document_models import ControlledCopy, ControlledDocument, ControlledDocumentVersion
+from app.modules.qms.document_models import (
+    ControlledCopy,
+    ControlledDocument,
+    ControlledDocumentVersion,
+    DocumentAcknowledgment,
+)
 from app.mutation.errors import NotFoundError
 
 
@@ -53,6 +58,20 @@ async def get_controlled_copies(session: AsyncSession, document_version_id: uuid
                 select(ControlledCopy)
                 .where(ControlledCopy.document_version_id == document_version_id)
                 .order_by(ControlledCopy.issued_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def get_acknowledgments(session: AsyncSession, document_version_id: uuid.UUID) -> list[DocumentAcknowledgment]:
+    return (
+        (
+            await session.execute(
+                select(DocumentAcknowledgment)
+                .where(DocumentAcknowledgment.document_version_id == document_version_id)
+                .order_by(DocumentAcknowledgment.acknowledged_at)
             )
         )
         .scalars()

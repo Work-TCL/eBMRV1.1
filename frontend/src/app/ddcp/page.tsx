@@ -17,6 +17,7 @@ import { Table } from "@/components/ui/Table";
 import { WorkflowStatePill } from "@/components/ui/StatePill";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { Tabs } from "@/components/ui/Tabs";
+import { Skeleton } from "@/components/ui/Skeleton";
 import { Stepper, StepItem, type StepMarkerState } from "@/components/ui/Stepper";
 import { DDCP_FAMILIES, type DdcpFamily, type DdcpOp } from "@/components/ddcp/catalog";
 import { DdcpFieldControl, DdcpFieldsGrid, ProfilePickerField, type EntityCtx, type ProfileSummary } from "@/components/ddcp/DdcpFieldControl";
@@ -49,7 +50,13 @@ const MANUFACTURING_PROFILE_TO_FAMILY: Record<string, string> = {
 };
 
 export default function DdcpPage() {
-  const { me } = useMe();
+  // `loading` is destructured (unlike a bare `const { me } = useMe()`) specifically so the
+  // permission-derived banners and tab list below can wait for it -- `me` starts `null` and every
+  // `hasPermission` check reads false during that window, which previously meant every page load briefly
+  // rendered as "no DDCP permission at all" (the most restrictive banner, Profile designer/Execution
+  // tabs absent from the tab bar) and then corrected itself a beat later, same class of bug as
+  // validation/page.tsx's console-vs-read-only-banner swap.
+  const { me, loading: meLoading } = useMe();
   const [typeKey, setTypeKey] = useState(DDCP_FAMILIES[0].key);
   const family = DDCP_FAMILIES.find((t) => t.key === typeKey)!;
   // §19 #33's own finding: no query param, link or copy-button bridges /batch-execution's batch detail
@@ -135,19 +142,19 @@ export default function DdcpPage() {
         </Banner>
       )}
 
-      {!canAuthorProfile && !canExecute && (
+      {!meLoading && !canAuthorProfile && !canExecute && (
         <Banner tone="info" title="Read-only">
           Authoring and releasing profiles needs the DDCP Engineer role; recording batch execution and
           evaluating release readiness needs the DDCP Operator role.
         </Banner>
       )}
-      {!canAuthorProfile && canExecute && (
+      {!meLoading && !canAuthorProfile && canExecute && (
         <Banner tone="info" title="Profile designer hidden">
         Authoring and releasing profiles needs the DDCP Engineer role - you can still record batch
           execution and evaluate release readiness below.
         </Banner>
       )}
-      {canAuthorProfile && !canExecute && (
+      {!meLoading && canAuthorProfile && !canExecute && (
         <Banner tone="info" title="Execution hidden">
         Recording batch execution and evaluating release readiness needs the DDCP Operator role - you
           can still design and release profiles above.
@@ -162,6 +169,20 @@ export default function DdcpPage() {
        * operation or result from one product family ever lingers into another. Keys are prefixed per
        * card — React's children reconciliation treats every keyed sibling in one tab list as one set
        * regardless of element type, so the tabs must not share a bare `family.key`. */}
+      {meLoading ? (
+        // Which tabs exist (Profile designer / Execution) depends on `canAuthorProfile`/`canExecute`,
+        // both derived from `me` -- rendering the real <Tabs> before `me` resolves would mean the tab
+        // bar itself grows extra tabs a beat after first paint. Holding it behind `meLoading` instead
+        // keeps the tab list stable from the very first render.
+        <Card pad>
+          <div className="flex gap-2 mb-4">
+            {[110, 170].map((w, i) => (
+              <Skeleton key={i} width={w} height={28} radius="var(--radius-pill)" />
+            ))}
+          </div>
+          <Skeleton width="100%" height={160} />
+        </Card>
+      ) : (
       <Tabs
         initial="batch"
         tabs={[
@@ -212,6 +233,7 @@ export default function DdcpPage() {
             : []),
         ]}
       />
+      )}
     </div>
   );
 }

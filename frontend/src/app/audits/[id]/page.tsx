@@ -15,7 +15,7 @@ import { useApiResource, useEntityOptions, useMe } from "@/lib/hooks";
 import { EntityPickerField } from "@/components/shared/EntityPicker";
 import { SignatureCeremony } from "@/components/shared/SignatureCeremony";
 import { QmsDetailShell, useCommand } from "@/components/qms/QmsDetailShell";
-import { Fact, IdFact } from "@/components/ui/FactGrid";
+import { Fact, IdFact, UserFact } from "@/components/ui/FactGrid";
 import { Card } from "@/components/ui/Card";
 import { Table, EmptyState } from "@/components/ui/Table";
 import { Banner } from "@/components/ui/Banner";
@@ -27,8 +27,11 @@ import { Select } from "@/components/ui/Select";
 import { Icon } from "@/components/ui/Icon";
 import { JsonPanel } from "@/components/ui/JsonPanel";
 import { StatePill, BoolPill, SeverityPill, WorkflowStatePill } from "@/components/ui/StatePill";
+import { humanizeLabel } from "@/lib/format";
 
 interface AuditDetail extends InternalAudit {
+  lead_auditor_full_name: string | null;
+  lead_auditor_username: string | null;
   site_scope: Record<string, unknown> | null;
   process_scope: Record<string, unknown> | null;
   criteria_refs: Record<string, unknown> | null;
@@ -117,7 +120,7 @@ export default function AuditDetailPage({ params }: { params: Promise<{ id: stri
               )}
             </Fact>
             <Fact label="Record version">{data.version}</Fact>
-            <IdFact label="Lead auditor" value={data.lead_auditor_id} />
+            <UserFact label="Lead auditor" fullName={data.lead_auditor_full_name} username={data.lead_auditor_username} id={data.lead_auditor_id} />
             <IdFact label="Quality event" value={data.quality_event_id} />
           </>
         )
@@ -349,7 +352,7 @@ function AuditActionModal({
                 <Select value={severity} onChange={(e) => setSeverity(e.target.value)}>
                   {FINDING_SEVERITIES.map((s) => (
                     <option key={s} value={s}>
-                      {s}
+                      {humanizeLabel(s)}
                     </option>
                   ))}
                 </Select>

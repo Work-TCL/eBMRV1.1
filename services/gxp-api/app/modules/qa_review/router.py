@@ -2,11 +2,14 @@ import uuid
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
 from app.core.security import AuthenticatedActor, get_current_actor
+from app.modules.batch_execution.models import Batch
 from app.modules.policy.service import evaluate_policy
+from app.modules.product_master.models import ProductVersion
 from app.modules.qa_review import service as qa_review_service
 from app.modules.qa_review.commands import (
     CompleteReviewPackageCommand,
@@ -31,11 +34,15 @@ class QaReviewSignatureChallengeRequest(BaseModel):
     action: str
 
 
-def _package_dict(package) -> dict:
+def _package_dict(package, refs: dict | None = None) -> dict:
+    refs = refs or {}
     return {
         "package_id": str(package.id),
         "site_id": str(package.site_id),
         "batch_id": str(package.batch_id),
+        "batch_number": refs.get("batch_number"),
+        "product_code": refs.get("product_code"),
+        "product_name": refs.get("product_name"),
         "batch_version": package.batch_version,
         "record_hash": package.record_hash,
         "exception_index_version": package.exception_index_version,
@@ -44,6 +51,33 @@ def _package_dict(package) -> dict:
         "version": package.version,
         "completed_at": package.completed_at.isoformat() if package.completed_at else None,
     }
+
+
+async def _resolve_package_refs(session: AsyncSession, packages: list) -> dict[uuid.UUID, dict]:
+    """Batch-resolves the batch/product foreign key `_package_dict` labels for -- same one-query-per-
+    referenced-table shape as packaging's own `_resolve_run_refs`."""
+    if not packages:
+        return {}
+
+    batch_ids = {p.batch_id for p in packages}
+    batch_by_id = {
+        row.id: (row.batch_number, row.product_version_id)
+        for row in (await session.execute(select(Batch.id, Batch.batch_number, Batch.product_version_id).where(Batch.id.in_(batch_ids)))).all()
+    }
+    product_ids = {pv_id for (_, pv_id) in batch_by_id.values() if pv_id}
+    product_by_id = {
+        row.id: (row.product_code, row.name)
+        for row in (
+            await session.execute(select(ProductVersion.id, ProductVersion.product_code, ProductVersion.name).where(ProductVersion.id.in_(product_ids)))
+        ).all()
+    } if product_ids else {}
+
+    resolved: dict[uuid.UUID, dict] = {}
+    for p in packages:
+        batch_number, product_version_id = batch_by_id.get(p.batch_id, (None, None))
+        product_code, product_name = product_by_id.get(product_version_id, (None, None)) if product_version_id else (None, None)
+        resolved[p.id] = {"batch_number": batch_number, "product_code": product_code, "product_name": product_name}
+    return resolved
 
 
 @router.post("/batches/{batch_id}/packages", response_model=MutationReceipt)
@@ -74,7 +108,10 @@ async def get_package_for_batch(
     batch = await qa_review_service.get_batch(session, batch_id)
     await evaluate_policy(session, actor.user_id, action="qa_review.view", site_id=batch.site_id)
     package = await qa_review_service.get_package_for_batch(session, batch_id)
-    return _package_dict(package) if package is not None else None
+    if package is None:
+        return None
+    refs = await _resolve_package_refs(session, [package])
+    return _package_dict(package, refs.get(package.id))
 
 
 @router.get("/packages/{package_id}")
@@ -86,7 +123,8 @@ async def get_package_detail(
     package = await qa_review_service.get_package(session, package_id)
     await evaluate_policy(session, actor.user_id, action="qa_review.view", site_id=package.site_id)
     batch = await qa_review_service.get_batch(session, package.batch_id)
-    body = _package_dict(package)
+    refs = await _resolve_package_refs(session, [package])
+    body = _package_dict(package, refs.get(package.id))
     body["stale"] = batch.version != package.batch_version
     return body
 
@@ -167,4 +205,5 @@ async def get_dashboard(
     filtering is not built -- it would need qa_review_item, SG-053."""
     await evaluate_policy(session, actor.user_id, action="qa_review.view", site_id=site_id)
     packages = await qa_review_service.list_packages(session, site_id, state=state)
-    return {"packages": [_package_dict(p) for p in packages]}
+    refs = await _resolve_package_refs(session, packages)
+    return {"packages": [_package_dict(p, refs.get(p.id)) for p in packages]}

@@ -653,6 +653,25 @@ tr[data-just-added]{animation:row-in 1.6s ease}
 .fact-k{font-size:var(--fs-1);font-weight:var(--fw-semibold);color:var(--ink-muted);text-transform:uppercase;letter-spacing:.03em}
 .fact-v{font-size:var(--fs-4);font-weight:var(--fw-semibold);color:var(--ink-primary)}
 
+/* Loading-state shimmer placeholder (components/ui/Skeleton.tsx) — shaped to the final content's
+   dimensions by the caller via width/height, so a page's loading render keeps its layout instead of
+   jumping when real content replaces it. */
+.skeleton{
+  display:inline-block;
+  vertical-align:middle;
+  background:linear-gradient(90deg,var(--surface-sunken) 25%,var(--gridline) 37%,var(--surface-sunken) 63%);
+  background-size:400% 100%;
+  animation:skeleton-shimmer 1.6s ease-in-out infinite;
+  border-radius:var(--radius-sm);
+}
+@keyframes skeleton-shimmer{
+  0%{background-position:100% 50%}
+  100%{background-position:0 50%}
+}
+@media (prefers-reduced-motion: reduce){
+  .skeleton{animation:none;background:var(--surface-sunken)}
+}
+
 /* Role-based access simulation (demo only) — see ebmr-ui.js initRoleView().
    Hidden by default so the four persona blocks on My Work never all render
    at once before a role is chosen. */

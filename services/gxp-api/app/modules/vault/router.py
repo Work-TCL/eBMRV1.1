@@ -25,7 +25,8 @@ from app.mutation.schemas import MutationReceipt
 router = APIRouter(prefix="/vault/v1", tags=["vault"])
 
 
-def _object_dict(obj) -> dict:
+def _object_dict(obj, version_by_id: dict[str, int] | None = None) -> dict:
+    version_by_id = version_by_id or {}
     return {
         "object_id": str(obj.object_id),
         "site_id": str(obj.site_id) if obj.site_id else None,
@@ -40,7 +41,13 @@ def _object_dict(obj) -> dict:
         "effective_from": obj.effective_from.isoformat() if obj.effective_from else None,
         "effective_to": obj.effective_to.isoformat() if obj.effective_to else None,
         "supersedes_object_id": str(obj.supersedes_object_id) if obj.supersedes_object_id else None,
+        "supersedes_internal_version": version_by_id.get(str(obj.supersedes_object_id))
+        if obj.supersedes_object_id
+        else None,
         "corrected_from_object_id": str(obj.corrected_from_object_id) if obj.corrected_from_object_id else None,
+        "corrected_from_internal_version": version_by_id.get(str(obj.corrected_from_object_id))
+        if obj.corrected_from_object_id
+        else None,
         "retention_class": obj.retention_class,
         "released_at": obj.released_at.isoformat(),
         "created_by_subject": str(obj.created_by_subject) if obj.created_by_subject else None,
@@ -161,6 +168,54 @@ async def get_object_integrity(
     return await vault_service.verify_integrity(session, object_id)
 
 
+@router.get("/business-ids/{object_type}")
+async def get_business_ids(
+    object_type: str,
+    site_id: uuid.UUID | None = None,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
+    """Picker data for the Vault lookup UI: every business_id that has a released version under this
+    object_type, so the UI can render a dropdown instead of asking the caller to already know an exact
+    business_id string to type in. Same site-scope filtering as `get_versions` below."""
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="vault.review")
+    objects = await vault_service.list_latest_by_business_id(session, object_type=object_type)
+    objects = [o for o in objects if o.site_id is None or o.site_id in site_scope]
+    return [
+        {
+            "business_id": o.business_id,
+            "latest_internal_version": o.internal_version,
+            "latest_status": o.status,
+            "business_version_label": o.business_version_label,
+        }
+        for o in objects
+    ]
+
+
+@router.get("/corrections")
+async def list_corrections(
+    include_completed: bool = False,
+    site_id: uuid.UUID | None = None,
+    session: AsyncSession = Depends(get_session),
+    actor: AuthenticatedActor = Depends(get_current_actor),
+) -> list[dict]:
+    """Picker data for the 'Complete a correction' UI — lists corrections (open ones by default) with
+    the object_type/business_id/version of the record each one targets, gated the same as the complete
+    action itself (`vault.correct`) since only a corrector/approver has any use for this list."""
+    site_scope = await resolve_site_scope(session, actor.user_id, site_id, action="vault.correct")
+    rows = await vault_service.list_corrections(session, include_completed=include_completed)
+    out = []
+    for correction, obj in rows:
+        if obj.site_id is not None and obj.site_id not in site_scope:
+            continue
+        body = _correction_dict(correction)
+        body["object_type"] = obj.object_type
+        body["business_id"] = obj.business_id
+        body["internal_version"] = obj.internal_version
+        out.append(body)
+    return out
+
+
 @router.get("/business/{object_type}/{business_id}/versions")
 async def get_versions(
     object_type: str,
@@ -178,7 +233,11 @@ async def get_versions(
         session, object_type=object_type, business_id=business_id
     )
     objects = [o for o in objects if o.site_id is None or o.site_id in site_scope]
-    return [_object_dict(o) for o in objects]
+    # Every version returned here is of the same object_type/business_id, so `supersedes_object_id`
+    # always points at another row already in this list -- no second query needed to label it
+    # (2026-10 UUID-display audit).
+    version_by_id = {str(o.object_id): o.internal_version for o in objects}
+    return [_object_dict(o, version_by_id) for o in objects]
 
 
 @router.post("/objects/{object_id}/corrections", response_model=MutationReceipt)
